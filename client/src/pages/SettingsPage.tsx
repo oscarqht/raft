@@ -399,26 +399,31 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                 <div
                   key={c.name}
                   onClick={() => handleSelectCli(c.name)}
-                  className={`p-4.5 rounded-2.5xl border cursor-pointer transition-all ${
+                  className={`p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between min-h-[84px] ${
                     isSelected
-                      ? 'bg-rose-500/10 border-rose-400/40 text-cozy-text shadow-glow-peach/10 ring-1 ring-rose-400/30'
-                      : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-rose-400/25 hover:shadow-soft-sm'
+                      ? 'bg-rose-500/10 border-rose-400 text-cozy-text shadow-glow-peach/15'
+                      : 'bg-cozy-surface border-cozy-border/80 text-cozy-muted hover:border-rose-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm capitalize text-cozy-text">{c.name}</span>
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-sm capitalize text-cozy-text truncate">{c.name}</span>
+                      {isSelected && (
+                        <Check className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                      )}
+                    </div>
                     <span
-                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 font-semibold ${
+                      className={`text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold shrink-0 ${
                         c.available
-                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
-                          : 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
+                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-400/30'
                       }`}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                       {c.available ? (c.version ? 'Ready' : 'Ready') : 'Not Installed'}
                     </span>
                   </div>
-                  <div className="text-[11px] font-mono text-cozy-muted/80 truncate" title={c.path}>
+                  <div className="text-xs font-mono text-cozy-muted truncate" title={c.path}>
                     {c.available ? (c.version ? `${c.version}` : c.path) : 'Not found in system PATH'}
                   </div>
                 </div>
@@ -758,7 +763,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   <span>This model does not require variable reasoning effort (standard generation mode).</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
                   {currentEffortOptions.map((effort) => {
                     const isSelected = thinkingEffort.toLowerCase() === effort.id.toLowerCase();
                     return (
@@ -766,18 +771,18 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         key={effort.id}
                         type="button"
                         onClick={() => handleSelectEffort(effort.id)}
-                        className={`py-2.5 px-3.5 rounded-full text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                        className={`py-3 px-3.5 rounded-2xl text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[60px] ${
                           isSelected
-                            ? 'bg-rose-500 text-white border-rose-500 shadow-glow-peach'
-                            : 'bg-cozy-subtle/50 text-cozy-muted border-cozy-border hover:text-cozy-text hover:border-rose-400/30'
+                            ? 'bg-rose-500 text-white border-rose-500 shadow-glow-peach font-bold'
+                            : 'bg-cozy-surface text-cozy-muted border-cozy-border/80 hover:text-cozy-text hover:border-rose-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
                         }`}
                         title={effort.description}
                       >
-                        <span className="capitalize">{effort.label}</span>
+                        <span className="capitalize font-bold">{effort.label}</span>
                         {effort.description && (
                           <span
-                            className={`text-[10px] truncate max-w-full ${
-                              isSelected ? 'text-rose-100/80' : 'text-cozy-muted/70'
+                            className={`text-[10px] truncate max-w-full font-normal ${
+                              isSelected ? 'text-rose-100' : 'text-cozy-muted'
                             }`}
                           >
                             {effort.description}
