@@ -486,17 +486,31 @@ app.delete('/api/tasks/:id', (req: Request, res: Response) => {
 });
 
 app.patch('/api/tasks/:id', (req: Request, res: Response) => {
-  const { status, name } = req.body;
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+  if (!existing) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  const { status, name, base_branch, baseBranch } = req.body;
+  const targetBaseBranch = base_branch !== undefined ? base_branch : baseBranch;
+
+  if (name !== undefined && typeof name === 'string' && !name.trim()) {
+    return res.status(400).json({ error: 'Task name cannot be empty' });
+  }
+
+  const trimmedName = name !== undefined ? name.trim() : null;
   const now = Date.now();
   db.prepare(`
     UPDATE tasks SET
       status = coalesce(?, status),
       name = coalesce(?, name),
+      base_branch = coalesce(?, base_branch),
       updated_at = ?
     WHERE id = ?
-  `).run(status, name, now, req.params.id);
-  const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
-  res.json(updated);
+  `).run(status ?? null, trimmedName, targetBaseBranch ?? null, now, req.params.id);
+  const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+  const project = updated ? db.prepare('SELECT * FROM projects WHERE id = ?').get(updated.project_id) : undefined;
+  res.json({ ...updated, project });
 });
 
 // Git status & diff for task

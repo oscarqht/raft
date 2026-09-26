@@ -75,6 +75,17 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       });
   }, [taskId, routeProjectId, navigate]);
 
+  useEffect(() => {
+    const handleTaskUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<Task>;
+      if (customEvent.detail && customEvent.detail.id === taskId) {
+        setTask(customEvent.detail);
+      }
+    };
+    window.addEventListener('task-updated', handleTaskUpdated);
+    return () => window.removeEventListener('task-updated', handleTaskUpdated);
+  }, [taskId]);
+
   if (error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">

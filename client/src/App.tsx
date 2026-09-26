@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
 import { getSettings, getClis, getProject, getTask } from './api';
-import { getCachedTask } from './cache';
+import { getCachedTask, setCachedTask } from './cache';
 import { Header } from './components/Header';
+import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
 import { TaskPage } from './pages/TaskPage';
@@ -15,6 +16,7 @@ export default function App() {
 
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [clis, setClis] = useState<CliInfo[]>([]);
@@ -131,6 +133,12 @@ export default function App() {
     }
   };
 
+  const handleActiveTaskUpdated = (updatedTask: Task) => {
+    setActiveTask(updatedTask);
+    setCachedTask(updatedTask);
+    window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
+  };
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-cozy-bg text-cozy-text font-sans">
       <Header
@@ -142,6 +150,7 @@ export default function App() {
         }}
         onNavigate={handleNavigate}
         settings={settings}
+        onEditTask={currentTaskId && activeTask ? () => setIsEditTaskOpen(true) : undefined}
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
@@ -214,6 +223,17 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+
+      {/* Edit Task Modal triggered from Header breadcrumb */}
+      {isEditTaskOpen && activeTask && (
+        <EditTaskModal
+          task={activeTask}
+          isOpen={isEditTaskOpen}
+          onClose={() => setIsEditTaskOpen(false)}
+          onSuccess={handleActiveTaskUpdated}
+          projectPath={activeProject?.path || activeTask.project?.path}
+        />
+      )}
     </div>
   );
 }

@@ -18,6 +18,7 @@ import { Project, Task, Settings } from '../types';
 import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath } from '../api';
 import { setCachedTask } from '../cache';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
+import { EditTaskModal } from '../components/EditTaskModal';
 
 interface ProjectPageProps {
   projectId?: string;
@@ -55,6 +56,8 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [configModalMode, setConfigModalMode] = useState<'manual' | 'discover'>('manual');
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const loadData = async () => {
     if (!projectId) {
@@ -107,6 +110,17 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const handleOpenEditTask = (taskToEdit: Task, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTask(taskToEdit);
+    setIsEditModalOpen(true);
+  };
+
+  const handleTaskUpdated = (updatedTask: Task) => {
+    setCachedTask(updatedTask);
+    setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
   };
 
   const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
@@ -330,11 +344,19 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3 shrink-0">
-                <span className="text-[11px] text-cozy-muted hidden sm:inline flex items-center gap-1">
+              <div className="flex items-center space-x-1.5 shrink-0">
+                <span className="text-[11px] text-cozy-muted hidden sm:inline flex items-center gap-1 mr-1">
                   <Clock className="w-3 h-3" />
                   {new Date(t.created_at).toLocaleDateString()}
                 </span>
+
+                <button
+                  onClick={(e) => handleOpenEditTask(t, e)}
+                  className="p-1.5 rounded-lg text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-sky-400 hover:bg-sky-500/10 transition-all"
+                  title="Edit task name and base branch"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
 
                 <button
                   onClick={(e) => handleDeleteTask(t.id, e)}
@@ -425,6 +447,21 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           ws={ws || null}
           initialMode={configModalMode}
           availableBranches={availableBranches}
+        />
+      )}
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <EditTaskModal
+          task={editingTask}
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingTask(null);
+          }}
+          onSuccess={handleTaskUpdated}
+          availableBranches={availableBranches}
+          projectPath={project.path}
         />
       )}
     </div>

@@ -75,3 +75,47 @@ test('Project configuration can be updated in SQLite database', () => {
   // Clean up
   db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 });
+
+test('Task details (name, base_branch) can be modified in SQLite database', () => {
+  const projectId = uuidv4();
+  const taskId = uuidv4();
+  const now = Date.now();
+
+  // Create project
+  db.prepare(`
+    INSERT INTO projects (id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(projectId, 'test-p', '/test/' + projectId, 'npm dev', 3000, 'npm build', 'npm test', 'main', now, now);
+
+  // Create task
+  db.prepare(`
+    INSERT INTO tasks (id, project_id, name, branch, base_branch, worktree_path, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(taskId, projectId, 'Initial Task Name', 'task-branch-1', 'main', '/test/wt/' + taskId, 'active', now, now);
+
+  const initialTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  assert.equal(initialTask.name, 'Initial Task Name');
+  assert.equal(initialTask.base_branch, 'main');
+
+  // Update task
+  const updatedName = 'Updated Task Name';
+  const updatedBaseBranch = 'develop';
+  const updateTime = Date.now() + 100;
+
+  db.prepare(`
+    UPDATE tasks SET
+      name = coalesce(?, name),
+      base_branch = coalesce(?, base_branch),
+      updated_at = ?
+    WHERE id = ?
+  `).run(updatedName, updatedBaseBranch, updateTime, taskId);
+
+  const afterTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  assert.equal(afterTask.name, updatedName);
+  assert.equal(afterTask.base_branch, updatedBaseBranch);
+  assert.equal(afterTask.updated_at, updateTime);
+
+  // Clean up
+  db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+});

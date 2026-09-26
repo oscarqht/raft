@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Terminal, Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2 } from 'lucide-react';
+import { Terminal, Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil } from 'lucide-react';
 import { Settings } from '../types';
 
 interface HeaderProps {
@@ -12,12 +12,14 @@ interface HeaderProps {
   };
   onNavigate?: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
+  onEditTask?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentPath,
   onNavigate,
   settings,
+  onEditTask,
 }) => {
   const navigate = useNavigate();
 
@@ -73,9 +75,22 @@ export const Header: React.FC<HeaderProps> = ({
         {currentPath?.taskName && (
           <div className="flex items-center space-x-2 text-cozy-muted">
             <ChevronRight className="w-4 h-4 text-cozy-border" />
-            <span className="text-cozy-text font-medium max-w-[180px] truncate">
-              {currentPath.taskName}
-            </span>
+            <button
+              type="button"
+              onClick={onEditTask}
+              disabled={!onEditTask}
+              className={`flex items-center gap-1.5 ${
+                onEditTask ? 'group cursor-pointer hover:text-sky-400' : 'cursor-default'
+              } transition-colors text-left`}
+              title={onEditTask ? 'Click to edit task details' : undefined}
+            >
+              <span className="text-cozy-text font-medium max-w-[200px] truncate group-hover:text-sky-400">
+                {currentPath.taskName}
+              </span>
+              {onEditTask && (
+                <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-sky-400 transition-opacity shrink-0" />
+              )}
+            </button>
           </div>
         )}
       </div>
