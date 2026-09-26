@@ -4,7 +4,7 @@ import { Plus, FolderGit2, GitBranch, Terminal, Trash2, ArrowRight, Sparkles, Sl
 import { Project, Settings, SelectionMeta } from '../types';
 import { getProjects, deleteProject, validateProjectPath } from '../api';
 import { DiscoveryModal } from '../components/DiscoveryModal';
-import { FileSystemBrowser } from '../components/FileSystemBrowser';
+import { AddProjectModal } from '../components/AddProjectModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
 
 interface HomePageProps {
@@ -173,13 +173,23 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* Web-based in-page folder selector (like trident) */}
-      <FileSystemBrowser
-        open={isAddOpen}
-        onOpenChange={setIsAddOpen}
-        title="Add Local Git Repository"
-        selectionMode="repository"
-        onSelect={handleSelectRepository}
+      {/* Unified Add Project Modal (Open Existing, Clone Remote, Create New) */}
+      <AddProjectModal
+        isOpen={isAddOpen}
+        onClose={() => setIsAddOpen(false)}
+        onOpenExisting={handleSelectRepository}
+        onCloneSuccess={(clonedPath) => {
+          setIsAddOpen(false);
+          setDiscoveryPath(clonedPath);
+          setIsDiscoveryOpen(true);
+        }}
+        onCreateSuccess={(newProject) => {
+          setIsAddOpen(false);
+          loadProjects();
+          if (newProject?.id) {
+            handleSelect(newProject.id);
+          }
+        }}
       />
 
       {/* Discovery Modal */}

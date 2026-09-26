@@ -90,6 +90,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
   CREATE INDEX IF NOT EXISTS idx_chat_sessions_task ON chat_sessions(task_id);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+
+  CREATE TABLE IF NOT EXISTS git_accounts (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    name TEXT NOT NULL,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
+    token TEXT NOT NULL,
+    host TEXT NOT NULL DEFAULT 'https://github.com',
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // Migrations for existing databases
@@ -136,5 +147,46 @@ if (!getSettingStmt.get('thinking_effort')) {
 }
 if (!getSettingStmt.get('theme')) {
   setSetting('theme', 'auto');
+}
+
+export interface GitAccountRow {
+  id: string;
+  provider: 'github' | 'gitlab';
+  name: string;
+  username: string;
+  avatar_url: string | null;
+  token: string;
+  host: string;
+  created_at: number;
+}
+
+export function getAllGitAccounts(): Omit<GitAccountRow, 'token'>[] {
+  const rows = db.prepare('SELECT id, provider, name, username, avatar_url, host, created_at FROM git_accounts ORDER BY created_at ASC').all() as any[];
+  return rows;
+}
+
+export function getGitAccountById(id: string): GitAccountRow | undefined {
+  return db.prepare('SELECT * FROM git_accounts WHERE id = ?').get(id) as GitAccountRow | undefined;
+}
+
+export function insertGitAccount(account: GitAccountRow): void {
+  db.prepare(`
+    INSERT INTO git_accounts (id, provider, name, username, avatar_url, token, host, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    account.id,
+    account.provider,
+    account.name,
+    account.username,
+    account.avatar_url || null,
+    account.token,
+    account.host || (account.provider === 'github' ? 'https://github.com' : 'https://gitlab.com'),
+    account.created_at
+  );
+}
+
+export function deleteGitAccountById(id: string): boolean {
+  const info = db.prepare('DELETE FROM git_accounts WHERE id = ?').run(id);
+  return info.changes > 0;
 }
 

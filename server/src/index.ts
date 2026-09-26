@@ -6,8 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
 
-import { db, getSetting, setSetting } from './db.js';
+import { db, getSetting, setSetting, getAllGitAccounts, getGitAccountById, insertGitAccount, deleteGitAccountById } from './db.js';
 import { GitService } from './gitService.js';
 import {
   getAvailableClis,
@@ -148,6 +149,189 @@ app.get('/api/skills', (req: Request, res: Response) => {
     res.json(skills);
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to get skills' });
+  }
+});
+
+// ===================== Git Accounts APIs =====================
+app.get('/api/git-accounts', (_req: Request, res: Response) => {
+  res.json(getAllGitAccounts());
+});
+
+app.post('/api/git-accounts/verify', async (req: Request, res: Response) => {
+  const { provider, token, host } = req.body;
+  if (!provider || !token) {
+    return res.status(400).json({ error: 'provider and token are required' });
+  }
+
+  try {
+    if (provider === 'github') {
+      const baseHost = (host && host.trim()) || 'https://github.com';
+      const isEnterprise = !baseHost.includes('github.com');
+      const apiUrl = isEnterprise
+        ? `${baseHost.replace(/\/+$/, '')}/api/v3/user`
+        : 'https://api.github.com/user';
+
+      const resp = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Raft-App',
+        },
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return res.status(resp.status).json({ error: `GitHub verification failed (${resp.status}): ${errText}` });
+      }
+
+      const data = await resp.json() as any;
+      return res.json({
+        valid: true,
+        username: data.login,
+        name: data.name || data.login,
+        avatarUrl: data.avatar_url || null,
+        provider: 'github',
+        host: baseHost,
+      });
+    } else if (provider === 'gitlab') {
+      const baseHost = (host && host.trim()) || 'https://gitlab.com';
+      const apiUrl = `${baseHost.replace(/\/+$/, '')}/api/v4/user`;
+
+      const resp = await fetch(apiUrl, {
+        headers: {
+          'PRIVATE-TOKEN': token.trim(),
+          'User-Agent': 'Raft-App',
+        },
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return res.status(resp.status).json({ error: `GitLab verification failed (${resp.status}): ${errText}` });
+      }
+
+      const data = await resp.json() as any;
+      return res.json({
+        valid: true,
+        username: data.username,
+        name: data.name || data.username,
+        avatarUrl: data.avatar_url || null,
+        provider: 'gitlab',
+        host: baseHost,
+      });
+    } else {
+      return res.status(400).json({ error: `Unsupported git provider: ${provider}` });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: `Verification network error: ${err.message}` });
+  }
+});
+
+app.post('/api/git-accounts', (req: Request, res: Response) => {
+  const { provider, name, username, avatar_url, token, host } = req.body;
+  if (!provider || !name || !username || !token) {
+    return res.status(400).json({ error: 'provider, name, username, and token are required' });
+  }
+
+  const id = uuidv4();
+  const created_at = Date.now();
+  const accountHost = (host && host.trim()) || (provider === 'github' ? 'https://github.com' : 'https://gitlab.com');
+  insertGitAccount({
+    id,
+    provider,
+    name,
+    username,
+    avatar_url: avatar_url || null,
+    token: token.trim(),
+    host: accountHost,
+    created_at,
+  });
+
+  res.json({
+    id,
+    provider,
+    name,
+    username,
+    avatar_url: avatar_url || null,
+    host: accountHost,
+    created_at,
+  });
+});
+
+app.delete('/api/git-accounts/:id', (req: Request, res: Response) => {
+  const success = deleteGitAccountById(req.params.id as string);
+  if (!success) {
+    return res.status(404).json({ error: 'Git account not found' });
+  }
+  res.json({ success: true });
+});
+
+app.get('/api/git-accounts/:id/repos', async (req: Request, res: Response) => {
+  const account = getGitAccountById(req.params.id as string);
+  if (!account) {
+    return res.status(404).json({ error: 'Git account not found' });
+  }
+
+  try {
+    if (account.provider === 'github') {
+      const isEnterprise = !account.host.includes('github.com');
+      const apiUrl = isEnterprise
+        ? `${account.host.replace(/\/+$/, '')}/api/v3/user/repos?per_page=100&sort=updated`
+        : 'https://api.github.com/user/repos?per_page=100&sort=updated';
+
+      const resp = await fetch(apiUrl, {
+        headers: {
+          Authorization: `Bearer ${account.token}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'Raft-App',
+        },
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return res.status(resp.status).json({ error: `Failed to fetch GitHub repos (${resp.status}): ${errText}` });
+      }
+
+      const repos = (await resp.json()) as any[];
+      const items = repos.map((r) => ({
+        name: r.name,
+        fullName: r.full_name,
+        cloneUrl: r.clone_url,
+        sshUrl: r.ssh_url,
+        isPrivate: !!r.private,
+        description: r.description,
+        updatedAt: r.updated_at,
+      }));
+      return res.json(items);
+    } else if (account.provider === 'gitlab') {
+      const apiUrl = `${account.host.replace(/\/+$/, '')}/api/v4/projects?membership=true&per_page=100&order_by=updated_at`;
+      const resp = await fetch(apiUrl, {
+        headers: {
+          'PRIVATE-TOKEN': account.token,
+          'User-Agent': 'Raft-App',
+        },
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return res.status(resp.status).json({ error: `Failed to fetch GitLab repos (${resp.status}): ${errText}` });
+      }
+
+      const projects = (await resp.json()) as any[];
+      const items = projects.map((p) => ({
+        name: p.name,
+        fullName: p.path_with_namespace,
+        cloneUrl: p.http_url_to_repo,
+        sshUrl: p.ssh_url_to_repo,
+        isPrivate: p.visibility !== 'public',
+        description: p.description,
+        updatedAt: p.last_activity_at,
+      }));
+      return res.json(items);
+    } else {
+      return res.status(400).json({ error: `Unsupported git provider: ${account.provider}` });
+    }
+  } catch (err: any) {
+    return res.status(500).json({ error: `Error fetching remote repositories: ${err.message}` });
   }
 });
 
@@ -396,6 +580,169 @@ app.post('/api/projects', (req: Request, res: Response) => {
     res.json(formatProject(project));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Clone Remote Git Repository Stream (SSE)
+app.get('/api/projects/clone/stream', async (req: Request, res: Response) => {
+  const url = ((req.query.url as string) || '').trim();
+  const parentPath = ((req.query.parentPath as string) || '').trim();
+  const folderName = ((req.query.folderName as string) || '').trim();
+  const accountId = ((req.query.accountId as string) || '').trim();
+
+  if (!url || !parentPath || !folderName) {
+    return res.status(400).json({ error: 'url, parentPath, and folderName are required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const resolvedParent = path.resolve(parentPath);
+  const targetPath = path.join(resolvedParent, folderName);
+
+  if (fs.existsSync(targetPath)) {
+    sendEvent({ type: 'output', chunk: `Error: Destination directory already exists: ${targetPath}\n` });
+    sendEvent({ type: 'done', success: false, error: 'Destination directory already exists' });
+    return res.end();
+  }
+
+  try {
+    if (!fs.existsSync(resolvedParent)) {
+      fs.mkdirSync(resolvedParent, { recursive: true });
+    }
+  } catch (err: any) {
+    sendEvent({ type: 'output', chunk: `Error creating parent directory: ${err.message}\n` });
+    sendEvent({ type: 'done', success: false, error: err.message });
+    return res.end();
+  }
+
+  const cloneArgs: string[] = ['clone', '--progress'];
+  let tokenToMask = '';
+  let account: any = null;
+
+  if (accountId) {
+    account = getGitAccountById(accountId);
+    if (account && account.token) {
+      tokenToMask = account.token;
+      const authBasic = Buffer.from(`${account.username || 'git'}:${account.token}`).toString('base64');
+      cloneArgs.push('-c', `http.extraheader=AUTHORIZATION: basic ${authBasic}`);
+    }
+  }
+
+  cloneArgs.push(url, targetPath);
+
+  sendEvent({ type: 'output', chunk: `→ git clone --progress ${url} ${targetPath}\n` });
+
+  let proc: any;
+  try {
+    proc = spawn('git', cloneArgs, {
+      cwd: resolvedParent,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    req.on('close', () => {
+      try {
+        if (proc && !proc.killed) proc.kill();
+      } catch {}
+    });
+
+    const sanitize = (text: string) => {
+      if (!tokenToMask) return text;
+      return text.replaceAll(tokenToMask, '***');
+    };
+
+    proc.stdout?.on('data', (d: Buffer) => {
+      sendEvent({ type: 'output', chunk: sanitize(d.toString('utf-8')) });
+    });
+
+    proc.stderr?.on('data', (d: Buffer) => {
+      sendEvent({ type: 'output', chunk: sanitize(d.toString('utf-8')) });
+    });
+
+    proc.on('close', (code: number) => {
+      if (code === 0) {
+        if (account && account.token && url.startsWith('http')) {
+          GitService.configureRepoCredentials(targetPath, url, account.token, account.username);
+        }
+        const repoInfo = GitService.getRepoInfo(targetPath);
+        sendEvent({
+          type: 'done',
+          success: true,
+          projectPath: targetPath,
+          repoInfo,
+        });
+      } else {
+        sendEvent({
+          type: 'done',
+          success: false,
+          error: `git clone failed with exit code ${code}`,
+        });
+      }
+      res.end();
+    });
+
+    proc.on('error', (err: any) => {
+      sendEvent({ type: 'output', chunk: `\n[error] ${err.message}\n` });
+      sendEvent({ type: 'done', success: false, error: err.message });
+      res.end();
+    });
+  } catch (err: any) {
+    sendEvent({ type: 'output', chunk: `\n[error] ${err.message}\n` });
+    sendEvent({ type: 'done', success: false, error: err.message });
+    res.end();
+  }
+});
+
+// Create New Local Git Repository
+app.post('/api/projects/create-new', (req: Request, res: Response) => {
+  const { parentPath, name, defaultBranch, initReadme } = req.body;
+  if (!parentPath || !name) {
+    return res.status(400).json({ error: 'parentPath and name are required' });
+  }
+
+  try {
+    const repoInfo = GitService.createNewRepo(parentPath, name, defaultBranch || 'main', initReadme !== false);
+    if (!repoInfo.isRepo) {
+      return res.status(500).json({ error: repoInfo.error || 'Failed to create git repository' });
+    }
+
+    const id = uuidv4();
+    const now = Date.now();
+    const targetPath = repoInfo.repoRoot;
+
+    const stmt = db.prepare(`
+      INSERT INTO projects (
+        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
+        default_agent_cli, default_model, custom_scripts, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      name,
+      targetPath,
+      'npm run dev',
+      5173,
+      'npm run build',
+      'npm test',
+      repoInfo.currentBranch || defaultBranch || 'main',
+      getEffectiveAgentCli(),
+      getSetting('default_model', ''),
+      '[]',
+      now,
+      now
+    );
+
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+    res.json({ project: formatProject(project), repoInfo });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create new repository' });
   }
 });
 

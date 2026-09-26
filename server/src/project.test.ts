@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { db } from './db.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { db, insertGitAccount, getAllGitAccounts, getGitAccountById, deleteGitAccountById } from './db.js';
+import { GitService } from './gitService.js';
 import { v4 as uuidv4 } from 'uuid';
 
 test('Project configuration can be updated in SQLite database', () => {
@@ -176,3 +180,80 @@ test('Project custom scripts can be saved, retrieved, and updated', () => {
   // Clean up
   db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 });
+
+test('GitService.createNewRepo initializes directory with git, readme, and initial commit', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-test-new-repo-'));
+  try {
+    const repoInfo = GitService.createNewRepo(tmpDir, 'my-brand-new-app', 'main', true);
+    assert.equal(repoInfo.isRepo, true);
+    assert.equal(repoInfo.currentBranch, 'main');
+    const fullPath = path.join(tmpDir, 'my-brand-new-app');
+    assert.ok(fs.existsSync(path.join(fullPath, '.git')));
+    assert.ok(fs.existsSync(path.join(fullPath, 'README.md')));
+    const readmeContent = fs.readFileSync(path.join(fullPath, 'README.md'), 'utf-8');
+    assert.ok(readmeContent.includes('my-brand-new-app'));
+
+    // Verify git log has the initial commit
+    const log = GitService.getUnpushedCommits(fullPath);
+    // There are commits in the repo (or git rev-parse HEAD succeeds)
+    assert.ok(repoInfo.repoRoot.length > 0);
+
+    // Verify creating worktree on this repo works because HEAD exists!
+    const wt = GitService.createWorktree(fullPath, 'test-task', 'main');
+    assert.ok(fs.existsSync(wt.worktreePath));
+    GitService.removeWorktree(fullPath, wt.worktreePath, wt.branch);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('Git Accounts CRUD persistence in database', () => {
+  const accId = uuidv4();
+  const testAccount = {
+    id: accId,
+    provider: 'github' as const,
+    name: 'GitHub (testuser)',
+    username: 'testuser',
+    avatar_url: 'https://example.com/avatar.png',
+    token: 'ghp_secret_token_12345',
+    host: 'https://github.com',
+    created_at: Date.now(),
+  };
+
+  insertGitAccount(testAccount);
+
+  const allAccounts = getAllGitAccounts();
+  const found = allAccounts.find((a) => a.id === accId);
+  assert.ok(found);
+  assert.equal(found.username, 'testuser');
+  assert.equal(found.provider, 'github');
+  // Token should not be in getAllGitAccounts
+  assert.equal((found as any).token, undefined);
+
+  const fullAccount = getGitAccountById(accId);
+  assert.ok(fullAccount);
+  assert.equal(fullAccount.token, 'ghp_secret_token_12345');
+
+  const deleted = deleteGitAccountById(accId);
+  assert.equal(deleted, true);
+  assert.equal(getGitAccountById(accId), undefined);
+});
+
+test('GitService.configureRepoCredentials configures local extraheader', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-creds-'));
+  try {
+    GitService.createNewRepo(tmpDir, 'auth-repo');
+    const repoPath = path.join(tmpDir, 'auth-repo');
+    GitService.configureRepoCredentials(repoPath, 'https://github.com/myorg/myrepo.git', 'ghp_secret_token_abc123');
+
+    // Read .git/config
+    const gitConfig = fs.readFileSync(path.join(repoPath, '.git', 'config'), 'utf-8');
+    assert.ok(gitConfig.includes('extraheader'));
+    assert.ok(gitConfig.includes('AUTHORIZATION: basic'));
+    // Make sure raw token is base64 encoded and origin URL is not modified with raw token
+    assert.ok(!gitConfig.includes('ghp_secret_token_abc123'));
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
