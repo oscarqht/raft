@@ -40,9 +40,22 @@ pub fn is_tailscale_ip(ipv4: std::net::Ipv4Addr) -> bool {
     octets[0] == 100 && (64..=127).contains(&octets[1])
 }
 
+pub fn is_tailscale_ip_str(ip_str: &str) -> bool {
+    if let Ok(ip) = ip_str.trim().parse::<std::net::Ipv4Addr>() {
+        is_tailscale_ip(ip)
+    } else {
+        false
+    }
+}
+
 /// Resolve the host to bind to. Looks for Tailscale IP (100.64.0.0/10), falling back to 127.0.0.1.
 pub fn resolve_host() -> String {
     if let Ok(host) = std::env::var("HOST") {
+        if !host.trim().is_empty() {
+            return host.trim().to_string();
+        }
+    }
+    if let Ok(host) = std::env::var("TAILSCALE_IP") {
         if !host.trim().is_empty() {
             return host.trim().to_string();
         }
@@ -58,6 +71,28 @@ pub fn resolve_host() -> String {
             if let std::net::IpAddr::V4(ipv4) = ip {
                 if is_tailscale_ip(ipv4) {
                     return ipv4.to_string();
+                }
+            }
+        }
+    }
+
+    // CLI fallback: try `tailscale ip -4`
+    let candidate_commands = [
+        "tailscale",
+        "/opt/homebrew/bin/tailscale",
+        "/usr/local/bin/tailscale",
+        "/usr/bin/tailscale",
+        "C:\\Program Files\\Tailscale\\tailscale.exe",
+    ];
+    for cmd in candidate_commands {
+        if let Ok(output) = std::process::Command::new(cmd).args(["ip", "-4"]).output() {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                for line in stdout.lines() {
+                    let trimmed = line.trim();
+                    if is_tailscale_ip_str(trimmed) {
+                        return trimmed.to_string();
+                    }
                 }
             }
         }
@@ -382,7 +417,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
-    let health_url = format!("http://127.0.0.1:{}/api/settings", port);
+    let health_url = format!("http://{}:{}/api/settings", host, port);
     let start_time = std::time::Instant::now();
     let timeout = Duration::from_secs(25);
     let mut is_ready = false;
@@ -412,7 +447,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
         return Err(format!("Server did not become ready at {health_url} within 25 seconds."));
     }
 
-    let server_url = format!("http://localhost:{}", port);
+    let server_url = format!("http://{}:{}", host, port);
     println!("[raft] Server successfully verified ready at {}", server_url);
     Ok((server_url, port))
 }
