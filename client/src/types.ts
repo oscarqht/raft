@@ -61,6 +61,8 @@ export interface ChatSession {
   model?: string;
   thinking_effort?: string;
   status: 'idle' | 'running';
+  cli_session_id?: string;
+  cli_session_agent?: string;
   created_at: number;
   updated_at: number;
 }

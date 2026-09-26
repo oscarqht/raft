@@ -753,6 +753,44 @@ export interface StreamEvent {
   type: 'chunk' | 'thought' | 'tool' | 'status' | 'error' | 'done';
   content?: string;
   metadata?: any;
+  conversationId?: string;
+}
+
+// Builds a clean previous conversation context block when no native CLI session can be resumed
+export function buildConversationContextFallback(
+  messages: Array<{ role: string; content: string }>,
+  currentPrompt: string,
+  maxTurns: number = 8
+): string {
+  if (!messages || messages.length === 0) {
+    return currentPrompt;
+  }
+
+  // Filter out any empty messages
+  const relevant = messages.filter((m) => m.content && m.content.trim().length > 0);
+  if (relevant.length === 0) {
+    return currentPrompt;
+  }
+
+  // Take the last N messages
+  const recent = relevant.slice(-maxTurns);
+
+  // Strip large <thought> blocks from previous turns to keep prompt clean
+  const formattedTurns = recent
+    .map((m) => {
+      let text = m.content;
+      text = text.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+      const speaker = m.role === 'user' ? 'User' : 'Assistant';
+      return `${speaker}: ${text}`;
+    })
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+
+  if (!formattedTurns.trim()) {
+    return currentPrompt;
+  }
+
+  return `[Previous Conversation History]\n${formattedTurns}\n\n[Current User Message]\n${currentPrompt}`;
 }
 
 // Spawns an agent CLI process with streaming output
@@ -774,6 +812,9 @@ export function spawnAgentCli(
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
+  // Close stdin immediately so non-interactive tools (like codex exec) don't hang waiting for stdin
+  proc.stdin?.end();
+
   let lineBuffer = '';
   let hasStreamedDeltas = false;
 
@@ -789,10 +830,38 @@ export function spawnAgentCli(
       let handled = false;
       try {
         const parsed = JSON.parse(trimmed);
-        if (parsed.event || parsed.type || parsed.role) {
+        if (
+          parsed.event ||
+          parsed.type ||
+          parsed.role ||
+          parsed.conversation_id ||
+          parsed.thread_id ||
+          parsed.session_id
+        ) {
           handled = true;
+
+          // Extract conversation/thread ID across CLIs (agy: conversation_id, codex: thread_id, claude: session_id)
+          const detectedConversationId =
+            parsed.conversation_id ||
+            parsed.thread_id ||
+            parsed.session_id ||
+            parsed.step_update?.conversation_id ||
+            parsed.result?.conversation_id ||
+            parsed.result?.session_id;
+
+          if (detectedConversationId) {
+            onEvent({
+              type: 'status',
+              content: '',
+              metadata: { conversationId: detectedConversationId, ...parsed },
+              conversationId: detectedConversationId,
+            });
+          }
+
           // Handle agy stream-json format
-          if (parsed.event === 'step_update') {
+          if (parsed.event === 'init') {
+            // Handled conversationId above
+          } else if (parsed.event === 'step_update') {
             const step = parsed.step_update;
             if (step) {
               if (step.step_type === 'tool' && step.state === 'ACTIVE') {
@@ -817,6 +886,7 @@ export function spawnAgentCli(
                   type: 'thought',
                   content: `→ ${desc}\n`,
                   metadata: parsed,
+                  conversationId: detectedConversationId,
                 });
               } else if (step.step_type === 'agent_response' && step.text_delta) {
                 hasStreamedDeltas = true;
@@ -824,6 +894,7 @@ export function spawnAgentCli(
                   type: 'chunk',
                   content: step.text_delta,
                   metadata: parsed,
+                  conversationId: detectedConversationId,
                 });
               }
             }
@@ -834,16 +905,23 @@ export function spawnAgentCli(
                 type: 'chunk',
                 content: finalResponse,
                 metadata: { ...parsed, isFinalResult: true },
+                conversationId: detectedConversationId,
               });
             }
           } else if (parsed.type || parsed.role) {
             // General JSON event (Claude, Codex, etc.)
-            const content = parsed.content || parsed.text || parsed.delta?.text;
+            const content =
+              parsed.content ||
+              parsed.text ||
+              parsed.delta?.text ||
+              parsed.item?.text ||
+              (parsed.item?.message ? parsed.item.message : undefined);
             if (content) {
               onEvent({
                 type: parsed.type === 'thought' ? 'thought' : 'chunk',
                 content: typeof content === 'string' ? content : JSON.stringify(content),
                 metadata: parsed,
+                conversationId: detectedConversationId,
               });
             }
           }

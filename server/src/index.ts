@@ -18,6 +18,7 @@ import {
   runRebaseAgent,
   runSubmitAgent,
   spawnAgentCli,
+  buildConversationContextFallback,
   CommitMessageResult,
   StreamEvent,
 } from './agentRunner.js';
@@ -811,11 +812,13 @@ app.patch('/api/chats/:id', (req: Request, res: Response) => {
   const newCli = agent_cli !== undefined ? agent_cli : existing.agent_cli;
   const newModel = model !== undefined ? model : existing.model;
   const newEffort = thinking_effort !== undefined ? thinking_effort : existing.thinking_effort;
+  const isCliChanged = agent_cli !== undefined && agent_cli !== existing.agent_cli;
   const now = Date.now();
 
   db.prepare(`
     UPDATE chat_sessions
     SET title = ?, agent_cli = ?, model = ?, thinking_effort = ?, updated_at = ?
+    ${isCliChanged ? ', cli_session_id = NULL, cli_session_agent = NULL' : ''}
     WHERE id = ?
   `).run(newTitle, newCli, newModel, newEffort, now, chatId);
 
@@ -1022,25 +1025,66 @@ wss.on('connection', (ws: WebSocket) => {
         const modelToUse = model || session.model;
         const effortToUse = thinkingEffort || session.thinking_effort;
 
-        const effectivePrompt = resolveSkillPrompt(cliToUse, prompt, task.worktree_path);
+        // Check if session has an existing CLI conversation/thread matching this engine
+        const canResumeCliSession = Boolean(
+          session.cli_session_id &&
+          session.cli_session_agent &&
+          session.cli_session_agent.toLowerCase() === cliToUse.toLowerCase()
+        );
+        const cliSessionIdToResume = canResumeCliSession ? session.cli_session_id : null;
+
+        let effectivePrompt = resolveSkillPrompt(cliToUse, prompt, task.worktree_path);
+        let promptForAgy = prompt;
+
+        // If not resuming a native CLI session, provide conversational history fallback
+        if (!canResumeCliSession) {
+          const prevMessages = db.prepare(`
+            SELECT role, content FROM chat_messages
+            WHERE session_id = ? AND id != ?
+            ORDER BY timestamp ASC
+          `).all(sessionId, userMsgId) as Array<{ role: string; content: string }>;
+
+          if (prevMessages.length > 0) {
+            promptForAgy = buildConversationContextFallback(prevMessages, prompt);
+            effectivePrompt = buildConversationContextFallback(prevMessages, effectivePrompt);
+          }
+        }
 
         // Construct CLI args for agent turn
         const args: string[] = [];
         if (cliToUse === 'agy') {
-          args.push('-p', prompt);
+          if (cliSessionIdToResume) {
+            args.push('--conversation', cliSessionIdToResume);
+          }
+          args.push('-p', promptForAgy);
           if (modelToUse) args.push('--model', modelToUse);
           const agyEffort = (effortToUse && effortToUse !== 'none') ? effortToUse : 'medium';
           args.push('--effort', agyEffort);
           args.push('--output-format', 'stream-json');
           args.push('--dangerously-skip-permissions');
         } else if (cliToUse === 'claude') {
-          args.push('-p', effectivePrompt);
+          if (cliSessionIdToResume) {
+            args.push('--resume', cliSessionIdToResume);
+            args.push('-p', effectivePrompt);
+          } else {
+            const newClaudeId = uuidv4();
+            args.push('--session-id', newClaudeId);
+            args.push('-p', effectivePrompt);
+            try {
+              db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
+                .run(newClaudeId, 'claude', sessionId);
+            } catch {}
+          }
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') args.push('--effort', effortToUse);
           args.push('--dangerously-skip-permissions');
         } else {
           // codex
-          args.push('exec', effectivePrompt);
+          if (cliSessionIdToResume) {
+            args.push('exec', 'resume', cliSessionIdToResume, effectivePrompt);
+          } else {
+            args.push('exec', effectivePrompt);
+          }
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') {
             args.push('-c', `model_reasoning_effort="${effortToUse}"`);
@@ -1095,6 +1139,13 @@ wss.on('connection', (ws: WebSocket) => {
         };
 
         const proc = spawnAgentCli(cliToUse, args, task.worktree_path, (ev: StreamEvent) => {
+          // If a conversation ID was detected from the CLI stream, persist it to chat_sessions
+          if (ev.conversationId) {
+            try {
+              db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
+                .run(ev.conversationId, cliToUse, sessionId);
+            } catch {}
+          }
           if (ev.type === 'thought' && ev.content) {
             assistantThoughts += ev.content;
             assistantContent = compileAssistantContent();
@@ -1119,6 +1170,12 @@ wss.on('connection', (ws: WebSocket) => {
 
           if (ev.type === 'done' || ev.type === 'error') {
             const finishedAt = Date.now();
+            if (cliSessionIdToResume && ev.metadata?.code && ev.metadata.code !== 0) {
+              try {
+                db.prepare('UPDATE chat_sessions SET cli_session_id = NULL, cli_session_agent = NULL WHERE id = ?')
+                  .run(sessionId);
+              } catch {}
+            }
             if (!assistantResponse.trim() && ev.type === 'done') {
               if (assistantThoughts.trim()) {
                 const actionCount = (assistantThoughts.match(/→/g) || []).length;

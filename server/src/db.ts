@@ -58,6 +58,8 @@ db.exec(`
     model TEXT,
     thinking_effort TEXT,
     status TEXT NOT NULL DEFAULT 'idle',
+    cli_session_id TEXT,
+    cli_session_agent TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -81,6 +83,16 @@ db.exec(`
 // Migrations for existing databases
 try {
   db.exec('ALTER TABLE projects ADD COLUMN custom_scripts TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE chat_sessions ADD COLUMN cli_session_id TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE chat_sessions ADD COLUMN cli_session_agent TEXT');
 } catch {
   // column already exists
 }
