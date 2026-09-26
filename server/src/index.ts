@@ -616,6 +616,30 @@ function broadcastWs(data: any) {
   }
 }
 
+app.patch('/api/chats/:id', (req: Request, res: Response) => {
+  const chatId = req.params.id as string;
+  const { title, agent_cli, model, thinking_effort } = req.body;
+  const existing = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatId) as any;
+  if (!existing) {
+    return res.status(404).json({ error: 'Chat session not found' });
+  }
+
+  const newTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : existing.title;
+  const newCli = agent_cli !== undefined ? agent_cli : existing.agent_cli;
+  const newModel = model !== undefined ? model : existing.model;
+  const newEffort = thinking_effort !== undefined ? thinking_effort : existing.thinking_effort;
+  const now = Date.now();
+
+  db.prepare(`
+    UPDATE chat_sessions
+    SET title = ?, agent_cli = ?, model = ?, thinking_effort = ?, updated_at = ?
+    WHERE id = ?
+  `).run(newTitle, newCli, newModel, newEffort, now, chatId);
+
+  const updated = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatId);
+  res.json(updated);
+});
+
 app.delete('/api/chats/:id', (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   if (activeChatSessions.has(chatId)) {

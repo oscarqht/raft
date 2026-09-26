@@ -217,6 +217,19 @@ export async function createChatSession(taskId: string, title?: string, agent_cl
   return res.json();
 }
 
+export async function updateChatSession(id: string, data: Partial<ChatSession>): Promise<ChatSession> {
+  const res = await fetch(`${API_BASE}/chats/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to update chat session');
+  }
+  return res.json();
+}
+
 export async function deleteChatSession(id: string): Promise<{ success: boolean }> {
   const res = await fetch(`${API_BASE}/chats/${id}`, { method: 'DELETE' });
   return res.json();

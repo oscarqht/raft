@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown } from 'lucide-react';
+import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption } from '../types';
 import { ChatMessageList } from './ChatMessageList';
-import { getTaskChats, createChatSession, deleteChatSession, getChatMessages, getModels } from '../api';
+import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels } from '../api';
 import {
   getCachedChats,
   setCachedChats,
@@ -59,6 +59,18 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [tabCli, setTabCli] = useState<string>('');
   const [tabModel, setTabModel] = useState<string>('');
   const [tabEffort, setTabEffort] = useState<string>('');
+
+  // Tab rename state
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingChatId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingChatId]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -278,6 +290,82 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   };
 
+  const handleStartRename = (chat: ChatSession, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditingChatId(chat.id);
+    setEditTitle(chat.title);
+  };
+
+  const handleSaveRename = async (id: string) => {
+    const trimmed = editTitle.trim();
+    setEditingChatId(null);
+    if (!trimmed) return;
+    const currentChat = chats.find((c) => c.id === id);
+    if (currentChat && currentChat.title === trimmed) return;
+
+    const nextChats = chats.map((c) => (c.id === id ? { ...c, title: trimmed } : c));
+    setChats(nextChats);
+    setCachedChats(task.id, nextChats);
+
+    try {
+      await updateChatSession(id, { title: trimmed });
+    } catch {
+      loadChats();
+    }
+  };
+
+  const handleRenameKeyDown = (id: string, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveRename(id);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditingChatId(null);
+    }
+  };
+
+  const handleCliChange = (newCli: string) => {
+    setTabCli(newCli);
+    if (activeChatId) {
+      const nextChats = chats.map((c) => (c.id === activeChatId ? { ...c, agent_cli: newCli } : c));
+      setChats(nextChats);
+      setCachedChats(task.id, nextChats);
+      updateChatSession(activeChatId, { agent_cli: newCli }).catch(() => {});
+    }
+  };
+
+  const handleModelChange = (newModel: string) => {
+    setTabModel(newModel);
+    const found = availableModels.find((m) => m.id === newModel);
+    let nextEffort = tabEffort;
+    if (found?.reasoningEfforts && found.reasoningEfforts.length > 0) {
+      if (!found.reasoningEfforts.map((s) => s.toLowerCase()).includes(tabEffort.toLowerCase())) {
+        nextEffort = found.defaultEffort || found.reasoningEfforts[0];
+        setTabEffort(nextEffort);
+      }
+    }
+    if (activeChatId) {
+      const nextChats = chats.map((c) =>
+        c.id === activeChatId ? { ...c, model: newModel, thinking_effort: nextEffort } : c
+      );
+      setChats(nextChats);
+      setCachedChats(task.id, nextChats);
+      updateChatSession(activeChatId, { model: newModel, thinking_effort: nextEffort }).catch(() => {});
+    }
+  };
+
+  const handleEffortChange = (newEffort: string) => {
+    setTabEffort(newEffort);
+    if (activeChatId) {
+      const nextChats = chats.map((c) =>
+        c.id === activeChatId ? { ...c, thinking_effort: newEffort } : c
+      );
+      setChats(nextChats);
+      setCachedChats(task.id, nextChats);
+      updateChatSession(activeChatId, { thinking_effort: newEffort }).catch(() => {});
+    }
+  };
+
   const handleSendMessage = () => {
     if (!inputPrompt.trim() || !activeChatId || !ws || isStreaming) return;
     const prompt = inputPrompt.trim();
@@ -347,6 +435,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-2">
           {chats.map((c) => {
             const isActive = c.id === activeChatId;
+            const isEditing = editingChatId === c.id;
             return (
               <div
                 key={c.id}
@@ -357,14 +446,46 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     : 'bg-transparent border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/40'
                 }`}
               >
-                <span className="truncate max-w-[100px]">{c.title}</span>
-                {chats.length > 1 && (
-                  <button
-                    onClick={(e) => handleDeleteChat(c.id, e)}
-                    className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+                {isEditing ? (
+                  <input
+                    ref={editInputRef}
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onBlur={() => handleSaveRename(c.id)}
+                    onKeyDown={(e) => handleRenameKeyDown(c.id, e)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-cozy-surface text-cozy-text border border-sky-500 rounded px-1.5 py-0.5 text-xs outline-none w-24"
+                    autoFocus
+                  />
+                ) : (
+                  <>
+                    <span
+                      className="truncate max-w-[110px]"
+                      onDoubleClick={(e) => handleStartRename(c, e)}
+                      title="Double-click to rename"
+                    >
+                      {c.title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleStartRename(c, e)}
+                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-sky-400 transition-opacity"
+                      title="Rename chat"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                    {chats.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteChat(c.id, e)}
+                        className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-opacity"
+                        title="Close chat"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             );
@@ -380,18 +501,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
         {/* Action Buttons: Sync/Rebase & Submit */}
         <div className="flex items-center space-x-1.5 shrink-0">
-          <button
-            onClick={() => setShowConfig(!showConfig)}
-            className={`p-1.5 rounded-lg text-xs transition-colors border ${
-              showConfig
-                ? 'bg-sky-500/10 border-sky-500/30 text-sky-400'
-                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border-transparent'
-            }`}
-            title="Configure Tab Agent CLI / Model"
-          >
-            <Sliders className="w-3.5 h-3.5" />
-          </button>
-
           <button
             onClick={onOpenRebase}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:border-amber-500/40 hover:text-amber-300 transition-all shadow-sm"
@@ -412,69 +521,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </div>
       </div>
 
-      {/* Tab Agent Override Bar (collapsible) */}
-      {showConfig && (
-        <div className="px-4 py-2 bg-cozy-subtle/80 border-b border-cozy-border flex items-center space-x-3 text-xs text-cozy-muted">
-          <div className="flex items-center space-x-1.5">
-            <span className="font-medium text-cozy-text">Agent:</span>
-            <select
-              value={tabCli}
-              onChange={(e) => setTabCli(e.target.value)}
-              className="bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500"
-            >
-              {clis.map((c) => (
-                <option key={c.name} value={c.name}>
-                  {c.name} {!c.available && '(not found)'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center space-x-1.5 flex-1 max-w-xs">
-            <span className="font-medium text-cozy-text">Model:</span>
-            <select
-              value={tabModel}
-              onChange={(e) => {
-                const nextModel = e.target.value;
-                setTabModel(nextModel);
-                const found = availableModels.find((m) => m.id === nextModel);
-                if (found?.reasoningEfforts && found.reasoningEfforts.length > 0) {
-                  if (!found.reasoningEfforts.map((s) => s.toLowerCase()).includes(tabEffort.toLowerCase())) {
-                    setTabEffort(found.defaultEffort || found.reasoningEfforts[0]);
-                  }
-                }
-              }}
-              className="w-full bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500 truncate"
-            >
-              {availableModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center space-x-1.5">
-            <span className="font-medium text-cozy-text">Effort:</span>
-            <select
-              value={tabEffort}
-              onChange={(e) => setTabEffort(e.target.value)}
-              className="bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500 capitalize"
-            >
-              {(() => {
-                const current = availableModels.find((m) => m.id === tabModel);
-                const efforts = current?.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
-                return efforts.map((eff) => (
-                  <option key={eff} value={eff}>
-                    {eff.charAt(0).toUpperCase() + eff.slice(1)}
-                  </option>
-                ));
-              })()}
-            </select>
-          </div>
-        </div>
-      )}
-
       {/* Messages Scroll Area */}
       <ChatMessageList
         messages={messages}
@@ -485,6 +531,100 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
       {/* Input Area */}
       <div className="p-3 border-t border-cozy-border bg-cozy-surface/60">
+        {/* Agent / Model / Effort Selector (collapsible above editor) */}
+        {showConfig ? (
+          <div className="mb-2.5 p-2.5 rounded-xl bg-cozy-subtle border border-cozy-border/80 shadow-sm transition-all space-y-2">
+            <div className="flex items-center justify-between pb-1.5 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
+              <span className="flex items-center gap-1.5 text-cozy-text font-semibold">
+                <Sliders className="w-3.5 h-3.5 text-sky-400" />
+                Agent & Model Configuration
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowConfig(false)}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface transition-colors text-xs"
+                title="Collapse configuration"
+              >
+                <span>Collapse</span>
+                <ChevronUp className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs text-cozy-muted pt-0.5">
+              <div className="flex items-center space-x-1.5">
+                <span className="font-medium text-cozy-text shrink-0">Agent:</span>
+                <select
+                  value={tabCli}
+                  onChange={(e) => handleCliChange(e.target.value)}
+                  className="bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500"
+                >
+                  {clis.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name} {!c.available && '(not found)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5 flex-1 min-w-[200px]">
+                <span className="font-medium text-cozy-text shrink-0">Model:</span>
+                <select
+                  value={tabModel}
+                  onChange={(e) => handleModelChange(e.target.value)}
+                  className="w-full bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500 truncate"
+                >
+                  {availableModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center space-x-1.5 shrink-0">
+                <span className="font-medium text-cozy-text shrink-0">Effort:</span>
+                <select
+                  value={tabEffort}
+                  onChange={(e) => handleEffortChange(e.target.value)}
+                  className="bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500 capitalize"
+                >
+                  {(() => {
+                    const current = availableModels.find((m) => m.id === tabModel);
+                    const efforts = current?.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+                    return efforts.map((eff) => (
+                      <option key={eff} value={eff}>
+                        {eff.charAt(0).toUpperCase() + eff.slice(1)}
+                      </option>
+                    ));
+                  })()}
+                </select>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-2 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setShowConfig(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border hover:border-cozy-border-hover text-cozy-muted hover:text-cozy-text transition-all group"
+              title="Click to configure agent, model, and reasoning effort"
+            >
+              <Sliders className="w-3 h-3 text-sky-400/80" />
+              <span className="font-medium text-cozy-text">{tabCli || 'agy'}</span>
+              <span className="text-cozy-muted/50">·</span>
+              <span className="truncate max-w-[220px]">
+                {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
+              </span>
+              {tabEffort && (
+                <>
+                  <span className="text-cozy-muted/50">·</span>
+                  <span className="text-cozy-muted capitalize">{tabEffort}</span>
+                </>
+              )}
+              <ChevronDown className="w-3 h-3 text-cozy-muted group-hover:text-cozy-text ml-0.5 transition-transform" />
+            </button>
+          </div>
+        )}
         <div className="relative flex items-end rounded-xl bg-cozy-subtle border border-cozy-border focus-within:border-sky-500/50 shadow-sm transition-all p-2">
           <textarea
             value={inputPrompt}
