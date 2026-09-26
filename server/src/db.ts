@@ -87,9 +87,21 @@ db.exec(`
     FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
   CREATE INDEX IF NOT EXISTS idx_chat_sessions_task ON chat_sessions(task_id);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
 `);
 
 // Migrations for existing databases

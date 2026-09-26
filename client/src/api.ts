@@ -12,6 +12,7 @@ import {
   ProjectCustomScript,
   ScriptExecutionItem,
   AgentSkill,
+  FileAttachment,
 } from './types';
 
 const API_BASE = '/api';
@@ -407,3 +408,32 @@ export async function dismissScriptExecution(executionId: string): Promise<{ suc
   });
   return res.json();
 }
+
+export async function uploadTaskAttachments(taskId: string, files: File[]): Promise<FileAttachment[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to upload attachments');
+  }
+  return data;
+}
+
+export async function getAttachmentContent(
+  taskId: string,
+  attachmentId: string
+): Promise<{ content: string; isTruncated: boolean; name: string; size: number; type: string }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments/${attachmentId}/content`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch attachment content');
+  }
+  return data;
+}
+
