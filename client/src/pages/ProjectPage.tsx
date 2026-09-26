@@ -16,12 +16,13 @@ import {
 } from 'lucide-react';
 import { Project, Task, Settings } from '../types';
 import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath } from '../api';
+import { setCachedTask } from '../cache';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
 
 interface ProjectPageProps {
   projectId?: string;
   onBack?: () => void;
-  onSelectTask?: (taskId: string) => void;
+  onSelectTask?: (taskId: string, task?: Task) => void;
   settings?: Settings | null;
   ws?: WebSocket | null;
 }
@@ -38,7 +39,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
   const projectId = propProjectId || params.projectId || '';
   const onBack = propOnBack || (() => navigate('/'));
-  const onSelectTask = propOnSelectTask || ((taskId: string) => navigate(`/projects/${projectId}/tasks/${taskId}`));
+  const onSelectTask =
+    propOnSelectTask ||
+    ((taskId: string, selectedTask?: Task) =>
+      navigate(`/projects/${projectId}/tasks/${taskId}`, { state: { task: selectedTask } }));
 
   const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -67,6 +71,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
       const t = await getProjectTasks(projectId);
       setTasks(t);
+      t.forEach((taskItem) => setCachedTask(taskItem));
 
       // Fetch repo branches
       try {
@@ -93,9 +98,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     setIsCreating(true);
     try {
       const newTask = await createTask(projectId, taskName.trim(), baseBranch || project?.branch_convention || 'main');
+      setCachedTask(newTask);
       setIsNewTaskOpen(false);
       setTaskName('');
-      onSelectTask(newTask.id);
+      onSelectTask(newTask.id, newTask);
     } catch (err: any) {
       alert(`Error creating task: ${err.message}`);
     } finally {
@@ -302,7 +308,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           {tasks.map((t) => (
             <div
               key={t.id}
-              onClick={() => onSelectTask(t.id)}
+              onClick={() => onSelectTask(t.id, t)}
               className="group p-4 rounded-xl bg-cozy-surface border border-cozy-border hover:border-sky-500/40 hover:shadow-md transition-all cursor-pointer flex items-center justify-between"
             >
               <div className="flex items-center space-x-3 min-w-0">

@@ -3,6 +3,15 @@ import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown } fr
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption } from '../types';
 import { ChatMessageList } from './ChatMessageList';
 import { getTaskChats, createChatSession, deleteChatSession, getChatMessages, getModels } from '../api';
+import {
+  getCachedChats,
+  setCachedChats,
+  getCachedActiveChatId,
+  setCachedActiveChatId,
+  getCachedMessages,
+  setCachedMessages,
+  deleteCachedChat,
+} from '../cache';
 
 interface ChatPaneProps {
   task: Task;
@@ -21,9 +30,25 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   onOpenRebase,
   onOpenSubmit,
 }) => {
-  const [chats, setChats] = useState<ChatSession[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Synchronous cache initialization for 0ms instantaneous load
+  const [chats, setChats] = useState<ChatSession[]>(() => getCachedChats(task.id) || []);
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    const cachedActive = getCachedActiveChatId(task.id);
+    const cachedSessions = getCachedChats(task.id) || [];
+    if (cachedActive && cachedSessions.some((c) => c.id === cachedActive)) {
+      return cachedActive;
+    }
+    return cachedSessions[0]?.id || null;
+  });
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const cachedActive = getCachedActiveChatId(task.id);
+    const cachedSessions = getCachedChats(task.id) || [];
+    const targetId = (cachedActive && cachedSessions.some((c) => c.id === cachedActive))
+      ? cachedActive
+      : cachedSessions[0]?.id;
+    return targetId ? (getCachedMessages(targetId) || []) : [];
+  });
+
   const [inputPrompt, setInputPrompt] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingChunk, setStreamingChunk] = useState('');
@@ -42,8 +67,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     try {
       const data = await getTaskChats(task.id);
       setChats(data);
-      if (data.length > 0 && !activeChatId) {
-        setActiveChatId(data[0].id);
+      setCachedChats(task.id, data);
+      if (data.length > 0) {
+        setActiveChatId((curr) => {
+          if (curr && data.some((c) => c.id === curr)) {
+            setCachedActiveChatId(task.id, curr);
+            return curr;
+          }
+          const nextActive = data[0].id;
+          setCachedActiveChatId(task.id, nextActive);
+          return nextActive;
+        });
       }
     } catch {}
   };
@@ -52,7 +86,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     loadChats();
   }, [task.id]);
 
-  // Load messages when active chat changes
+  // Sync tab overrides when active chat or chats change
   useEffect(() => {
     if (!activeChatId) return;
     const currentChat = chats.find((c) => c.id === activeChatId);
@@ -66,9 +100,24 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setIsStreaming(false);
       }
     }
+  }, [activeChatId, chats, settings]);
 
-    getChatMessages(activeChatId).then(setMessages).catch(() => {});
-  }, [activeChatId, chats]);
+  // Load messages when active chat changes (instant cached + revalidate in background)
+  useEffect(() => {
+    if (!activeChatId) return;
+    setCachedActiveChatId(task.id, activeChatId);
+
+    // If cached messages exist for this chat, display immediately
+    const cached = getCachedMessages(activeChatId);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+    }
+
+    getChatMessages(activeChatId).then((fresh) => {
+      setMessages(fresh);
+      setCachedMessages(activeChatId, fresh);
+    }).catch(() => {});
+  }, [activeChatId, task.id]);
 
   // Load models when tab CLI changes
   useEffect(() => {
@@ -90,7 +139,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               if (prev.some((m) => m.id === msg.message.id)) {
                 return prev;
               }
-              return [...prev, msg.message];
+              const next = [...prev, msg.message];
+              setCachedMessages(eventSessionId, next);
+              return next;
             });
           } else if (msg.type === 'chat_stream') {
             setIsStreaming(true);
@@ -160,18 +211,25 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
                 existingIdx = prev.length - 1;
               }
+              let next: ChatMessage[];
               if (existingIdx !== -1) {
                 const updated = [...prev];
                 updated[existingIdx] = msg.message;
-                return updated;
+                next = updated;
+              } else {
+                next = [...prev, msg.message];
               }
-              return [...prev, msg.message];
+              setCachedMessages(eventSessionId, next);
+              return next;
             });
           } else if (msg.type === 'aborted') {
             setIsStreaming(false);
             setStreamingChunk('');
             if (activeChatId) {
-              getChatMessages(activeChatId).then(setMessages).catch(() => {});
+              getChatMessages(activeChatId).then((fresh) => {
+                setMessages(fresh);
+                setCachedMessages(activeChatId, fresh);
+              }).catch(() => {});
             }
           }
         }
@@ -196,18 +254,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       tabModel || settings?.default_model,
       tabEffort || settings?.thinking_effort
     );
-    setChats((prev) => [...prev, newChat]);
+    const nextChats = [...chats, newChat];
+    setChats(nextChats);
     setActiveChatId(newChat.id);
+    setCachedChats(task.id, nextChats);
+    setCachedActiveChatId(task.id, newChat.id);
   };
 
   const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (chats.length <= 1) return;
     await deleteChatSession(id);
+    deleteCachedChat(task.id, id);
     const nextChats = chats.filter((c) => c.id !== id);
     setChats(nextChats);
+    setCachedChats(task.id, nextChats);
     if (activeChatId === id) {
-      setActiveChatId(nextChats[0]?.id || null);
+      const nextActive = nextChats[0]?.id || null;
+      setActiveChatId(nextActive);
+      if (nextActive) {
+        setCachedActiveChatId(task.id, nextActive);
+      }
     }
   };
 
@@ -236,7 +303,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       timestamp: now + 1,
     };
 
-    setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
+    const updatedMessages = [...messages, optimisticUserMessage, optimisticAssistantMessage];
+    setMessages(updatedMessages);
+    setCachedMessages(activeChatId, updatedMessages);
     setInputPrompt('');
     setIsStreaming(true);
     setStreamingChunk('');

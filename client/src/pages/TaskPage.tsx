@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Settings, CliInfo } from '../types';
 import { getTask } from '../api';
+import { getCachedTask, setCachedTask } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
 import { PreviewPane } from '../components/PreviewPane';
@@ -24,12 +25,20 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 }) => {
   const params = useParams<{ projectId?: string; taskId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const taskId = propTaskId || params.taskId || '';
   const routeProjectId = params.projectId;
 
-  const [task, setTask] = useState<Task | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Initialize immediately from router state or localStorage cache
+  const [task, setTask] = useState<Task | null>(() => {
+    const navTask = (location.state as any)?.task as Task | undefined;
+    if (navTask && navTask.id === taskId) {
+      return navTask;
+    }
+    return getCachedTask(taskId);
+  });
+  const [loading, setLoading] = useState(!task);
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
@@ -40,18 +49,26 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       setLoading(false);
       return;
     }
-    setLoading(true);
+
+    // Only display full-page loading placeholder if we do not already have cached task
+    if (!task) {
+      setLoading(true);
+    }
     setError(null);
+
     getTask(taskId)
       .then((t) => {
         setTask(t);
+        setCachedTask(t);
         // Canonicalize URL to /projects/:projectId/tasks/:taskId if reached via /tasks/:taskId
         if (!routeProjectId && t.project_id) {
-          navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true });
+          navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true, state: { task: t } });
         }
       })
       .catch((err) => {
-        setError(err?.message || 'Task not found');
+        if (!task) {
+          setError(err?.message || 'Task not found');
+        }
       })
       .finally(() => {
         setLoading(false);

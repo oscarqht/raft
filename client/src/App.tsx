@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
 import { getSettings, getClis, getProject, getTask } from './api';
+import { getCachedTask } from './cache';
 import { Header } from './components/Header';
 import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
@@ -100,6 +101,11 @@ export default function App() {
 
   useEffect(() => {
     if (currentTaskId) {
+      const cached = getCachedTask(currentTaskId);
+      if (cached) {
+        setActiveTask(cached);
+        if (cached.project) setActiveProject(cached.project);
+      }
       getTask(currentTaskId).then((t) => {
         setActiveTask(t);
         if (t.project) setActiveProject(t.project);
@@ -172,8 +178,10 @@ export default function App() {
             element={
               <ProjectPage
                 onBack={() => navigate('/')}
-                onSelectTask={(taskId) => {
-                  if (currentProjectId) navigate(`/projects/${currentProjectId}/tasks/${taskId}`);
+                onSelectTask={(taskId, task) => {
+                  if (currentProjectId) {
+                    navigate(`/projects/${currentProjectId}/tasks/${taskId}`, { state: { task } });
+                  }
                 }}
                 settings={settings}
                 ws={ws}
