@@ -11,6 +11,7 @@ import {
   FSResponse,
   ProjectCustomScript,
   ScriptExecutionItem,
+  AgentSkill,
 } from './types';
 
 const API_BASE = '/api';
@@ -76,6 +77,16 @@ export async function getModels(cli?: string, refresh?: boolean): Promise<ModelO
   if (cli) params.set('cli', cli);
   if (refresh) params.set('refresh', 'true');
   const url = `${API_BASE}/models?${params.toString()}`;
+  const res = await fetch(url);
+  return res.json();
+}
+
+export async function getSkills(cli?: string, worktreePath?: string, taskId?: string): Promise<AgentSkill[]> {
+  const params = new URLSearchParams();
+  if (cli) params.set('cli', cli);
+  if (worktreePath) params.set('worktreePath', worktreePath);
+  if (taskId) params.set('taskId', taskId);
+  const url = `${API_BASE}/skills?${params.toString()}`;
   const res = await fetch(url);
   return res.json();
 }

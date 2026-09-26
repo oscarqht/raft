@@ -162,3 +162,11 @@ export interface SelectionMeta {
   isRepo: boolean;
 }
 
+export interface AgentSkill {
+  name: string;
+  description: string;
+  source: 'workspace' | 'global' | 'built-in';
+  cli: string;
+  filePath?: string;
+}
+

@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil, Terminal } from 'lucide-react';
-import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption } from '../types';
+import {
+  Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
+  Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers
+} from 'lucide-react';
+import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill } from '../types';
 import { ChatMessageList } from './ChatMessageList';
-import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels } from '../api';
+import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels, getSkills } from '../api';
 import {
   getCachedChats,
   setCachedChats,
@@ -66,6 +69,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Skills autocompletion state
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
+  const [showSkillsPopup, setShowSkillsPopup] = useState(false);
+  const [filteredSkills, setFilteredSkills] = useState<AgentSkill[]>([]);
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [activeSlashToken, setActiveSlashToken] = useState<{ start: number; end: number; query: string } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const skillsPopupRef = useRef<HTMLDivElement>(null);
+  const popupListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (editingChatId && editInputRef.current) {
@@ -138,6 +151,107 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const cli = tabCli || settings?.agent_cli || 'agy';
     getModels(cli).then(setAvailableModels).catch(() => {});
   }, [tabCli, settings?.agent_cli]);
+
+  // Load skills for current agent CLI
+  useEffect(() => {
+    const cli = tabCli || settings?.agent_cli || 'agy';
+    let isCurrent = true;
+    getSkills(cli, task.worktree_path, task.id)
+      .then((data) => {
+        if (isCurrent && Array.isArray(data)) {
+          setSkills(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isCurrent = false;
+    };
+  }, [tabCli, task.id, task.worktree_path, settings?.agent_cli]);
+
+  // Click outside to dismiss skills popup
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        skillsPopupRef.current &&
+        !skillsPopupRef.current.contains(e.target as Node) &&
+        textareaRef.current &&
+        !textareaRef.current.contains(e.target as Node)
+      ) {
+        setShowSkillsPopup(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (showSkillsPopup && popupListRef.current) {
+      const activeEl = popupListRef.current.children[selectedSkillIndex] as HTMLElement;
+      if (activeEl) {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [selectedSkillIndex, showSkillsPopup]);
+
+  // Check if slash command should trigger popup
+  const checkSlashTrigger = (text: string, cursorIndex: number, currentSkills = skills) => {
+    const textBeforeCursor = text.slice(0, cursorIndex);
+    const slashIndex = textBeforeCursor.lastIndexOf('/');
+    if (slashIndex === -1) {
+      setShowSkillsPopup(false);
+      setActiveSlashToken(null);
+      return;
+    }
+
+    // Check if character before slash is start of string or whitespace
+    if (slashIndex > 0 && !/\s/.test(text.charAt(slashIndex - 1))) {
+      setShowSkillsPopup(false);
+      setActiveSlashToken(null);
+      return;
+    }
+
+    // Check if there are spaces between '/' and cursor
+    const query = textBeforeCursor.slice(slashIndex + 1);
+    if (/\s/.test(query)) {
+      setShowSkillsPopup(false);
+      setActiveSlashToken(null);
+      return;
+    }
+
+    // Valid active slash token!
+    setActiveSlashToken({ start: slashIndex, end: cursorIndex, query });
+    const q = query.toLowerCase();
+    const filtered = currentSkills.filter((s) => {
+      return s.name.toLowerCase().includes(q) || (s.description && s.description.toLowerCase().includes(q));
+    });
+    setFilteredSkills(filtered);
+    setSelectedSkillIndex(0);
+    setShowSkillsPopup(true);
+  };
+
+  // Select a skill from the popup
+  const selectSkill = (skill: AgentSkill) => {
+    if (!activeSlashToken) return;
+    const before = inputPrompt.slice(0, activeSlashToken.start);
+    const after = inputPrompt.slice(activeSlashToken.end);
+    const replacement = `/${skill.name} `;
+    const nextVal = before + replacement + after;
+    const newCursorPos = before.length + replacement.length;
+
+    setInputPrompt(nextVal);
+    setShowSkillsPopup(false);
+    setActiveSlashToken(null);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 0);
+  };
 
   // Listen to WebSocket messages
   useEffect(() => {
@@ -421,6 +535,31 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSkillsPopup && filteredSkills.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSkillIndex((prev) => (prev + 1) % filteredSkills.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSkillIndex((prev) => (prev - 1 + filteredSkills.length) % filteredSkills.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        if (filteredSkills[selectedSkillIndex]) {
+          selectSkill(filteredSkills[selectedSkillIndex]);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowSkillsPopup(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -639,11 +778,116 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </div>
         )}
         <div className="relative flex items-end rounded-xl bg-cozy-subtle border border-cozy-border focus-within:border-sky-500/50 shadow-sm transition-all p-2">
+          {/* Skills Autocompletion Popup */}
+          {showSkillsPopup && (
+            <div
+              ref={skillsPopupRef}
+              className="absolute bottom-full left-0 right-0 mb-2 bg-cozy-surface/95 backdrop-blur border border-cozy-border rounded-xl shadow-2xl overflow-hidden z-30 transition-all"
+            >
+              <div className="px-3 py-2 bg-cozy-subtle/80 border-b border-cozy-border flex items-center justify-between text-xs text-cozy-muted">
+                <div className="flex items-center space-x-1.5 font-medium text-cozy-text">
+                  <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Skills & Commands for <span className="text-sky-400 uppercase font-mono">{tabCli || 'agy'}</span></span>
+                </div>
+                <div className="text-[11px] text-cozy-muted">
+                  {filteredSkills.length} available
+                </div>
+              </div>
+
+              <div ref={popupListRef} className="max-h-60 overflow-y-auto py-1 px-1">
+                {filteredSkills.length > 0 ? (
+                  filteredSkills.map((skill, idx) => {
+                    const isSelected = idx === selectedSkillIndex;
+                    const getSkillIcon = () => {
+                      switch (skill.name) {
+                        case 'btw':
+                          return <MessageSquareQuote className="w-3.5 h-3.5 text-sky-400" />;
+                        case 'goal':
+                          return <Target className="w-3.5 h-3.5 text-amber-400" />;
+                        case 'schedule':
+                          return <Clock className="w-3.5 h-3.5 text-emerald-400" />;
+                        case 'browser':
+                          return <Globe className="w-3.5 h-3.5 text-indigo-400" />;
+                        case 'plan':
+                          return <ListTodo className="w-3.5 h-3.5 text-blue-400" />;
+                        case 'grill-me':
+                          return <HelpCircle className="w-3.5 h-3.5 text-violet-400" />;
+                        case 'learn':
+                          return <BookOpen className="w-3.5 h-3.5 text-amber-300" />;
+                        case 'review':
+                          return <Sparkles className="w-3.5 h-3.5 text-cyan-400" />;
+                        default:
+                          if (skill.source === 'workspace') {
+                            return <Layers className="w-3.5 h-3.5 text-emerald-400" />;
+                          }
+                          return <Terminal className="w-3.5 h-3.5 text-sky-400" />;
+                      }
+                    };
+
+                    return (
+                      <div
+                        key={`${skill.name}-${skill.source}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          selectSkill(skill);
+                        }}
+                        onMouseEnter={() => setSelectedSkillIndex(idx)}
+                        className={`px-2.5 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center justify-between gap-2.5 ${
+                          isSelected
+                            ? 'bg-sky-500/15 text-cozy-text'
+                            : 'hover:bg-cozy-subtle/50 text-cozy-muted hover:text-cozy-text'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                          <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 bg-cozy-bg/80 border border-cozy-border/50">
+                            {getSkillIcon()}
+                          </div>
+                          <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-sky-400' : 'text-cozy-text'}`}>
+                            {skill.name}
+                          </span>
+                          {skill.description && (
+                            <span className="text-xs text-cozy-muted/80 truncate">
+                              {skill.description}
+                            </span>
+                          )}
+                        </div>
+                        {skill.source === 'workspace' && (
+                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 flex-shrink-0">
+                            workspace
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="px-3 py-4 text-center text-xs text-cozy-muted">
+                    No skills found matching <span className="font-mono text-cozy-text">/{activeSlashToken?.query}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="px-3 py-1.5 bg-cozy-subtle/50 border-t border-cozy-border text-[11px] text-cozy-muted/70 flex items-center justify-between">
+                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">↑↓</kbd> Navigate</span>
+                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Tab</kbd> / <kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Enter</kbd> Select</span>
+                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Esc</kbd> Dismiss</span>
+              </div>
+            </div>
+          )}
+
           <textarea
+            ref={textareaRef}
             value={inputPrompt}
-            onChange={(e) => setInputPrompt(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setInputPrompt(val);
+              checkSlashTrigger(val, e.target.selectionStart);
+            }}
+            onSelect={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              checkSlashTrigger(target.value, target.selectionStart);
+            }}
             onKeyDown={handleKeyDown}
-            placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Enter to send, Shift+Enter for newline)`}
+            placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`}
             rows={2}
             className="flex-1 bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1"
           />

@@ -23,6 +23,7 @@ import {
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
+import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
 
 const app = express();
 app.use(cors());
@@ -122,6 +123,28 @@ app.get('/api/models', async (req: Request, res: Response) => {
     res.json(models);
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to get models' });
+  }
+});
+
+app.get('/api/skills', (req: Request, res: Response) => {
+  const cli = (req.query.cli as string) || getEffectiveAgentCli();
+  let worktreePath = req.query.worktreePath as string | undefined;
+  const taskId = req.query.taskId as string | undefined;
+
+  if (!worktreePath && taskId) {
+    try {
+      const task = db.prepare('SELECT worktree_path FROM tasks WHERE id = ?').get(taskId) as any;
+      if (task && task.worktree_path) {
+        worktreePath = task.worktree_path;
+      }
+    } catch {}
+  }
+
+  try {
+    const skills = getSkillsForCli(cli, worktreePath);
+    res.json(skills);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to get skills' });
   }
 });
 
@@ -999,6 +1022,8 @@ wss.on('connection', (ws: WebSocket) => {
         const modelToUse = model || session.model;
         const effortToUse = thinkingEffort || session.thinking_effort;
 
+        const effectivePrompt = resolveSkillPrompt(cliToUse, prompt, task.worktree_path);
+
         // Construct CLI args for agent turn
         const args: string[] = [];
         if (cliToUse === 'agy') {
@@ -1009,13 +1034,13 @@ wss.on('connection', (ws: WebSocket) => {
           args.push('--output-format', 'stream-json');
           args.push('--dangerously-skip-permissions');
         } else if (cliToUse === 'claude') {
-          args.push('-p', prompt);
+          args.push('-p', effectivePrompt);
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') args.push('--effort', effortToUse);
           args.push('--dangerously-skip-permissions');
         } else {
           // codex
-          args.push('exec', prompt);
+          args.push('exec', effectivePrompt);
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') {
             args.push('-c', `model_reasoning_effort="${effortToUse}"`);
