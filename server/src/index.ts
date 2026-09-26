@@ -22,6 +22,7 @@ import {
   StreamEvent,
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
+import { scriptManager } from './scriptManager.js';
 
 const app = express();
 app.use(cors());
@@ -298,6 +299,25 @@ app.post('/api/fs', async (req: Request, res: Response) => {
   }
 });
 
+// Helper functions for project custom scripts
+function parseScripts(raw: any) {
+  if (!raw) return [];
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatProject(p: any) {
+  if (!p) return null;
+  return {
+    ...p,
+    custom_scripts: parseScripts(p.custom_scripts),
+  };
+}
+
 // Projects
 app.get('/api/projects', (_req: Request, res: Response) => {
   const projects = db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all() as any[];
@@ -305,13 +325,13 @@ app.get('/api/projects', (_req: Request, res: Response) => {
   const taskCountStmt = db.prepare('SELECT count(*) as count FROM tasks WHERE project_id = ?');
   const result = projects.map((p) => {
     const { count } = taskCountStmt.get(p.id) as { count: number };
-    return { ...p, task_count: count };
+    return { ...formatProject(p), task_count: count };
   });
   res.json(result);
 });
 
 app.post('/api/projects', (req: Request, res: Response) => {
-  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention } = req.body;
+  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention, custom_scripts } = req.body;
   const projectPath = path.resolve(rawPath);
   const repoInfo = GitService.getRepoInfo(projectPath);
   if (!repoInfo.isRepo) {
@@ -326,8 +346,8 @@ app.post('/api/projects', (req: Request, res: Response) => {
     const stmt = db.prepare(`
       INSERT INTO projects (
         id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
-        default_agent_cli, default_model, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        default_agent_cli, default_model, custom_scripts, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -341,12 +361,13 @@ app.post('/api/projects', (req: Request, res: Response) => {
       branch_convention || repoInfo.currentBranch || 'main',
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
+      custom_scripts ? JSON.stringify(custom_scripts) : '[]',
       now,
       now
     );
 
     const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
-    res.json(project);
+    res.json(formatProject(project));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -355,7 +376,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
 app.get('/api/projects/:id', (req: Request, res: Response) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  res.json(project);
+  res.json(formatProject(project));
 });
 
 app.put('/api/projects/:id', (req: Request, res: Response) => {
@@ -373,6 +394,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     branch_convention,
     default_agent_cli,
     default_model,
+    custom_scripts,
   } = req.body;
   const now = Date.now();
 
@@ -391,6 +413,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       branch_convention = coalesce(?, branch_convention),
       default_agent_cli = coalesce(?, default_agent_cli),
       default_model = coalesce(?, default_model),
+      custom_scripts = coalesce(?, custom_scripts),
       updated_at = ?
     WHERE id = ?
   `).run(
@@ -402,12 +425,122 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     branch_convention !== undefined ? branch_convention : null,
     default_agent_cli !== undefined ? default_agent_cli : null,
     default_model !== undefined ? default_model : null,
+    custom_scripts !== undefined ? JSON.stringify(custom_scripts) : null,
     now,
     req.params.id
   );
 
   const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
-  res.json(updated);
+  res.json(formatProject(updated));
+});
+
+// Project Custom Scripts Management API
+app.get('/api/projects/:id/scripts', (req: Request, res: Response) => {
+  const projectId = String(req.params.id);
+  const project = db.prepare('SELECT custom_scripts FROM projects WHERE id = ?').get(projectId) as any;
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  res.json(parseScripts(project.custom_scripts));
+});
+
+app.put('/api/projects/:id/scripts', (req: Request, res: Response) => {
+  const projectId = String(req.params.id);
+  const { scripts } = req.body;
+  if (!Array.isArray(scripts)) {
+    return res.status(400).json({ error: 'scripts must be an array' });
+  }
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(projectId);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const now = Date.now();
+  db.prepare('UPDATE projects SET custom_scripts = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(scripts),
+    now,
+    projectId
+  );
+  res.json({ success: true, scripts });
+});
+
+// Task Scripts & Terminal Executions API
+app.get('/api/tasks/:taskId/scripts', (req: Request, res: Response) => {
+  const taskId = String(req.params.taskId);
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+  const scripts = parseScripts(project?.custom_scripts);
+  const executions = scriptManager.getExecutions({ taskId });
+  res.json({ scripts, executions });
+});
+
+app.post('/api/tasks/:taskId/scripts/run', (req: Request, res: Response) => {
+  const taskId = String(req.params.taskId);
+  const { id, name, command, saveToProject } = req.body;
+
+  if (!command || !command.trim()) {
+    return res.status(400).json({ error: 'Command is required' });
+  }
+
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+
+  const trimmedCmd = command.trim();
+  const scriptName = name?.trim() || trimmedCmd;
+  const worktreePath = task.worktree_path || project?.path;
+
+  // Optionally save to project custom scripts
+  if (saveToProject && project) {
+    const existingScripts = parseScripts(project.custom_scripts);
+    const exists = existingScripts.some((s: any) => s.command === trimmedCmd);
+    if (!exists) {
+      existingScripts.push({
+        id: uuidv4(),
+        name: scriptName,
+        command: trimmedCmd,
+      });
+      db.prepare('UPDATE projects SET custom_scripts = ?, updated_at = ? WHERE id = ?').run(
+        JSON.stringify(existingScripts),
+        Date.now(),
+        project.id
+      );
+    }
+  }
+
+  const execution = scriptManager.startExecution({
+    taskId,
+    projectId: task.project_id,
+    scriptName,
+    command: trimmedCmd,
+    worktreePath,
+    customId: id || undefined,
+  });
+
+  res.json(execution);
+});
+
+app.get('/api/scripts/executions', (req: Request, res: Response) => {
+  const taskId = req.query.taskId as string | undefined;
+  const projectId = req.query.projectId as string | undefined;
+  res.json(scriptManager.getExecutions({ taskId, projectId }));
+});
+
+app.post('/api/scripts/:executionId/cancel', (req: Request, res: Response) => {
+  const executionId = String(req.params.executionId);
+  const force = req.body.force === true;
+  const ok = scriptManager.cancelExecution(executionId, force);
+  res.json({ success: ok });
+});
+
+app.post('/api/scripts/:executionId/rerun', (req: Request, res: Response) => {
+  const executionId = String(req.params.executionId);
+  const next = scriptManager.rerunExecution(executionId);
+  if (!next) return res.status(404).json({ error: 'Execution not found' });
+  res.json(next);
+});
+
+app.post('/api/scripts/:executionId/dismiss', (req: Request, res: Response) => {
+  const executionId = String(req.params.executionId);
+  const ok = scriptManager.dismissExecution(executionId);
+  res.json({ success: ok });
 });
 
 app.delete('/api/projects/:id', (req: Request, res: Response) => {
@@ -469,7 +602,7 @@ app.get('/api/tasks/:id', (req: Request, res: Response) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id);
-  res.json({ ...task, project });
+  res.json({ ...task, project: formatProject(project) });
 });
 
 app.delete('/api/tasks/:id', (req: Request, res: Response) => {
@@ -630,6 +763,19 @@ function broadcastWs(data: any) {
   }
 }
 
+// Forward script manager events to all connected clients
+scriptManager.on('global_log', ({ id, chunk }) => {
+  broadcastWs({ type: 'script_log', executionId: id, log: chunk });
+});
+
+scriptManager.on('global_state', (payload) => {
+  broadcastWs({ type: 'script_state', execution: payload });
+});
+
+scriptManager.on('global_dismissed', ({ id }) => {
+  broadcastWs({ type: 'script_dismissed', executionId: id });
+});
+
 app.patch('/api/chats/:id', (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   const { title, agent_cli, model, thinking_effort } = req.body;
@@ -739,6 +885,13 @@ wss.on('connection', (ws: WebSocket) => {
 
         devServerManager.on(`log:${taskId}`, devLogListener);
         devServerManager.on(`state:${taskId}`, devStateListener);
+      }
+
+      // Script executions subscribe
+      else if (msg.type === 'subscribe_scripts') {
+        const taskId = msg.taskId as string | undefined;
+        const executions = scriptManager.getExecutions({ taskId });
+        send({ type: 'script_executions_sync', executions });
       }
 
       // 3. Rebase agent

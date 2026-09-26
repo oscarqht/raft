@@ -1,3 +1,28 @@
+export interface ProjectCustomScript {
+  id: string;
+  name: string;
+  command: string;
+}
+
+export type ScriptExecutionStatus = 'running' | 'completed' | 'failed' | 'canceled';
+
+export interface ScriptExecutionItem {
+  id: string;
+  taskId: string;
+  projectId: string;
+  scriptName: string;
+  command: string;
+  worktreePath?: string;
+  status: ScriptExecutionStatus;
+  output: string;
+  exitCode: number | null;
+  startedAt: number;
+  finishedAt: number | null;
+  cancelRequested?: boolean;
+  isCanceling?: boolean;
+  isModalOpen?: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -9,6 +34,7 @@ export interface Project {
   branch_convention: string;
   default_agent_cli?: string;
   default_model?: string;
+  custom_scripts?: ProjectCustomScript[];
   created_at: number;
   updated_at: number;
   task_count?: number;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Task, Settings, CliInfo } from '../types';
+import { Task, Settings, CliInfo, ProjectCustomScript } from '../types';
 import { getTask } from '../api';
 import { getCachedTask, setCachedTask } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
@@ -8,6 +8,11 @@ import { ChatPane } from '../components/ChatPane';
 import { PreviewPane } from '../components/PreviewPane';
 import { RebaseDrawer } from '../components/RebaseDrawer';
 import { SubmitModal } from '../components/SubmitModal';
+import { ScriptExecutionProvider } from '../contexts/ScriptExecutionContext';
+import { ScriptDock } from '../components/ScriptDock';
+import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
+import { RunScriptModal } from '../components/RunScriptModal';
+import { ManageScriptsModal } from '../components/ManageScriptsModal';
 import { ArrowLeft } from 'lucide-react';
 
 interface TaskPageProps {
@@ -42,6 +47,15 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
+  const [isRunScriptOpen, setIsRunScriptOpen] = useState(false);
+  const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
+  const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
+
+  useEffect(() => {
+    if (task?.project?.custom_scripts) {
+      setScripts(task.project.custom_scripts);
+    }
+  }, [task?.project?.custom_scripts]);
 
   useEffect(() => {
     if (!taskId) {
@@ -114,36 +128,65 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden">
-      <DraggableSplit
-        left={
-          <ChatPane
-            task={task}
-            settings={settings}
-            clis={clis}
-            ws={ws}
-            onOpenRebase={() => setIsRebaseOpen(true)}
-            onOpenSubmit={() => setIsSubmitOpen(true)}
-          />
-        }
-        right={<PreviewPane task={task} ws={ws} />}
-      />
+    <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
+      <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden relative">
+        <DraggableSplit
+          left={
+            <ChatPane
+              task={task}
+              settings={settings}
+              clis={clis}
+              ws={ws}
+              onOpenRebase={() => setIsRebaseOpen(true)}
+              onOpenSubmit={() => setIsSubmitOpen(true)}
+              onOpenScripts={() => setIsRunScriptOpen(true)}
+            />
+          }
+          right={<PreviewPane task={task} ws={ws} />}
+        />
 
-      {/* Slide-over Rebase & Conflict Resolution Drawer */}
-      <RebaseDrawer
-        task={task}
-        isOpen={isRebaseOpen}
-        onClose={() => setIsRebaseOpen(false)}
-        ws={ws}
-      />
+        {/* Floating Bottom-Right Script Dock */}
+        <ScriptDock />
 
-      {/* Submit Changes Modal */}
-      <SubmitModal
-        task={task}
-        isOpen={isSubmitOpen}
-        onClose={() => setIsSubmitOpen(false)}
-        ws={ws}
-      />
-    </div>
+        {/* Live Terminal Modal for running/viewing scripts */}
+        <ScriptTerminalModal />
+
+        {/* Run Script Launcher Modal */}
+        <RunScriptModal
+          taskId={task.id}
+          projectId={task.project_id}
+          scripts={scripts}
+          isOpen={isRunScriptOpen}
+          onClose={() => setIsRunScriptOpen(false)}
+          onOpenManageScripts={() => setIsManageScriptsOpen(true)}
+          onScriptSaved={(updatedScripts) => setScripts(updatedScripts)}
+        />
+
+        {/* Manage Project Custom Scripts Modal */}
+        <ManageScriptsModal
+          projectId={task.project_id}
+          scripts={scripts}
+          isOpen={isManageScriptsOpen}
+          onClose={() => setIsManageScriptsOpen(false)}
+          onScriptsUpdated={(updatedScripts) => setScripts(updatedScripts)}
+        />
+
+        {/* Slide-over Rebase & Conflict Resolution Drawer */}
+        <RebaseDrawer
+          task={task}
+          isOpen={isRebaseOpen}
+          onClose={() => setIsRebaseOpen(false)}
+          ws={ws}
+        />
+
+        {/* Submit Changes Modal */}
+        <SubmitModal
+          task={task}
+          isOpen={isSubmitOpen}
+          onClose={() => setIsSubmitOpen(false)}
+          ws={ws}
+        />
+      </div>
+    </ScriptExecutionProvider>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil, Terminal } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption } from '../types';
 import { ChatMessageList } from './ChatMessageList';
 import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels } from '../api';
@@ -20,6 +20,7 @@ interface ChatPaneProps {
   ws: WebSocket | null;
   onOpenRebase: () => void;
   onOpenSubmit: () => void;
+  onOpenScripts?: () => void;
 }
 
 export const ChatPane: React.FC<ChatPaneProps> = ({
@@ -29,6 +30,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   ws,
   onOpenRebase,
   onOpenSubmit,
+  onOpenScripts,
 }) => {
   // Synchronous cache initialization for 0ms instantaneous load
   const [chats, setChats] = useState<ChatSession[]>(() => getCachedChats(task.id) || []);
@@ -499,8 +501,19 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </button>
         </div>
 
-        {/* Action Buttons: Sync/Rebase & Submit */}
+        {/* Action Buttons: Scripts, Sync/Rebase & Submit */}
         <div className="flex items-center space-x-1.5 shrink-0">
+          {onOpenScripts && (
+            <button
+              onClick={onOpenScripts}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:border-sky-500/40 hover:text-sky-300 transition-all shadow-sm"
+              title="Run project scripts or custom terminal commands"
+            >
+              <Terminal className="w-3.5 h-3.5 text-sky-400" />
+              <span>Scripts</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenRebase}
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:border-amber-500/40 hover:text-amber-300 transition-all shadow-sm"

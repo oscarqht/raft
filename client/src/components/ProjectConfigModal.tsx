@@ -13,8 +13,11 @@ import {
   ChevronUp,
   Save,
   Check,
+  Plus,
+  Trash2,
+  Edit2,
 } from 'lucide-react';
-import { Settings, Project } from '../types';
+import { Settings, Project, ProjectCustomScript } from '../types';
 import { updateProject, validateProjectPath, createWebSocketConnection } from '../api';
 
 export interface ProjectConfigModalProps {
@@ -44,6 +47,10 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   const [devPort, setDevPort] = useState(project.dev_port || 5173);
   const [buildCmd, setBuildCmd] = useState(project.build_cmd || 'npm run build');
   const [testCmd, setTestCmd] = useState(project.test_cmd || 'npm test');
+  const [customScripts, setCustomScripts] = useState<ProjectCustomScript[]>(project.custom_scripts || []);
+  const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
+  const [scriptNameInput, setScriptNameInput] = useState('');
+  const [scriptCmdInput, setScriptCmdInput] = useState('');
 
   const [branches, setBranches] = useState<string[]>(propBranches || [project.branch_convention || 'main']);
   const [isCustomBranch, setIsCustomBranch] = useState(false);
@@ -75,6 +82,10 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     setDevPort(project.dev_port || 5173);
     setBuildCmd(project.build_cmd || 'npm run build');
     setTestCmd(project.test_cmd || 'npm test');
+    setCustomScripts(project.custom_scripts || []);
+    setEditingScriptId(null);
+    setScriptNameInput('');
+    setScriptCmdInput('');
     setChangedFields({});
     setScanFailed(false);
     setScanCompleted(false);
@@ -233,6 +244,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         dev_port: devPort,
         build_cmd: buildCmd.trim(),
         test_cmd: testCmd.trim(),
+        custom_scripts: customScripts,
       });
 
       setSaveSuccess(true);
@@ -551,6 +563,168 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   }`}
                 />
               </div>
+            </div>
+
+            {/* Custom Scripts Section */}
+            <div className="pt-3 border-t border-cozy-border/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-cozy-text uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                    Project Terminal Scripts
+                  </span>
+                  <p className="text-[11px] text-cozy-muted">
+                    Saved terminal commands that can be launched directly from any task workspace
+                  </p>
+                </div>
+                {!editingScriptId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingScriptId('new');
+                      setScriptNameInput('');
+                      setScriptCmdInput('');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Script</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Editing script form */}
+              {editingScriptId && (
+                <div className="p-3 bg-cozy-subtle/60 border border-sky-500/30 rounded-xl space-y-2.5">
+                  <div className="text-xs font-semibold text-cozy-text">
+                    {editingScriptId === 'new' ? 'New Script' : 'Edit Script'}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={scriptNameInput}
+                      onChange={(e) => setScriptNameInput(e.target.value)}
+                      placeholder="Script Name (e.g. Dev Server)"
+                      className="px-3 py-1.5 text-xs bg-cozy-bg border border-cozy-border rounded-lg text-cozy-text focus:outline-none focus:border-sky-500"
+                    />
+                    <input
+                      type="text"
+                      value={scriptCmdInput}
+                      onChange={(e) => setScriptCmdInput(e.target.value)}
+                      placeholder="Command (e.g. npm run dev)"
+                      className="px-3 py-1.5 text-xs font-mono bg-cozy-bg border border-cozy-border rounded-lg text-cozy-text focus:outline-none focus:border-sky-500"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const trimmedCmd = scriptCmdInput.trim();
+                          if (!trimmedCmd) return;
+                          const trimmedName = scriptNameInput.trim() || trimmedCmd;
+                          if (editingScriptId === 'new') {
+                            setCustomScripts((prev) => [
+                              ...prev,
+                              { id: `script-${Date.now()}`, name: trimmedName, command: trimmedCmd },
+                            ]);
+                          } else {
+                            setCustomScripts((prev) =>
+                              prev.map((s) =>
+                                s.id === editingScriptId
+                                  ? { ...s, name: trimmedName, command: trimmedCmd }
+                                  : s
+                              )
+                            );
+                          }
+                          setEditingScriptId(null);
+                          setScriptNameInput('');
+                          setScriptCmdInput('');
+                        }
+                      }}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditingScriptId(null)}
+                      className="px-2.5 py-1 text-xs text-cozy-muted hover:text-cozy-text rounded-md"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmedCmd = scriptCmdInput.trim();
+                        if (!trimmedCmd) return;
+                        const trimmedName = scriptNameInput.trim() || trimmedCmd;
+                        if (editingScriptId === 'new') {
+                          setCustomScripts((prev) => [
+                            ...prev,
+                            { id: `script-${Date.now()}`, name: trimmedName, command: trimmedCmd },
+                          ]);
+                        } else {
+                          setCustomScripts((prev) =>
+                            prev.map((s) =>
+                              s.id === editingScriptId
+                                ? { ...s, name: trimmedName, command: trimmedCmd }
+                                : s
+                            )
+                          );
+                        }
+                        setEditingScriptId(null);
+                        setScriptNameInput('');
+                        setScriptCmdInput('');
+                      }}
+                      disabled={!scriptCmdInput.trim()}
+                      className="px-3 py-1 text-xs font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-md transition-colors disabled:opacity-50"
+                    >
+                      Save Script
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Script list */}
+              {customScripts.length === 0 && !editingScriptId ? (
+                <div className="text-center py-4 text-xs text-cozy-muted border border-dashed border-cozy-border rounded-xl">
+                  No custom scripts saved yet.
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {customScripts.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center justify-between p-2.5 bg-cozy-bg border border-cozy-border rounded-lg text-xs"
+                    >
+                      <div className="min-w-0 flex-1 pr-2">
+                        <div className="font-medium text-cozy-text truncate">{s.name}</div>
+                        <div className="text-[11px] font-mono text-cozy-muted truncate mt-0.5">{s.command}</div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingScriptId(s.id);
+                            setScriptNameInput(s.name);
+                            setScriptCmdInput(s.command);
+                          }}
+                          className="p-1 text-cozy-muted hover:text-cozy-text rounded hover:bg-cozy-subtle"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomScripts((prev) => prev.filter((item) => item.id !== s.id));
+                          }}
+                          className="p-1 text-cozy-muted hover:text-rose-400 rounded hover:bg-rose-500/10"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

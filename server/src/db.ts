@@ -32,6 +32,7 @@ db.exec(`
     branch_convention TEXT,
     default_agent_cli TEXT,
     default_model TEXT,
+    custom_scripts TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -76,6 +77,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_chat_sessions_task ON chat_sessions(task_id);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
 `);
+
+// Migrations for existing databases
+try {
+  db.exec('ALTER TABLE projects ADD COLUMN custom_scripts TEXT');
+} catch {
+  // column already exists
+}
 
 // Ensure default settings exist
 const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');

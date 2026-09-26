@@ -1,4 +1,17 @@
-import { Project, Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, DevServerState, GitStatus, FSResponse } from './types';
+import {
+  Project,
+  Task,
+  ChatSession,
+  ChatMessage,
+  Settings,
+  CliInfo,
+  ModelOption,
+  DevServerState,
+  GitStatus,
+  FSResponse,
+  ProjectCustomScript,
+  ScriptExecutionItem,
+} from './types';
 
 const API_BASE = '/api';
 
@@ -287,4 +300,91 @@ export function installCliStream(
   return () => {
     eventSource.close();
   };
+}
+
+// ===================== Custom Scripts API =====================
+
+export async function getProjectScripts(projectId: string): Promise<ProjectCustomScript[]> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/scripts`);
+  if (!res.ok) throw new Error('Failed to fetch project scripts');
+  return res.json();
+}
+
+export async function updateProjectScripts(
+  projectId: string,
+  scripts: ProjectCustomScript[]
+): Promise<{ success: boolean; scripts: ProjectCustomScript[] }> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/scripts`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scripts }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to update project scripts');
+  }
+  return res.json();
+}
+
+export async function getTaskScripts(
+  taskId: string
+): Promise<{ scripts: ProjectCustomScript[]; executions: ScriptExecutionItem[] }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/scripts`);
+  if (!res.ok) throw new Error('Failed to fetch task scripts');
+  return res.json();
+}
+
+export async function runTaskScript(
+  taskId: string,
+  params: { id?: string; name?: string; command: string; saveToProject?: boolean }
+): Promise<ScriptExecutionItem> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/scripts/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to run script');
+  }
+  return res.json();
+}
+
+export async function getScriptExecutions(params?: {
+  taskId?: string;
+  projectId?: string;
+}): Promise<ScriptExecutionItem[]> {
+  const query = new URLSearchParams();
+  if (params?.taskId) query.set('taskId', params.taskId);
+  if (params?.projectId) query.set('projectId', params.projectId);
+  const res = await fetch(`${API_BASE}/scripts/executions?${query.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch executions');
+  return res.json();
+}
+
+export async function cancelScriptExecution(
+  executionId: string,
+  force?: boolean
+): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/scripts/${executionId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force }),
+  });
+  return res.json();
+}
+
+export async function rerunScriptExecution(executionId: string): Promise<ScriptExecutionItem> {
+  const res = await fetch(`${API_BASE}/scripts/${executionId}/rerun`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to rerun script');
+  return res.json();
+}
+
+export async function dismissScriptExecution(executionId: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/scripts/${executionId}/dismiss`, {
+    method: 'POST',
+  });
+  return res.json();
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Ansi from 'ansi-to-react';
 import { Play, Square, RotateCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2 } from 'lucide-react';
 import { Task, DevServerState } from '../types';
 import { getDevServerState, startDevServer, stopDevServer, restartDevServer } from '../api';
@@ -248,7 +249,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
             {logs.length === 0 ? (
               <span className="opacity-40">No console output yet...</span>
             ) : (
-              logs.map((line, idx) => <div key={idx}>{line}</div>)
+              logs.map((line, idx) => <div key={idx}><Ansi>{line}</Ansi></div>)
             )}
             <div ref={consoleEndRef} />
           </div>

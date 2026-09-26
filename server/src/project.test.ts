@@ -119,3 +119,60 @@ test('Task details (name, base_branch) can be modified in SQLite database', () =
   db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
   db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 });
+
+test('Project custom scripts can be saved, retrieved, and updated', () => {
+  const projectId = uuidv4();
+  const now = Date.now();
+
+  const scripts = [
+    { id: 's1', name: 'Dev Server', command: 'npm run app:dev' },
+    { id: 's2', name: 'Build App', command: 'npm run build' },
+  ];
+
+  db.prepare(`
+    INSERT INTO projects (
+      id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
+      default_agent_cli, default_model, custom_scripts, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    projectId,
+    'scripts-test-proj',
+    '/dummy/scripts/' + projectId,
+    'npm dev',
+    5173,
+    'npm build',
+    'npm test',
+    'main',
+    'agy',
+    'model',
+    JSON.stringify(scripts),
+    now,
+    now
+  );
+
+  const row = db.prepare('SELECT custom_scripts FROM projects WHERE id = ?').get(projectId) as any;
+  const parsed = JSON.parse(row.custom_scripts);
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].name, 'Dev Server');
+  assert.equal(parsed[0].command, 'npm run app:dev');
+
+  // Update scripts
+  const updatedScripts = [
+    ...scripts,
+    { id: 's3', name: 'Linting', command: 'npm run lint' },
+  ];
+
+  db.prepare('UPDATE projects SET custom_scripts = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(updatedScripts),
+    Date.now(),
+    projectId
+  );
+
+  const rowUpdated = db.prepare('SELECT custom_scripts FROM projects WHERE id = ?').get(projectId) as any;
+  const parsedUpdated = JSON.parse(rowUpdated.custom_scripts);
+  assert.equal(parsedUpdated.length, 3);
+  assert.equal(parsedUpdated[2].name, 'Linting');
+
+  // Clean up
+  db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+});
