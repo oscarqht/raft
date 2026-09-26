@@ -29,6 +29,11 @@ export function sanitizeBranchName(raw: string): string {
   return str;
 }
 
+export function normalizePath(p: string): string {
+  if (!p) return '';
+  return path.resolve(p).replace(/\\/g, '/').toLowerCase();
+}
+
 export class GitService {
   static getRepoInfo(targetPath: string): RepoInfo {
     try {
@@ -62,7 +67,7 @@ export class GitService {
         stdio: ['pipe', 'pipe', 'ignore'],
       });
       const branches = branchOutput
-        .split('\n')
+        .split(/\r?\n/)
         .map((b) => b.trim())
         .filter((b) => b && b !== 'HEAD');
 
@@ -73,12 +78,12 @@ export class GitService {
         stdio: ['pipe', 'pipe', 'ignore'],
       });
       const worktrees: WorktreeInfo[] = [];
-      const blocks = wtOutput.split('\n\n').filter(Boolean);
+      const blocks = wtOutput.split(/(?:\r?\n){2,}/).filter(Boolean);
       for (const block of blocks) {
         let wtPath = '';
         let wtHead = '';
         let wtBranch = '';
-        for (const line of block.split('\n')) {
+        for (const line of block.split(/\r?\n/)) {
           if (line.startsWith('worktree ')) wtPath = line.replace('worktree ', '').trim();
           else if (line.startsWith('HEAD ')) wtHead = line.replace('HEAD ', '').trim();
           else if (line.startsWith('branch ')) {
@@ -90,7 +95,7 @@ export class GitService {
             path: wtPath,
             head: wtHead,
             branch: wtBranch,
-            isMain: wtPath === repoRoot,
+            isMain: normalizePath(wtPath) === normalizePath(repoRoot),
           });
         }
       }
@@ -132,11 +137,12 @@ export class GitService {
       fs.writeFileSync(gitignorePath, updated, 'utf-8');
     }
 
-    const worktreePath = path.join(worktreesDir, branch);
+    const worktreePath = path.resolve(worktreesDir, branch);
+    const gitPath = worktreePath.replace(/\\/g, '/');
 
     // Create worktree branching from baseBranch
     try {
-      execSync(`git worktree add -b "${branch}" "${worktreePath}" "${baseBranch}"`, {
+      execSync(`git worktree add -b "${branch}" "${gitPath}" "${baseBranch}"`, {
         cwd: repoRoot,
         encoding: 'utf-8',
         stdio: 'pipe',
@@ -144,7 +150,7 @@ export class GitService {
     } catch (err: any) {
       // If branch already exists, try to checkout existing branch
       if (err.message.includes('already exists')) {
-        execSync(`git worktree add "${worktreePath}" "${branch}"`, {
+        execSync(`git worktree add "${gitPath}" "${branch}"`, {
           cwd: repoRoot,
           encoding: 'utf-8',
           stdio: 'pipe',
@@ -158,8 +164,9 @@ export class GitService {
   }
 
   static removeWorktree(repoRoot: string, worktreePath: string, branch?: string): void {
+    const gitPath = worktreePath.replace(/\\/g, '/');
     try {
-      execSync(`git worktree remove --force "${worktreePath}"`, {
+      execSync(`git worktree remove --force "${gitPath}"`, {
         cwd: repoRoot,
         encoding: 'utf-8',
         stdio: 'pipe',

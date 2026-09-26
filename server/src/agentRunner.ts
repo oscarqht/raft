@@ -1,6 +1,7 @@
 import { spawn, execSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { db } from './db.js';
 
 export interface CliInfo {
@@ -16,36 +17,105 @@ export interface ModelOption {
   description?: string;
 }
 
-// Find path for CLI binary
+// Get cross-platform enriched environment with PATH
+export function getCrossPlatformEnv(): NodeJS.ProcessEnv {
+  const home = os.homedir();
+  const isWin = process.platform === 'win32';
+  const delimiter = path.delimiter;
+
+  const additionalDirs = isWin
+    ? [
+        path.join(home, '.local', 'bin'),
+        path.join(process.env.APPDATA || '', 'npm'),
+        path.join(process.env.LOCALAPPDATA || '', 'Programs'),
+        path.join(process.env.ProgramFiles || '', 'Git', 'cmd'),
+      ]
+    : [
+        path.join(home, '.local', 'bin'),
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        '/usr/bin',
+        '/bin',
+      ];
+
+  const currentPath = process.env.PATH || '';
+  const newPath = [...additionalDirs, currentPath].filter(Boolean).join(delimiter);
+
+  return {
+    ...process.env,
+    PATH: newPath,
+  };
+}
+
+// Find path for CLI binary across platforms
 export function resolveCliPath(cliName: string): string {
-  const home = process.env.HOME || '/Users/tangqh';
-  const localBin = path.join(home, '.local', 'bin', cliName);
-  if (fs.existsSync(localBin)) {
-    return localBin;
+  const home = os.homedir();
+  const isWin = process.platform === 'win32';
+  const extensions = isWin ? ['.cmd', '.exe', '.bat', ''] : [''];
+
+  const searchDirs = [
+    path.join(home, '.local', 'bin'),
+    ...(isWin
+      ? [
+          path.join(process.env.APPDATA || '', 'npm'),
+          path.join(process.env.LOCALAPPDATA || '', 'Programs'),
+        ]
+      : ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin']),
+  ];
+
+  for (const dir of searchDirs) {
+    if (!dir) continue;
+    for (const ext of extensions) {
+      const full = path.join(dir, `${cliName}${ext}`);
+      if (fs.existsSync(full)) {
+        return full;
+      }
+    }
   }
+
+  // Fallback to which / where lookup
   try {
-    return execSync(`which ${cliName}`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+    const lookupCmd = isWin ? `where.exe ${cliName}` : `which ${cliName}`;
+    const found = execSync(lookupCmd, {
+      encoding: 'utf-8',
+      env: getCrossPlatformEnv(),
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim().split(/\r?\n/)[0];
+    if (found && fs.existsSync(found)) {
+      return found;
+    }
   } catch {
-    return cliName;
+    // continue
   }
+
+  return cliName;
 }
 
 export function getAvailableClis(): CliInfo[] {
   const clis = ['agy', 'claude', 'codex'];
+  const isWin = process.platform === 'win32';
+  const env = getCrossPlatformEnv();
+
   return clis.map((name) => {
     const cliPath = resolveCliPath(name);
     let available = false;
     let version = '';
     try {
-      if (fs.existsSync(cliPath)) {
+      if (fs.existsSync(cliPath) || (isWin && resolveCliPath(name) !== name)) {
         available = true;
-        version = execSync(`"${cliPath}" --version 2>/dev/null || "${cliPath}" -v 2>/dev/null || echo "1.0.0"`, {
+        const versionCmd = `"${cliPath}" --version`;
+        version = execSync(versionCmd, {
           encoding: 'utf-8',
-          shell: '/bin/bash',
-        }).trim().split('\n')[0];
+          env,
+          shell: isWin ? (process.env.ComSpec || 'cmd.exe') : '/bin/bash',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim().split(/\r?\n/)[0];
       }
     } catch {
-      available = false;
+      if (fs.existsSync(cliPath)) {
+        available = true;
+        version = '1.0.0';
+      }
     }
     return { name, path: cliPath, available, version };
   });
@@ -61,8 +131,15 @@ export function getModelsForCli(cliName: string): ModelOption[] {
     ];
     try {
       const cliPath = resolveCliPath('agy');
-      const out = execSync(`"${cliPath}" models 2>/dev/null`, { encoding: 'utf-8', shell: '/bin/bash' });
-      const lines = out.split('\n').filter(Boolean);
+      const env = getCrossPlatformEnv();
+      const isWin = process.platform === 'win32';
+      const out = execSync(`"${cliPath}" models`, {
+        encoding: 'utf-8',
+        env,
+        shell: isWin ? (process.env.ComSpec || 'cmd.exe') : '/bin/bash',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      const lines = out.split(/\r?\n/).filter(Boolean);
       const parsed: ModelOption[] = [];
       for (const line of lines) {
         const clean = line.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]|Fetching available models\.\.\./g, '').trim();
@@ -119,16 +196,13 @@ export function spawnAgentCli(
   onEvent: (event: StreamEvent) => void
 ): ChildProcess {
   const cliPath = resolveCliPath(cliName);
-  
-  // Enrich PATH so the spawned process finds node, git, agy, claude, codex, etc.
-  const env = {
-    ...process.env,
-    PATH: `${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH || ''}`,
-  };
+  const env = getCrossPlatformEnv();
+  const isWin = process.platform === 'win32';
 
   const proc = spawn(cliPath, args, {
     cwd,
     env,
+    shell: isWin ? true : false,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 

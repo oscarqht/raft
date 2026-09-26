@@ -1,5 +1,6 @@
-import { spawn, ChildProcess } from 'node:child_process';
+import { spawn, execSync, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { getCrossPlatformEnv } from './agentRunner.js';
 
 export interface DevServerState {
   taskId: string;
@@ -49,16 +50,16 @@ class DevServerManager extends EventEmitter {
     };
 
     const env = {
-      ...process.env,
-      PATH: `${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${process.env.PATH || ''}`,
+      ...getCrossPlatformEnv(),
       FORCE_COLOR: '1',
     };
 
+    const isWin = process.platform === 'win32';
     const proc = spawn(devCmd, {
       cwd: worktreePath,
       shell: true,
       env,
-      detached: true, // detached so we can kill entire process group
+      detached: !isWin, // detached on POSIX for process group kill
     });
 
     const addLog = (text: string) => {
@@ -117,8 +118,15 @@ class DevServerManager extends EventEmitter {
 
     try {
       if (entry.proc.pid) {
-        // Kill process tree
-        process.kill(-entry.proc.pid, 'SIGTERM');
+        if (process.platform === 'win32') {
+          // On Windows, use taskkill to kill process tree cleanly
+          try {
+            execSync(`taskkill /pid ${entry.proc.pid} /T /F`, { stdio: 'ignore' });
+          } catch {}
+        } else {
+          // Kill process group on POSIX
+          process.kill(-entry.proc.pid, 'SIGTERM');
+        }
       } else {
         entry.proc.kill('SIGTERM');
       }
