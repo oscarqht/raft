@@ -13,10 +13,12 @@ import {
   getAvailableClis,
   getModelsForCli,
   installCliProcess,
+  runCommitMessageAgent,
   runDiscoveryAgent,
   runRebaseAgent,
   runSubmitAgent,
   spawnAgentCli,
+  CommitMessageResult,
   StreamEvent,
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
@@ -501,7 +503,7 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
 app.get('/api/tasks/:id/git/status', (req: Request, res: Response) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  const status = GitService.getGitStatus(task.worktree_path);
+  const status = GitService.getGitStatus(task.worktree_path, task.branch, task.base_branch);
   res.json(status);
 });
 
@@ -510,6 +512,30 @@ app.get('/api/tasks/:id/git/diff', (req: Request, res: Response) => {
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const diff = GitService.getGitDiff(task.worktree_path);
   res.json({ diff });
+});
+
+app.post('/api/tasks/:id/git/commit-message', async (req: Request, res: Response) => {
+  const taskId = req.params.id as string;
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const defaultCli = req.body?.cli || getEffectiveAgentCli();
+  const defaultModel = req.body?.model || getSetting<string>('default_model', '');
+  const defaultEffort = req.body?.thinkingEffort || getSetting<string>('thinking_effort', 'medium');
+
+  try {
+    const result = await runCommitMessageAgent(
+      task.worktree_path,
+      task.name,
+      task.branch,
+      defaultCli,
+      defaultModel,
+      defaultEffort
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to generate commit message' });
+  }
 });
 
 // Dev Server Control
@@ -682,14 +708,24 @@ wss.on('connection', (ws: WebSocket) => {
         const { taskId } = msg;
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
+        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
 
         const defaultCli = getEffectiveAgentCli();
         const defaultModel = getSetting<string>('default_model', '');
         const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
-        activeProc = runRebaseAgent(task.worktree_path, task.base_branch, defaultCli, defaultModel, defaultEffort, (ev) => {
-          send({ type: 'rebase_event', event: ev });
-        });
+        activeProc = runRebaseAgent(
+          task.worktree_path,
+          task.base_branch,
+          defaultCli,
+          defaultModel,
+          defaultEffort,
+          (ev) => {
+            send({ type: 'rebase_event', event: ev });
+          },
+          project?.path,
+          task.branch
+        );
       }
 
       // 4. Submit agent (Commit & Push)
@@ -705,6 +741,34 @@ wss.on('connection', (ws: WebSocket) => {
         activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, defaultEffort, (ev) => {
           send({ type: 'submit_event', event: ev });
         });
+      }
+
+      // Generate Commit Message Agent
+      else if (msg.type === 'generate_commit_message') {
+        const { taskId } = msg;
+        const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+        if (!task) return send({ type: 'error', error: 'Task not found' });
+
+        const defaultCli = msg.agentCli || getEffectiveAgentCli();
+        const defaultModel = msg.model || getSetting<string>('default_model', '');
+        const defaultEffort = msg.thinkingEffort || getSetting<string>('thinking_effort', 'medium');
+
+        try {
+          const result = await runCommitMessageAgent(
+            task.worktree_path,
+            task.name,
+            task.branch,
+            defaultCli,
+            defaultModel,
+            defaultEffort,
+            (ev) => {
+              send({ type: 'commit_message_event', event: ev });
+            }
+          );
+          send({ type: 'commit_message_result', result });
+        } catch (err: any) {
+          send({ type: 'error', error: err.message || 'Failed to generate commit message' });
+        }
       }
 
       // 5. Chat message prompt

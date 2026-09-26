@@ -164,6 +164,25 @@ export async function getTaskGitDiff(taskId: string): Promise<{ diff: string }> 
   return res.json();
 }
 
+export interface CommitMessageResult {
+  title: string;
+  details?: string;
+  isLargeChange: boolean;
+  fullMessage: string;
+}
+
+export async function generateTaskCommitMessage(taskId: string): Promise<CommitMessageResult> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/git/commit-message`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to generate commit message');
+  }
+  return data;
+}
+
 export async function getDevServerState(taskId: string): Promise<DevServerState> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server`);
   return res.json();

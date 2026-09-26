@@ -37,12 +37,15 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
           } else if (ev.type === 'done') {
             setIsRunning(false);
             setIsSuccess(true);
-            setStatusText('Rebase and sync complete!');
+            setStatusText(ev.content || 'Rebase and sync complete!');
           } else if (ev.type === 'error') {
             setIsRunning(false);
             setIsSuccess(false);
             setStatusText(`Error: ${ev.content}`);
           }
+        } else if (msg.type === 'aborted') {
+          setIsRunning(false);
+          setStatusText('Rebase cancelled.');
         }
       } catch {}
     };
@@ -60,9 +63,16 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
     setIsRunning(true);
     setIsSuccess(null);
     setLogs([]);
-    setStatusText(`Starting AI agent to pull origin/${task.base_branch} and rebase...`);
+    setStatusText(`Syncing ${task.base_branch} and rebasing ${task.branch}...`);
 
     ws.send(JSON.stringify({ type: 'start_rebase', taskId: task.id }));
+  };
+
+  const handleAbortRebase = () => {
+    if (!ws || !isRunning) return;
+    ws.send(JSON.stringify({ type: 'abort' }));
+    setIsRunning(false);
+    setStatusText('Rebase cancelled by user.');
   };
 
   if (!isOpen) return null;
@@ -98,20 +108,30 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
               <span className="font-medium text-cozy-text">How it works:</span>
             </div>
             <p className="leading-relaxed">
-              Termai launches an autonomous AI agent directly in your worktree. It fetches the latest commits from <code className="text-amber-400 font-mono">origin/{task.base_branch}</code>, executes the git rebase, and if merge conflicts are detected, analyzes the diffs to resolve them cleanly.
+              Termai fetches latest commits from <code className="text-amber-400 font-mono">origin/{task.base_branch}</code>, synchronizes your local base branch, and performs a clean git rebase with autostash. If merge conflicts arise, an autonomous AI agent is launched to inspect and resolve them cleanly.
             </p>
           </div>
 
           {/* Action Button & Status */}
           <div className="flex items-center justify-between">
-            <button
-              onClick={handleStartRebase}
-              disabled={isRunning}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black transition-all shadow-sm"
-            >
-              {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              <span>{isRunning ? 'Rebasing in progress...' : 'Start Pull & Rebase'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleStartRebase}
+                disabled={isRunning}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-black transition-all shadow-sm"
+              >
+                {isRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                <span>{isRunning ? 'Rebasing in progress...' : 'Start Pull & Rebase'}</span>
+              </button>
+              {isRunning && (
+                <button
+                  onClick={handleAbortRebase}
+                  className="px-3 py-2 rounded-xl text-xs font-medium bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
 
             {isSuccess !== null && (
               <div className="flex items-center gap-1.5 text-xs">

@@ -99,10 +99,17 @@ export interface DevServerState {
   worktreePath: string;
 }
 
+export interface GitCommitItem {
+  hash: string;
+  message: string;
+}
+
 export interface GitStatus {
   staged: string[];
   unstaged: string[];
   untracked: string[];
+  unpushedCount?: number;
+  unpushedCommits?: GitCommitItem[];
 }
 
 export interface FSItem {

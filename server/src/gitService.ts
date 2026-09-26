@@ -212,7 +212,54 @@ export class GitService {
     }
   }
 
-  static getGitStatus(cwd: string): { staged: string[]; unstaged: string[]; untracked: string[] } {
+  static getUnpushedCommits(cwd: string, branch?: string, baseBranch?: string): { hash: string; message: string }[] {
+    const getLog = (revRange: string) => {
+      try {
+        const out = execSync(`git log ${revRange} --oneline`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+        if (!out) return [];
+        return out.split(/\r?\n/).map((line) => {
+          const spaceIdx = line.indexOf(' ');
+          if (spaceIdx === -1) return { hash: line, message: '' };
+          return { hash: line.slice(0, spaceIdx), message: line.slice(spaceIdx + 1).trim() };
+        });
+      } catch {
+        return null;
+      }
+    };
+
+    let commits = getLog('@{u}..HEAD');
+    if (commits !== null) return commits;
+
+    if (branch) {
+      commits = getLog(`origin/${branch}..HEAD`);
+      if (commits !== null) return commits;
+    }
+
+    if (baseBranch) {
+      commits = getLog(`origin/${baseBranch}..HEAD`);
+      if (commits !== null) return commits;
+    }
+
+    commits = getLog('origin/main..HEAD');
+    if (commits !== null) return commits;
+
+    commits = getLog('origin/master..HEAD');
+    if (commits !== null) return commits;
+
+    return [];
+  }
+
+  static getGitStatus(cwd: string, branch?: string, baseBranch?: string): {
+    staged: string[];
+    unstaged: string[];
+    untracked: string[];
+    unpushedCount: number;
+    unpushedCommits: { hash: string; message: string }[];
+  } {
     try {
       const statusOutput = execSync('git status --porcelain', {
         cwd,
@@ -241,9 +288,17 @@ export class GitService {
         }
       }
 
-      return { staged, unstaged, untracked };
+      const unpushedCommits = GitService.getUnpushedCommits(cwd, branch, baseBranch);
+
+      return {
+        staged,
+        unstaged,
+        untracked,
+        unpushedCount: unpushedCommits.length,
+        unpushedCommits,
+      };
     } catch {
-      return { staged: [], unstaged: [], untracked: [] };
+      return { staged: [], unstaged: [], untracked: [], unpushedCount: 0, unpushedCommits: [] };
     }
   }
 

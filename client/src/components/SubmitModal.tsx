@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal } from 'lucide-react';
+import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit } from 'lucide-react';
 import { Task, GitStatus } from '../types';
-import { getTaskGitStatus, getTaskGitDiff } from '../api';
+import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 
 interface SubmitModalProps {
   task: Task;
@@ -17,17 +17,60 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   ws,
 }) => {
   const [gitStatus, setGitStatus] = useState<GitStatus>({ staged: [], unstaged: [], untracked: [] });
-  const [gitDiff, setGitDiff] = useState('');
-  const [commitMessage, setCommitMessage] = useState(`feat(${task.name}): implement task features`);
+  const [commitMessage, setCommitMessage] = useState(`feat(${task.name}): implement updates`);
+  const [commitDetails, setCommitDetails] = useState('');
+  const [isLargeChange, setIsLargeChange] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [isSuccess, setIsSuccess] = useState<boolean | null>(null);
+
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const hasUserEditedRef = useRef(false);
+
+  const totalChanges = gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length;
+  const unpushedCount = gitStatus.unpushedCount || 0;
+  const isPushOnly = totalChanges === 0 && unpushedCount > 0;
+  const hasNothingToSubmit = totalChanges === 0 && unpushedCount === 0;
+
+  const handleGenerateAiCommit = async (force = false) => {
+    if (isGenerating || isSubmitting) return;
+    setIsGenerating(true);
+    try {
+      const res = await generateTaskCommitMessage(task.id);
+      if (force || !hasUserEditedRef.current) {
+        if (res.title) {
+          setCommitMessage(res.title);
+        }
+        setCommitDetails(res.details || '');
+        setIsLargeChange(Boolean(res.isLargeChange));
+      }
+    } catch (err) {
+      console.error('Failed to generate commit message:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
-      getTaskGitStatus(task.id).then(setGitStatus).catch(() => {});
-      getTaskGitDiff(task.id).then((res) => setGitDiff(res.diff)).catch(() => {});
+      hasUserEditedRef.current = false;
+      setIsSuccess(null);
+      setLogs([]);
+      setIsSubmitting(false);
+
+      getTaskGitStatus(task.id)
+        .then((status) => {
+          setGitStatus(status);
+          const total = status.staged.length + status.unstaged.length + status.untracked.length;
+          if (total > 0) {
+            handleGenerateAiCommit(false);
+          } else {
+            setCommitMessage('');
+            setCommitDetails('');
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen, task.id]);
 
@@ -45,6 +88,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           if (ev.type === 'done') {
             setIsSubmitting(false);
             setIsSuccess(true);
+            getTaskGitStatus(task.id).then(setGitStatus).catch(() => {});
           } else if (ev.type === 'error') {
             setIsSubmitting(false);
             setIsSuccess(false);
@@ -55,30 +99,34 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
 
     ws.addEventListener('message', handleMessage);
     return () => ws.removeEventListener('message', handleMessage);
-  }, [ws]);
+  }, [ws, task.id]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
   const handleSubmit = () => {
-    if (!ws || !commitMessage.trim() || isSubmitting) return;
+    if (!ws || isSubmitting || isGenerating || hasNothingToSubmit) return;
+    if (totalChanges > 0 && !commitMessage.trim()) return;
+
     setIsSubmitting(true);
     setIsSuccess(null);
     setLogs([]);
+
+    const trimmedTitle = commitMessage.trim();
+    const trimmedDetails = commitDetails.trim();
+    const fullMessage = trimmedDetails ? `${trimmedTitle}\n\n${trimmedDetails}` : trimmedTitle;
 
     ws.send(
       JSON.stringify({
         type: 'start_submit',
         taskId: task.id,
-        commitMessage: commitMessage.trim(),
+        commitMessage: fullMessage,
       })
     );
   };
 
   if (!isOpen) return null;
-
-  const totalChanges = gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -134,36 +182,116 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             </div>
           </div>
 
-          {/* Commit Message */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
-              <label className="font-medium text-cozy-text">Commit Message</label>
-              <button
-                type="button"
-                onClick={() => setCommitMessage(`feat(${task.name}): implement updates and automated changes`)}
-                className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1 transition-colors"
-              >
-                <Sparkles className="w-3 h-3" />
-                <span>Suggest with AI</span>
-              </button>
-            </div>
-            <textarea
-              value={commitMessage}
-              onChange={(e) => setCommitMessage(e.target.value)}
-              rows={2}
-              className="w-full bg-cozy-bg border border-cozy-border rounded-xl p-3 text-xs font-mono text-cozy-text focus:outline-none focus:border-sky-500"
-              placeholder="e.g. feat: add task preview iframe"
-            />
-          </div>
-
-          {/* Diff Preview */}
-          {gitDiff && gitDiff !== '(No changes)' && (
+          {/* Unpushed Commits Section */}
+          {unpushedCount > 0 && (
             <div className="space-y-1.5">
-              <span className="text-xs font-medium text-cozy-muted">Git Diff Summary</span>
-              <div className="p-3 rounded-xl bg-cozy-bg border border-cozy-border max-h-36 overflow-y-auto font-mono text-[11px] text-cozy-muted whitespace-pre">
-                {gitDiff}
+              <div className="flex items-center justify-between text-xs text-cozy-muted">
+                <span className="font-medium text-cozy-text flex items-center gap-1.5">
+                  <GitCommit className="w-3.5 h-3.5 text-sky-400" />
+                  Unpushed Commits ({unpushedCount})
+                </span>
+                <span className="text-[11px] text-sky-400/90 font-mono">
+                  Ready to push to remote
+                </span>
+              </div>
+              <div className="p-3 rounded-xl bg-cozy-bg border border-sky-500/20 max-h-28 overflow-y-auto space-y-1 font-mono text-xs">
+                {gitStatus.unpushedCommits?.map((c) => (
+                  <div key={c.hash} className="flex items-center gap-2 text-cozy-text">
+                    <span className="text-sky-400 shrink-0 font-bold">{c.hash}</span>
+                    <span className="truncate text-cozy-muted">{c.message}</span>
+                  </div>
+                ))}
               </div>
             </div>
+          )}
+
+          {isPushOnly ? (
+            <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300 flex items-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+              <span>
+                Working tree is clean. You have {unpushedCount} local commit{unpushedCount > 1 ? 's' : ''} ready to push directly to remote origin.
+              </span>
+            </div>
+          ) : (
+            <>
+              {/* Commit Message */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-medium text-cozy-text flex items-center gap-1.5">
+                    Commit Message
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateAiCommit(true)}
+                    disabled={isGenerating || isSubmitting || totalChanges === 0}
+                    className="text-[11px] text-sky-400 hover:text-sky-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                    title={totalChanges === 0 ? 'No local file changes to analyze' : 'Generate commit message using AI Agent'}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
+                        <span>Generating with AI...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3 h-3" />
+                        <span>Suggest with AI</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={commitMessage}
+                  onChange={(e) => {
+                    hasUserEditedRef.current = true;
+                    setCommitMessage(e.target.value);
+                  }}
+                  disabled={isSubmitting}
+                  className="w-full bg-cozy-bg border border-cozy-border rounded-xl px-3 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-sky-500 disabled:opacity-60"
+                  placeholder={isGenerating ? 'Analyzing changes and generating commit message...' : 'e.g. feat(workspace): support drag-and-drop tabs to favorites'}
+                />
+              </div>
+
+              {/* Optional Details for Large Changes */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <label className="font-medium text-cozy-muted">
+                      Details <span className="text-[10px] text-cozy-muted/70 font-normal">(optional, for large changes)</span>
+                    </label>
+                    {isLargeChange && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        Large change detected
+                      </span>
+                    )}
+                  </div>
+                  {commitDetails && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        hasUserEditedRef.current = true;
+                        setCommitDetails('');
+                      }}
+                      className="text-[10px] text-cozy-muted hover:text-rose-400 transition-colors"
+                    >
+                      Clear details
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  value={commitDetails}
+                  onChange={(e) => {
+                    hasUserEditedRef.current = true;
+                    setCommitDetails(e.target.value);
+                  }}
+                  disabled={isSubmitting}
+                  rows={4}
+                  className="w-full bg-cozy-bg border border-cozy-border rounded-xl p-3 text-xs font-mono text-cozy-text focus:outline-none focus:border-sky-500 disabled:opacity-60 resize-y"
+                  placeholder={isGenerating ? 'Generating technical details for large changes...' : 'Detailed bullet points or technical description (optional)...'}
+                />
+              </div>
+            </>
           )}
 
           {/* Live Agent Output */}
@@ -189,7 +317,9 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
               {isSuccess ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Successfully committed and pushed branch to remote origin!</span>
+                  <span>
+                    {isPushOnly ? 'Successfully pushed branch to remote origin!' : 'Successfully committed and pushed branch to remote origin!'}
+                  </span>
                 </>
               ) : (
                 <>
@@ -211,11 +341,20 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isSubmitting || !commitMessage.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white transition-all shadow-sm"
+            disabled={isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim())}
+            title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-sm"
           >
             <UploadCloud className="w-3.5 h-3.5" />
-            <span>{isSubmitting ? 'Pushing with AI Agent...' : 'Commit & Push'}</span>
+            <span>
+              {isSubmitting
+                ? 'Pushing changes...'
+                : hasNothingToSubmit
+                ? 'No Changes to Commit'
+                : isPushOnly
+                ? `Push ${unpushedCount} Commit${unpushedCount > 1 ? 's' : ''}`
+                : 'Commit & Push'}
+            </span>
           </button>
         </div>
       </div>
