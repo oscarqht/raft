@@ -1,0 +1,107 @@
+import Database, { Database as DatabaseType } from 'better-sqlite3';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+
+const TERMAI_DIR = path.join(os.homedir(), '.termai');
+if (!fs.existsSync(TERMAI_DIR)) {
+  fs.mkdirSync(TERMAI_DIR, { recursive: true });
+}
+
+const DB_PATH = path.join(TERMAI_DIR, 'termai.db');
+export const db: DatabaseType = new Database(DB_PATH);
+
+
+// Initialize database schema
+db.exec(`
+  PRAGMA journal_mode = WAL;
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    dev_cmd TEXT,
+    dev_port INTEGER,
+    build_cmd TEXT,
+    test_cmd TEXT,
+    branch_convention TEXT,
+    default_agent_cli TEXT,
+    default_model TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    branch TEXT NOT NULL,
+    base_branch TEXT NOT NULL,
+    worktree_path TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_sessions (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    agent_cli TEXT NOT NULL,
+    model TEXT,
+    thinking_effort TEXT,
+    status TEXT NOT NULL DEFAULT 'idle',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    metadata TEXT,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+  CREATE INDEX IF NOT EXISTS idx_chat_sessions_task ON chat_sessions(task_id);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+`);
+
+// Ensure default settings exist
+const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
+const setSettingStmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+
+export function getSetting<T>(key: string, defaultValue: T): T {
+  const row = getSettingStmt.get(key) as { value: string } | undefined;
+  if (!row) return defaultValue;
+  try {
+    return JSON.parse(row.value) as T;
+  } catch {
+    return defaultValue;
+  }
+}
+
+export function setSetting<T>(key: string, value: T): void {
+  setSettingStmt.run(key, JSON.stringify(value));
+}
+
+// Initial defaults
+if (!getSettingStmt.get('agent_cli')) {
+  setSetting('agent_cli', 'agy');
+}
+if (!getSettingStmt.get('thinking_effort')) {
+  setSetting('thinking_effort', 'medium');
+}
+if (!getSettingStmt.get('theme')) {
+  setSetting('theme', 'dark');
+}
