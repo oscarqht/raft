@@ -94,10 +94,10 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* Projects Grid */}
       {projects.length === 0 ? (
         <div className="p-12 text-center rounded-2xl border border-dashed border-cozy-border bg-cozy-surface/40 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-cozy-subtle border border-cozy-border flex items-center justify-center mb-4">
-            <FolderGit2 className="w-7 h-7 text-sky-400" />
+          <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 overflow-hidden drop-shadow-md">
+            <img src="/logo.png" alt="Raft otter" className="w-full h-full object-contain" />
           </div>
-          <h3 className="text-base font-semibold text-cozy-text mb-1">No projects added yet</h3>
+          <h3 className="text-base font-semibold text-cozy-text mb-1">Welcome to Raft</h3>
           <p className="text-sm text-cozy-muted max-w-md mb-6">
             Add a local git repository to start using autonomous AI coding agents in clean git worktrees.
           </p>

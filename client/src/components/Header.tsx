@@ -50,8 +50,8 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => onNavigate?.('home')}
           className="flex items-center space-x-2 text-sky-400 font-semibold hover:text-sky-300 transition-colors shrink-0"
         >
-          <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-lg select-none">
-            🦦
+          <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center overflow-hidden shrink-0">
+            <img src="/logo.png" alt="Raft logo" className="w-full h-full object-contain" />
           </div>
           <span className="text-base tracking-tight text-cozy-text flex items-center gap-1.5 font-medium">
             Raft
