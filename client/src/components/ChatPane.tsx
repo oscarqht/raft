@@ -260,7 +260,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <span className="font-medium text-cozy-text">Model:</span>
             <select
               value={tabModel}
-              onChange={(e) => setTabModel(e.target.value)}
+              onChange={(e) => {
+                const nextModel = e.target.value;
+                setTabModel(nextModel);
+                const found = availableModels.find((m) => m.id === nextModel);
+                if (found?.reasoningEfforts && found.reasoningEfforts.length > 0) {
+                  if (!found.reasoningEfforts.map((s) => s.toLowerCase()).includes(tabEffort.toLowerCase())) {
+                    setTabEffort(found.defaultEffort || found.reasoningEfforts[0]);
+                  }
+                }
+              }}
               className="w-full bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500 truncate"
             >
               {availableModels.map((m) => (
@@ -276,13 +285,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <select
               value={tabEffort}
               onChange={(e) => setTabEffort(e.target.value)}
-              className="bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500"
+              className="bg-cozy-surface border border-cozy-border rounded px-2 py-1 text-cozy-text focus:outline-none focus:border-sky-500 capitalize"
             >
-              <option value="none">None</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="max">Max</option>
+              {(() => {
+                const current = availableModels.find((m) => m.id === tabModel);
+                const efforts = current?.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+                return efforts.map((eff) => (
+                  <option key={eff} value={eff}>
+                    {eff.charAt(0).toUpperCase() + eff.slice(1)}
+                  </option>
+                ));
+              })()}
             </select>
           </div>
         </div>

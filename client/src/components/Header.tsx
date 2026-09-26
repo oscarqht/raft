@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Sparkles, Settings as SettingsIcon, Sun, Moon, Home, ChevronRight, FolderGit2 } from 'lucide-react';
+import { Terminal, Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2 } from 'lucide-react';
 import { Settings } from '../types';
 
 interface HeaderProps {
@@ -11,14 +11,12 @@ interface HeaderProps {
   };
   onNavigate: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
-  onToggleTheme: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   currentPath,
   onNavigate,
   settings,
-  onToggleTheme,
 }) => {
   return (
     <header className="h-14 border-b border-cozy-border bg-cozy-surface/80 backdrop-blur px-4 flex items-center justify-between shrink-0 select-none">
@@ -31,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
             <Terminal className="w-4 h-4 text-sky-400" />
           </div>
-          <span className="text-base tracking-tight text-white flex items-center gap-1.5 font-medium">
+          <span className="text-base tracking-tight text-cozy-text flex items-center gap-1.5 font-medium">
             termai
             <Sparkles className="w-3.5 h-3.5 text-amber-400 inline" />
           </span>
@@ -74,14 +72,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-cozy-muted truncate max-w-[120px]">{settings.default_model || 'default'}</span>
           </button>
         )}
-
-        <button
-          onClick={onToggleTheme}
-          className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border border-transparent hover:border-cozy-border transition-colors"
-          title="Toggle theme"
-        >
-          {settings?.theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-        </button>
 
         <button
           onClick={() => onNavigate('settings')}

@@ -21,8 +21,11 @@ export async function getClis(): Promise<CliInfo[]> {
   return res.json();
 }
 
-export async function getModels(cli?: string): Promise<ModelOption[]> {
-  const url = cli ? `${API_BASE}/models?cli=${encodeURIComponent(cli)}` : `${API_BASE}/models`;
+export async function getModels(cli?: string, refresh?: boolean): Promise<ModelOption[]> {
+  const params = new URLSearchParams();
+  if (cli) params.set('cli', cli);
+  if (refresh) params.set('refresh', 'true');
+  const url = `${API_BASE}/models?${params.toString()}`;
   const res = await fetch(url);
   return res.json();
 }
@@ -178,4 +181,37 @@ export function createWebSocketConnection(onMessage: (msg: any) => void): WebSoc
     }
   };
   return ws;
+}
+
+// Stream terminal installer for missing CLI via Server-Sent Events
+export function installCliStream(
+  cli: string,
+  onLog: (chunk: string) => void,
+  onDone: (success: boolean, availableClis?: CliInfo[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  const eventSource = new EventSource(`${API_BASE}/clis/install/stream?cli=${encodeURIComponent(cli)}`);
+
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'output' && data.chunk) {
+        onLog(data.chunk);
+      } else if (data.type === 'done') {
+        onDone(Boolean(data.success), data.availableClis);
+        eventSource.close();
+      }
+    } catch {
+      // ignore parsing error
+    }
+  };
+
+  eventSource.onerror = (err) => {
+    if (onError) onError(err);
+    eventSource.close();
+  };
+
+  return () => {
+    eventSource.close();
+  };
 }

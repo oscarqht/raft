@@ -52,7 +52,17 @@ export interface Settings {
   agent_cli: string;
   default_model: string;
   thinking_effort: string;
-  theme: 'dark' | 'light';
+  theme: 'auto' | 'dark' | 'light';
+}
+
+export interface CliInstallGuide {
+  title: string;
+  command: string;
+  commandMac?: string;
+  commandWin?: string;
+  authGuide: string;
+  docsUrl: string;
+  description: string;
 }
 
 export interface CliInfo {
@@ -60,12 +70,23 @@ export interface CliInfo {
   path: string;
   available: boolean;
   version?: string;
+  installGuide?: CliInstallGuide;
+}
+
+export interface ReasoningEffortOption {
+  id: string;
+  label: string;
+  description?: string;
 }
 
 export interface ModelOption {
   id: string;
   name: string;
   description?: string;
+  reasoningEfforts?: string[];
+  reasoningEffortOptions?: ReasoningEffortOption[];
+  defaultEffort?: string;
+  discoveredFrom?: string;
 }
 
 export interface DevServerState {

@@ -97,11 +97,12 @@ export function setSetting<T>(key: string, value: T): void {
 
 // Initial defaults
 if (!getSettingStmt.get('agent_cli')) {
-  setSetting('agent_cli', 'agy');
+  setSetting('agent_cli', 'codex');
 }
 if (!getSettingStmt.get('thinking_effort')) {
   setSetting('thinking_effort', 'medium');
 }
 if (!getSettingStmt.get('theme')) {
-  setSetting('theme', 'dark');
+  setSetting('theme', 'auto');
 }
+

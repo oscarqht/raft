@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Termai — Cozy AI Coding Workspace</title>
+    <script>
+      (function() {
+        try {
+          var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.backgroundColor = '#0f1117';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.backgroundColor = '#f8fafc';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="bg-cozy-bg text-cozy-text antialiased selection:bg-sky-500/30 selection:text-sky-200">
     <div id="root"></div>

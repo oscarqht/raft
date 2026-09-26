@@ -11,6 +11,7 @@ import { GitService } from './gitService.js';
 import {
   getAvailableClis,
   getModelsForCli,
+  installCliProcess,
   runDiscoveryAgent,
   runRebaseAgent,
   runSubmitAgent,
@@ -29,12 +30,29 @@ const wss = new WebSocketServer({ server });
 
 // ===================== REST APIs =====================
 
+function getEffectiveAgentCli(): string {
+  const availableClis = getAvailableClis();
+  const readyCli = availableClis.find((c) => c.available);
+  const saved = getSetting<string>('agent_cli', '');
+  if (saved) {
+    const isSavedAvailable = availableClis.some((c) => c.name.toLowerCase() === saved.toLowerCase() && c.available);
+    if (isSavedAvailable || !readyCli) {
+      return saved;
+    }
+  }
+  return readyCli ? readyCli.name : 'codex';
+}
+
 // Settings
-app.get('/api/settings', (_req: Request, res: Response) => {
-  const agent_cli = getSetting('agent_cli', 'agy');
-  const default_model = getSetting('default_model', 'gemini-2.5-pro');
-  const thinking_effort = getSetting('thinking_effort', 'medium');
-  const theme = getSetting('theme', 'dark');
+app.get('/api/settings', async (_req: Request, res: Response) => {
+  const agent_cli = getEffectiveAgentCli();
+  let default_model = getSetting<string>('default_model', '');
+  if (!default_model) {
+    const models = await getModelsForCli(agent_cli);
+    default_model = models[0]?.id || '';
+  }
+  const thinking_effort = getSetting<string>('thinking_effort', 'medium');
+  const theme = getSetting<string>('theme', 'auto');
   res.json({ agent_cli, default_model, thinking_effort, theme });
 });
 
@@ -52,9 +70,55 @@ app.get('/api/clis', (_req: Request, res: Response) => {
   res.json(getAvailableClis());
 });
 
-app.get('/api/models', (req: Request, res: Response) => {
-  const cli = (req.query.cli as string) || getSetting('agent_cli', 'agy');
-  res.json(getModelsForCli(cli));
+app.get('/api/clis/install/stream', (req: Request, res: Response) => {
+  const cli = ((req.query.cli as string) || '').toLowerCase();
+  if (!cli) {
+    return res.status(400).json({ error: 'cli parameter is required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent({ type: 'start', cli });
+
+  try {
+    const { proc, promise } = installCliProcess(cli, (chunk) => {
+      sendEvent({ type: 'output', chunk });
+    });
+
+    req.on('close', () => {
+      try {
+        proc.kill();
+      } catch {}
+    });
+
+    promise.then(({ code }) => {
+      const clis = getAvailableClis();
+      sendEvent({ type: 'done', code, success: code === 0, availableClis: clis });
+      res.end();
+    });
+  } catch (err: any) {
+    sendEvent({ type: 'output', chunk: `\n[termai error] ${err.message}\n` });
+    sendEvent({ type: 'done', code: 1, success: false });
+    res.end();
+  }
+});
+
+app.get('/api/models', async (req: Request, res: Response) => {
+  const cli = (req.query.cli as string) || getEffectiveAgentCli();
+  const refresh = req.query.refresh === 'true';
+  try {
+    const models = await getModelsForCli(cli, refresh);
+    res.json(models);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to get models' });
+  }
 });
 
 // Validate path
@@ -108,7 +172,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
       build_cmd || 'npm run build',
       test_cmd || 'npm test',
       branch_convention || repoInfo.currentBranch || 'main',
-      getSetting('agent_cli', 'agy'),
+      getEffectiveAgentCli(),
       getSetting('default_model', ''),
       now,
       now
@@ -185,8 +249,8 @@ app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
 
     // Create default initial chat session tab
     const chatSessionId = uuidv4();
-    const defaultCli = getSetting('agent_cli', 'agy');
-    const defaultModel = getSetting('default_model', 'gemini-2.5-pro');
+    const defaultCli = getEffectiveAgentCli();
+    const defaultModel = getSetting('default_model', '');
     const defaultEffort = getSetting('thinking_effort', 'medium');
 
     db.prepare(`
@@ -291,8 +355,8 @@ app.post('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
   const { title, agent_cli, model, thinking_effort } = req.body;
   const id = uuidv4();
   const now = Date.now();
-  const cli = agent_cli || getSetting('agent_cli', 'agy');
-  const mod = model || getSetting('default_model', 'gemini-2.5-pro');
+  const cli = agent_cli || getEffectiveAgentCli();
+  const mod = model || getSetting('default_model', '');
   const effort = thinking_effort || getSetting('thinking_effort', 'medium');
 
   db.prepare(`
@@ -335,7 +399,7 @@ wss.on('connection', (ws: WebSocket) => {
       // 1. Discovery session
       if (msg.type === 'start_discovery') {
         const { projectPath, agentCli, model } = msg;
-        const cli = agentCli || getSetting('agent_cli', 'agy');
+        const cli = agentCli || getEffectiveAgentCli();
         send({ type: 'status', text: `Scanning repository at ${projectPath}...` });
 
         try {
@@ -377,7 +441,7 @@ wss.on('connection', (ws: WebSocket) => {
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
 
-        const defaultCli = getSetting('agent_cli', 'agy');
+        const defaultCli = getEffectiveAgentCli();
         const defaultModel = getSetting('default_model', '');
 
         activeProc = runRebaseAgent(task.worktree_path, task.base_branch, defaultCli, defaultModel, (ev) => {
@@ -391,7 +455,7 @@ wss.on('connection', (ws: WebSocket) => {
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
 
-        const defaultCli = getSetting('agent_cli', 'agy');
+        const defaultCli = getEffectiveAgentCli();
         const defaultModel = getSetting('default_model', '');
 
         activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, (ev) => {
@@ -417,7 +481,7 @@ wss.on('connection', (ws: WebSocket) => {
 
         send({ type: 'message_saved', message: { id: userMsgId, role: 'user', content: prompt, timestamp: now } });
 
-        const cliToUse = agentCli || session.agent_cli || getSetting('agent_cli', 'agy');
+        const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
         const modelToUse = model || session.model;
         const effortToUse = thinkingEffort || session.thinking_effort;
 
@@ -431,11 +495,16 @@ wss.on('connection', (ws: WebSocket) => {
         } else if (cliToUse === 'claude') {
           args.push('-p', prompt);
           if (modelToUse) args.push('--model', modelToUse);
+          if (effortToUse && effortToUse !== 'none') args.push('--effort', effortToUse);
           args.push('--dangerously-skip-permissions');
         } else {
           // codex
           args.push('exec', prompt);
           if (modelToUse) args.push('--model', modelToUse);
+          if (effortToUse && effortToUse !== 'none') {
+            args.push('-c', `model_reasoning_effort="${effortToUse}"`);
+          }
+          args.push('-c', 'service_tier="fast"');
         }
 
         let assistantContent = '';
@@ -478,6 +547,34 @@ wss.on('connection', (ws: WebSocket) => {
             activeProc.kill('SIGINT');
           } catch {}
           send({ type: 'aborted' });
+        }
+      }
+
+      // 7. Install CLI via WebSocket
+      else if (msg.type === 'install_cli') {
+        const cliToInstall = (msg.cli || '').toLowerCase();
+        send({ type: 'install_cli_start', cli: cliToInstall });
+        try {
+          const { proc, promise } = installCliProcess(cliToInstall, (chunk) => {
+            send({ type: 'install_cli_log', cli: cliToInstall, chunk });
+          });
+          promise.then(({ code }) => {
+            send({
+              type: 'install_cli_done',
+              cli: cliToInstall,
+              code,
+              success: code === 0,
+              availableClis: getAvailableClis(),
+            });
+          });
+        } catch (err: any) {
+          send({
+            type: 'install_cli_done',
+            cli: cliToInstall,
+            code: 1,
+            success: false,
+            error: err.message,
+          });
         }
       }
     } catch (err: any) {

@@ -9,15 +9,15 @@ export default {
     extend: {
       colors: {
         cozy: {
-          bg: '#0f1117',
-          surface: '#181b24',
-          subtle: '#222734',
-          border: '#2e3446',
-          text: '#f1f5f9',
-          muted: '#94a3b8',
-          accent: '#38bdf8',
-          amber: '#fbbf24',
-          emerald: '#34d399',
+          bg: 'rgb(var(--cozy-bg) / <alpha-value>)',
+          surface: 'rgb(var(--cozy-surface) / <alpha-value>)',
+          subtle: 'rgb(var(--cozy-subtle) / <alpha-value>)',
+          border: 'rgb(var(--cozy-border) / <alpha-value>)',
+          text: 'rgb(var(--cozy-text) / <alpha-value>)',
+          muted: 'rgb(var(--cozy-muted) / <alpha-value>)',
+          accent: 'rgb(var(--cozy-accent) / <alpha-value>)',
+          amber: 'rgb(var(--cozy-amber) / <alpha-value>)',
+          emerald: 'rgb(var(--cozy-emerald) / <alpha-value>)',
         },
         cozylight: {
           bg: '#f8fafc',

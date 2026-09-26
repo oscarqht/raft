@@ -18,11 +18,31 @@ export default function App() {
   const [clis, setClis] = useState<CliInfo[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
 
+  // Always automatically match and sync with current OS theme
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const syncWithOsTheme = () => {
+      const isDark = mediaQuery.matches;
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+        document.documentElement.style.backgroundColor = '#0f1117';
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.documentElement.style.backgroundColor = '#f8fafc';
+      }
+    };
+
+    syncWithOsTheme();
+    mediaQuery.addEventListener('change', syncWithOsTheme);
+    return () => mediaQuery.removeEventListener('change', syncWithOsTheme);
+  }, []);
+
   // Load settings & CLIs
   useEffect(() => {
     getSettings().then((s) => {
       setSettings(s);
-      applyTheme(s.theme);
     }).catch(() => {});
 
     getClis().then(setClis).catch(() => {});
@@ -80,25 +100,6 @@ export default function App() {
     }
   }, [currentTaskId]);
 
-  const applyTheme = (theme: 'dark' | 'light') => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.style.backgroundColor = '#0f1117';
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.style.backgroundColor = '#f8fafc';
-    }
-  };
-
-  const handleToggleTheme = async () => {
-    if (!settings) return;
-    const nextTheme: 'dark' | 'light' = settings.theme === 'dark' ? 'light' : 'dark';
-    const nextSettings: Settings = { ...settings, theme: nextTheme };
-    setSettings(nextSettings);
-    applyTheme(nextTheme);
-    await updateSettings({ theme: nextTheme });
-  };
-
   const handleNavigate = (page: 'home' | 'project' | 'task' | 'settings', params?: any) => {
     if (page === 'home') {
       setCurrentProjectId(null);
@@ -123,7 +124,6 @@ export default function App() {
         }}
         onNavigate={handleNavigate}
         settings={settings}
-        onToggleTheme={handleToggleTheme}
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
@@ -155,11 +155,9 @@ export default function App() {
         {currentPage === 'settings' && settings && (
           <SettingsPage
             settings={settings}
-            onUpdateSettings={(s) => {
-              setSettings(s);
-              applyTheme(s.theme);
-            }}
+            onUpdateSettings={(s) => setSettings(s)}
             clis={clis}
+            onRefreshClis={() => getClis().then(setClis).catch(() => {})}
             onBack={() => {
               if (currentTaskId) handleNavigate('task', { taskId: currentTaskId });
               else if (currentProjectId) handleNavigate('project', { projectId: currentProjectId });

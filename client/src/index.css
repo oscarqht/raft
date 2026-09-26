@@ -3,6 +3,32 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --cozy-bg: 248 250 252;
+    --cozy-surface: 255 255 255;
+    --cozy-subtle: 241 245 249;
+    --cozy-border: 226 232 240;
+    --cozy-text: 15 23 42;
+    --cozy-muted: 100 116 139;
+    --cozy-accent: 2 132 199;
+    --cozy-amber: 217 119 6;
+    --cozy-emerald: 5 150 105;
+    color-scheme: light;
+  }
+
+  .dark {
+    --cozy-bg: 15 17 23;
+    --cozy-surface: 24 27 36;
+    --cozy-subtle: 34 39 52;
+    --cozy-border: 46 52 70;
+    --cozy-text: 241 245 249;
+    --cozy-muted: 148 163 184;
+    --cozy-accent: 56 189 248;
+    --cozy-amber: 251 191 36;
+    --cozy-emerald: 52 211 153;
+    color-scheme: dark;
+  }
+
   body {
     @apply transition-colors duration-200;
   }
@@ -19,10 +45,11 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.2);
+  background: rgb(var(--cozy-muted) / 0.25);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgb(var(--cozy-muted) / 0.45);
 }
+
