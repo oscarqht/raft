@@ -73,31 +73,33 @@ export const ScriptTerminalModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
       onClick={minimizeModal}
     >
       <div
-        className="bg-cozy-surface border border-cozy-border rounded-xl shadow-2xl flex flex-col w-full max-w-4xl h-[75vh] max-h-[800px] overflow-hidden"
+        className="w-full max-w-4xl h-[78vh] max-h-[820px] rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Terminal Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-cozy-border bg-cozy-subtle/50 select-none">
-          <div className="flex items-center gap-2.5 min-w-0 pr-4">
-            <Terminal className="w-4 h-4 text-sky-400 shrink-0" />
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border/50 bg-cozy-subtle/50 select-none">
+          <div className="flex items-center gap-3 min-w-0 pr-4">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shrink-0 shadow-soft-sm">
+              <Terminal className="w-4 h-4" />
+            </div>
             <div className="min-w-0">
-              <div className="font-semibold text-cozy-text text-sm flex items-center gap-2 truncate">
+              <div className="font-bold text-cozy-text text-sm flex items-center gap-2 truncate">
                 <span className="truncate">{execution.scriptName}</span>
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium shrink-0 ${
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold shrink-0 shadow-soft-sm ${
                     isRunning
                       ? execution.isCanceling
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
-                        : 'bg-sky-500/10 text-sky-400 border border-sky-500/20 animate-pulse'
+                        ? 'bg-amber-500/15 text-amber-500 border border-amber-400/30 animate-pulse'
+                        : 'bg-rose-500/15 text-rose-500 border border-rose-400/30 animate-pulse'
                       : execution.status === 'completed'
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
                       : execution.status === 'failed'
-                      ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                      ? 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
+                      : 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30'
                   }`}
                 >
                   {isRunning && <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />}
@@ -114,11 +116,11 @@ export const ScriptTerminalModal: React.FC = () => {
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             {/* Rerun */}
             <button
               type="button"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-cozy-muted hover:text-cozy-text bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/60 transition-all disabled:opacity-50"
               onClick={() => rerunScript(execution.id)}
               disabled={isRunning && !execution.isCanceling}
               title="Rerun script"
@@ -130,14 +132,14 @@ export const ScriptTerminalModal: React.FC = () => {
             {/* Copy Output */}
             <button
               type="button"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-cozy-muted hover:text-cozy-text bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/60 transition-all"
               onClick={handleCopy}
               title="Copy output"
             >
               {copied ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400 font-medium">Copied</span>
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="text-emerald-500 font-medium">Copied</span>
                 </>
               ) : (
                 <>
@@ -151,7 +153,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {isRunning && (
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-400/30 transition-all cursor-pointer shadow-soft-sm"
                 onClick={() => cancelScript(execution.id, execution.isCanceling)}
                 title={execution.isCanceling ? 'Force kill process' : 'Stop process'}
               >
@@ -160,12 +162,12 @@ export const ScriptTerminalModal: React.FC = () => {
               </button>
             )}
 
-            <div className="w-px h-4 bg-cozy-border mx-1" />
+            <div className="w-px h-4 bg-cozy-border/60 mx-1" />
 
             {/* Minimize to Dock */}
             <button
               type="button"
-              className="p-1.5 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer"
               onClick={minimizeModal}
               title="Minimize to dock (keeps running)"
             >
@@ -175,7 +177,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {/* Close & Terminate */}
             <button
               type="button"
-              className="p-1.5 rounded-md text-cozy-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-all cursor-pointer"
               onClick={handleClose}
               title={isRunning ? 'Terminate script and close' : 'Close modal'}
             >
@@ -188,7 +190,7 @@ export const ScriptTerminalModal: React.FC = () => {
         <div
           ref={terminalRef}
           onScroll={handleScroll}
-          className="flex-1 bg-black/90 p-4 font-mono text-xs text-zinc-300 overflow-y-auto whitespace-pre-wrap break-all leading-relaxed select-text"
+          className="flex-1 bg-black/85 p-5 font-mono text-xs text-zinc-300 overflow-y-auto whitespace-pre-wrap break-all leading-relaxed select-text shadow-soft-inner"
         >
           {execution.output ? (
             <Ansi>{execution.output}</Ansi>
@@ -202,7 +204,7 @@ export const ScriptTerminalModal: React.FC = () => {
         </div>
 
         {/* Footer info */}
-        <div className="px-4 py-2 border-t border-cozy-border/60 bg-cozy-surface text-[11px] text-cozy-muted flex items-center justify-between">
+        <div className="px-5 py-2.5 border-t border-cozy-border/50 bg-cozy-subtle/30 text-[11px] text-cozy-muted flex items-center justify-between">
           <div>
             Started: {new Date(execution.startedAt).toLocaleTimeString()}
             {execution.finishedAt && (
@@ -216,7 +218,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {!autoScroll && (
               <button
                 type="button"
-                className="text-sky-400 hover:underline cursor-pointer"
+                className="text-rose-500 hover:underline cursor-pointer font-medium"
                 onClick={() => {
                   setAutoScroll(true);
                   if (terminalRef.current) {

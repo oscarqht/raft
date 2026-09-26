@@ -147,42 +147,42 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium border transition-all shrink-0 cursor-pointer ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shrink-0 cursor-pointer shadow-soft-sm ${
           isOpen
-            ? 'bg-cozy-subtle border-sky-500/50 text-cozy-text shadow-sm'
-            : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border text-cozy-muted hover:text-cozy-text hover:border-sky-500/30'
+            ? 'bg-rose-500/10 border-rose-400/50 text-rose-500 shadow-glow-peach'
+            : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted hover:text-cozy-text hover:border-rose-400/30'
         }`}
         title={currentTaskName ? `Active Task: ${currentTaskName} (Click to switch)` : 'Quick switch task'}
       >
-        <ListTodo className={`w-3.5 h-3.5 shrink-0 ${currentTaskId ? 'text-sky-400' : 'text-cozy-muted'}`} />
-        <span className="max-w-[85px] sm:max-w-[140px] truncate text-cozy-text">
+        <ListTodo className={`w-3.5 h-3.5 shrink-0 ${currentTaskId ? 'text-rose-400' : 'text-cozy-muted'}`} />
+        <span className="max-w-[90px] sm:max-w-[150px] truncate text-cozy-text font-medium">
           {currentTaskName || 'Tasks'}
         </span>
         <ChevronDown
           className={`w-3.5 h-3.5 text-cozy-muted shrink-0 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-sky-400' : ''
+            isOpen ? 'rotate-180 text-rose-400' : ''
           }`}
         />
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-1.5 w-72 sm:w-80 max-h-[380px] rounded-xl bg-cozy-surface/95 backdrop-blur-md border border-cozy-border shadow-2xl z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-88 max-h-[420px] rounded-squircle popup-surface bg-white dark:bg-[#1a1d2e] z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 p-2.5">
           {/* Header */}
-          <div className="px-3 py-2 border-b border-cozy-border flex items-center justify-between text-xs font-medium text-cozy-muted bg-cozy-subtle/40 select-none shrink-0">
+          <div className="px-3.5 py-2.5 rounded-2xl flex items-center justify-between text-xs font-medium text-cozy-muted bg-cozy-subtle/80 select-none shrink-0 mb-1">
             <span className="font-semibold text-cozy-text">Quick Switch Task</span>
             {!loading && (
-              <span className="text-[10px] bg-cozy-subtle px-1.5 py-0.5 rounded border border-cozy-border font-mono">
+              <span className="text-[11px] bg-cozy-surface px-2 py-0.5 rounded-full border border-cozy-border/60 text-cozy-muted font-medium shadow-soft-sm">
                 {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'}
               </span>
             )}
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-cozy-border/40">
+          <div className="flex-1 overflow-y-auto overscroll-contain space-y-1 pr-1">
             {loading && tasks.length === 0 ? (
               <div className="py-8 flex flex-col items-center justify-center text-xs text-cozy-muted gap-2">
-                <Loader2 className="w-5 h-5 text-sky-400 animate-spin" />
+                <Loader2 className="w-5 h-5 text-rose-400 animate-spin" />
                 <span>Loading tasks...</span>
               </div>
             ) : groupedProjects.length === 0 ? (
@@ -192,18 +192,18 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
               </div>
             ) : (
               groupedProjects.map((group) => (
-                <div key={group.projectId} className="flex flex-col">
-                  {/* Sticky Project Header */}
-                  <div className="sticky top-0 z-10 px-3 py-1.5 bg-cozy-subtle/95 backdrop-blur border-b border-cozy-border/40 flex items-center gap-1.5 text-[11px] font-semibold text-cozy-muted uppercase tracking-wider select-none">
-                    <FolderGit2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <div key={group.projectId} className="flex flex-col space-y-0.5">
+                  {/* Project Header */}
+                  <div className="px-3 py-1.5 flex items-center gap-2 text-[11px] font-semibold text-cozy-muted tracking-wide select-none">
+                    <FolderGit2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     <span className="truncate">{group.projectName}</span>
-                    <span className="ml-auto text-[10px] font-normal text-cozy-muted/70 lowercase font-mono">
+                    <span className="ml-auto text-[10px] font-normal text-cozy-muted/70 px-1.5 py-0.2 rounded-full bg-cozy-subtle">
                       {group.tasks.length}
                     </span>
                   </div>
 
                   {/* Tasks List */}
-                  <div className="py-0.5">
+                  <div className="space-y-1">
                     {group.tasks.map((task) => {
                       const isActive = task.id === currentTaskId;
                       return (
@@ -211,40 +211,40 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
                           key={task.id}
                           type="button"
                           onClick={() => handleSelectTask(task)}
-                          className={`w-full px-3 py-2 flex items-center justify-between gap-2 text-left transition-colors cursor-pointer group ${
+                          className={`w-full px-3 py-2 rounded-2xl flex items-center justify-between gap-2.5 text-left transition-all cursor-pointer group ${
                             isActive
-                              ? 'bg-sky-500/10 hover:bg-sky-500/15'
-                              : 'hover:bg-cozy-subtle'
+                              ? 'bg-rose-500/10 text-rose-500 font-medium shadow-soft-sm border border-rose-400/20'
+                              : 'hover:bg-cozy-subtle/80 text-cozy-text border border-transparent'
                           }`}
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               <span
-                                className={`text-xs truncate ${
+                                className={`text-xs truncate font-medium ${
                                   isActive
-                                    ? 'text-sky-400 font-semibold'
-                                    : 'text-cozy-text group-hover:text-sky-400'
+                                    ? 'text-rose-500'
+                                    : 'text-cozy-text group-hover:text-rose-500'
                                 }`}
                               >
                                 {task.name}
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-1.5 text-[10px] text-cozy-muted mt-0.5">
-                              <span className="flex items-center gap-1 max-w-[140px] truncate font-mono">
-                                <GitBranch className="w-2.5 h-2.5 shrink-0 text-cozy-muted/80" />
+                            <div className="flex items-center gap-2 text-[11px] text-cozy-muted mt-0.5">
+                              <span className="flex items-center gap-1 max-w-[140px] truncate">
+                                <GitBranch className="w-2.5 h-2.5 shrink-0 text-amber-500/80" />
                                 <span className="truncate">{task.branch}</span>
                               </span>
                               <span>•</span>
                               <span className="shrink-0 flex items-center gap-1">
-                                <Clock className="w-2.5 h-2.5 shrink-0 text-cozy-muted/80" />
+                                <Clock className="w-2.5 h-2.5 shrink-0 text-cozy-muted/70" />
                                 <span>{formatRelativeTime(task.updated_at || task.created_at)}</span>
                               </span>
                             </div>
                           </div>
 
                           {isActive && (
-                            <Check className="w-4 h-4 text-sky-400 shrink-0 ml-1.5" />
+                            <Check className="w-4 h-4 text-rose-400 shrink-0 ml-1.5" />
                           )}
                         </button>
                       );

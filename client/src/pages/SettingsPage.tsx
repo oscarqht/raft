@@ -333,45 +333,49 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
 
   return (
     <div className="flex-1 overflow-y-auto w-full">
-      <div className="max-w-3xl mx-auto p-6 md:p-8">
+      <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
         {/* Top Bar */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <button
             onClick={onBack}
-            className="flex items-center gap-1.5 text-xs text-cozy-muted hover:text-cozy-text transition-colors"
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-cozy-muted hover:text-cozy-text bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/60 transition-all shadow-soft-sm cursor-pointer"
           >
             <ArrowLeft className="w-4 h-4" />
             <span>Back</span>
           </button>
 
           {savedToast && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-lg animate-in fade-in">
+            <div className="flex items-center gap-1.5 text-xs text-emerald-500 bg-emerald-500/15 border border-emerald-400/30 px-3.5 py-1.5 rounded-full shadow-soft-sm animate-in fade-in">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Settings saved automatically</span>
             </div>
           )}
         </div>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-cozy-text flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-sky-400" />
-          Settings
-        </h1>
-        <p className="text-sm text-cozy-muted mt-1">
+      <div>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <SettingsIcon className="w-5 h-5" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-cozy-text">
+            Settings
+          </h1>
+        </div>
+        <p className="text-sm text-cozy-muted ml-13">
           Configure default AI agent CLIs, models, and reasoning efforts.
         </p>
       </div>
 
       <div className="space-y-6">
         {/* 1. AI Agent CLI Selection */}
-        <div className="p-6 rounded-2xl bg-cozy-surface border border-cozy-border space-y-4">
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-sm font-semibold text-cozy-text flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-sky-400" />
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Cpu className="w-4 h-4 text-rose-500" />
                 Default AI Agent CLI
               </h2>
-              <p className="text-xs text-cozy-muted mt-0.5">
+              <p className="text-xs text-cozy-muted mt-1">
                 Choose which CLI agent to use for code exploration, editing, rebasing, and tasks.
               </p>
             </div>
@@ -380,37 +384,37 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
               type="button"
               onClick={handleRefreshCliStatus}
               disabled={isCheckingCli}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text hover:border-sky-500/40 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
               title="Rescan system PATH to check CLI availability"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isCheckingCli ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-rose-500 ${isCheckingCli ? 'animate-spin' : ''}`} />
               <span>{isCheckingCli ? 'Checking...' : 'Check PATH'}</span>
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
             {localClis.map((c) => {
               const isSelected = agentCli.toLowerCase() === c.name.toLowerCase();
               return (
                 <div
                   key={c.name}
                   onClick={() => handleSelectCli(c.name)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all ${
+                  className={`p-4.5 rounded-2.5xl border cursor-pointer transition-all ${
                     isSelected
-                      ? 'bg-sky-500/10 border-sky-500/40 text-cozy-text shadow-sm ring-1 ring-sky-500/20'
-                      : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-cozy-border/80'
+                      ? 'bg-rose-500/10 border-rose-400/40 text-cozy-text shadow-glow-peach/10 ring-1 ring-rose-400/30'
+                      : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-rose-400/25 hover:shadow-soft-sm'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-sm capitalize text-cozy-text">{c.name}</span>
+                    <span className="font-bold text-sm capitalize text-cozy-text">{c.name}</span>
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-mono flex items-center gap-1 ${
+                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 font-semibold ${
                         c.available
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
+                          : 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                       {c.available ? (c.version ? 'Ready' : 'Ready') : 'Not Installed'}
                     </span>
                   </div>
@@ -647,15 +651,15 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
         ) : (
           <>
             {/* 3. Default Model Selection (Available CLI) */}
-            <div className="p-6 rounded-2xl bg-cozy-surface border border-cozy-border space-y-4">
+            <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold text-cozy-text flex items-center gap-2">
-                    <BrainCircuit className="w-4 h-4 text-amber-400" />
+                  <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                    <BrainCircuit className="w-4 h-4 text-amber-500" />
                     Default Model
                   </h2>
-                  <p className="text-xs text-cozy-muted mt-0.5">
-                    Dynamically discovered options for <span className="font-semibold text-sky-400 uppercase">{agentCli}</span> CLI.
+                  <p className="text-xs text-cozy-muted mt-1">
+                    Dynamically discovered options for <span className="font-semibold text-rose-500 uppercase">{agentCli}</span> CLI.
                   </p>
                 </div>
 
@@ -663,20 +667,20 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   type="button"
                   onClick={() => loadModels(agentCli, true)}
                   disabled={isDiscovering}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text hover:border-sky-500/40 transition-all disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
                   title="Query agent CLI to discover latest available models and reasoning options"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${isDiscovering ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 text-rose-500 ${isDiscovering ? 'animate-spin' : ''}`} />
                   <span>{isDiscovering ? 'Discovering...' : 'Discover from CLI'}</span>
                 </button>
               </div>
 
               {models.length === 0 ? (
                 isDiscovering ? (
-                  <div className="p-8 rounded-xl bg-cozy-subtle/30 border border-cozy-border flex flex-col items-center justify-center gap-3 text-center animate-in fade-in duration-200">
-                    <RefreshCw className="w-5 h-5 text-sky-400 animate-spin" />
+                  <div className="p-8 rounded-2xl bg-cozy-subtle/30 border border-cozy-border/70 flex flex-col items-center justify-center gap-3 text-center animate-in fade-in duration-200">
+                    <RefreshCw className="w-5 h-5 text-rose-500 animate-spin" />
                     <div className="space-y-0.5">
-                      <div className="text-xs font-semibold text-cozy-text">
+                      <div className="text-xs font-bold text-cozy-text">
                         Discovering models for {agentCli.toUpperCase()}...
                       </div>
                       <div className="text-[11px] text-cozy-muted">
@@ -685,30 +689,30 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 rounded-xl bg-cozy-subtle/30 border border-cozy-border text-xs text-cozy-muted flex items-center gap-2">
+                  <div className="p-4 rounded-2xl bg-cozy-subtle/30 border border-cozy-border/70 text-xs text-cozy-muted flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
                     <span>No models reported by {agentCli} CLI yet. Click "Discover from CLI" to query.</span>
                   </div>
                 )
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {models.map((m) => {
                     const isSelected = defaultModel === m.id;
                     return (
                       <div
                         key={m.id}
                         onClick={() => handleSelectModel(m)}
-                        className={`p-3.5 rounded-xl border cursor-pointer flex items-center justify-between transition-all ${
+                        className={`p-4 rounded-2xl border cursor-pointer flex items-center justify-between transition-all ${
                           isSelected
-                            ? 'bg-sky-500/10 border-sky-500/40 text-cozy-text shadow-sm ring-1 ring-sky-500/20'
-                            : 'bg-cozy-subtle/40 border-cozy-border text-cozy-muted hover:border-cozy-border/80'
+                            ? 'bg-rose-500/10 border-rose-400/40 text-cozy-text shadow-glow-peach/10 ring-1 ring-rose-400/30'
+                            : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-rose-400/25 hover:shadow-soft-sm'
                         }`}
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-cozy-text">{m.name}</span>
+                            <span className="text-xs font-bold text-cozy-text">{m.name}</span>
                             {m.discoveredFrom && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-md bg-cozy-subtle border border-cozy-border text-cozy-muted flex items-center gap-1 font-mono">
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cozy-subtle border border-cozy-border text-cozy-muted flex items-center gap-1 font-mono">
                                 <Sparkles className="w-2.5 h-2.5 text-amber-400" />
                                 <span>{m.discoveredFrom}</span>
                               </span>
@@ -721,7 +725,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                             </div>
                           )}
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-sky-400 shrink-0 ml-3" />}
+                        {isSelected && <Check className="w-4 h-4 text-rose-500 shrink-0 ml-3" />}
                       </div>
                     );
                   })}
@@ -730,13 +734,13 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
             </div>
 
             {/* 4. Thinking Effort */}
-            <div className="p-6 rounded-2xl bg-cozy-surface border border-cozy-border space-y-4">
+            <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
               <div>
-                <h2 className="text-sm font-semibold text-cozy-text flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-emerald-400" />
+                <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-emerald-500" />
                   Reasoning / Thinking Effort
                 </h2>
-                <p className="text-xs text-cozy-muted mt-0.5">
+                <p className="text-xs text-cozy-muted mt-1">
                   {currentModel
                     ? `Supported effort tiers for ${currentModel.name}`
                     : 'Controls how deeply the agent reasons before producing code and tool actions.'}
@@ -744,17 +748,17 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
               </div>
 
               {models.length === 0 && isDiscovering ? (
-                <div className="p-6 rounded-xl bg-cozy-subtle/30 border border-cozy-border flex items-center justify-center gap-2.5 text-xs text-cozy-muted animate-in fade-in duration-200">
-                  <RefreshCw className="w-4 h-4 text-emerald-400 animate-spin" />
+                <div className="p-6 rounded-2xl bg-cozy-subtle/30 border border-cozy-border flex items-center justify-center gap-2.5 text-xs text-cozy-muted animate-in fade-in duration-200">
+                  <RefreshCw className="w-4 h-4 text-emerald-500 animate-spin" />
                   <span>Loading reasoning tiers for {agentCli.toUpperCase()}...</span>
                 </div>
               ) : currentEfforts.length === 1 && currentEfforts[0] === 'none' ? (
-                <div className="p-4 rounded-xl bg-cozy-subtle/30 border border-cozy-border text-xs text-cozy-muted flex items-center gap-2">
+                <div className="p-4 rounded-2xl bg-cozy-subtle/30 border border-cozy-border text-xs text-cozy-muted flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-cozy-muted/60" />
                   <span>This model does not require variable reasoning effort (standard generation mode).</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
                   {currentEffortOptions.map((effort) => {
                     const isSelected = thinkingEffort.toLowerCase() === effort.id.toLowerCase();
                     return (
@@ -762,18 +766,18 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         key={effort.id}
                         type="button"
                         onClick={() => handleSelectEffort(effort.id)}
-                        className={`py-2 px-3 rounded-xl text-xs font-medium border text-center transition-all flex flex-col items-center justify-center gap-0.5 ${
+                        className={`py-2.5 px-3.5 rounded-full text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                           isSelected
-                            ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
-                            : 'bg-cozy-subtle/50 text-cozy-muted border-cozy-border hover:text-cozy-text hover:border-cozy-border/80'
+                            ? 'bg-rose-500 text-white border-rose-500 shadow-glow-peach'
+                            : 'bg-cozy-subtle/50 text-cozy-muted border-cozy-border hover:text-cozy-text hover:border-rose-400/30'
                         }`}
                         title={effort.description}
                       >
-                        <span className="capitalize font-semibold">{effort.label}</span>
+                        <span className="capitalize">{effort.label}</span>
                         {effort.description && (
                           <span
                             className={`text-[10px] truncate max-w-full ${
-                              isSelected ? 'text-sky-100/80' : 'text-cozy-muted/70'
+                              isSelected ? 'text-rose-100/80' : 'text-cozy-muted/70'
                             }`}
                           >
                             {effort.description}

@@ -150,48 +150,48 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
         />
       )}
 
-      {/* Left Pane */}
+      {/* Left Pane (Floating Island) */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 3px)`,
+          width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 7px)`,
           display: isMobile && mobileActivePane !== 'left' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className="h-full flex flex-col min-w-0 overflow-hidden"
+        className="h-full flex flex-col min-w-0 overflow-hidden rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg relative"
       >
         {left}
       </div>
 
-      {/* Draggable Divider */}
+      {/* Draggable Divider with Airy Gutter */}
       {!isMobile && (
         <div
           onPointerDown={handlePointerDown}
-          className={`relative w-[6px] h-full cursor-col-resize hover:bg-sky-500/40 transition-colors flex items-center justify-center shrink-0 z-20 select-none group touch-none ${
-            isDragging ? 'bg-sky-500' : 'bg-transparent'
+          className={`relative w-3 h-full cursor-col-resize transition-all flex items-center justify-center shrink-0 z-20 select-none group touch-none mx-0.5 rounded-full ${
+            isDragging ? 'bg-rose-500/10' : 'hover:bg-rose-500/5'
           }`}
           title="Drag to resize panels"
         >
           {/* Invisible wider hit area for easier grabbing */}
-          <div className="absolute inset-y-0 -left-1.5 -right-1.5 z-10 cursor-col-resize" />
+          <div className="absolute inset-y-0 -left-2 -right-2 z-10 cursor-col-resize" />
 
           <div
-            className={`w-[2px] rounded-full transition-all z-20 ${
+            className={`w-1 rounded-full transition-all z-20 ${
               isDragging
-                ? 'bg-sky-300 h-16'
-                : 'h-8 bg-cozy-border group-hover:bg-sky-400 group-hover:h-12'
+                ? 'bg-rose-400 h-16 shadow-glow-peach'
+                : 'h-8 bg-cozy-border/80 group-hover:bg-rose-400 group-hover:h-12'
             }`}
           />
         </div>
       )}
 
-      {/* Right Pane */}
+      {/* Right Pane (Floating Island) */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 3px)`,
+          width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 7px)`,
           display: isMobile && mobileActivePane !== 'right' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className="h-full flex flex-col min-w-0 overflow-hidden"
+        className="h-full flex flex-col min-w-0 overflow-hidden rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg relative"
       >
         {right}
       </div>

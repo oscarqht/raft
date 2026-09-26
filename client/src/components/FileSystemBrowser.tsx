@@ -195,18 +195,18 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-3xl h-[80vh] bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-3xl h-[82vh] rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden relative">
         {/* Header */}
-        <div className="p-4 md:p-5 border-b border-cozy-border bg-cozy-subtle/50 flex flex-col gap-3 shrink-0">
+        <div className="p-4 md:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50 flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
-                <FolderGit2 className="w-4 h-4" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+                <FolderGit2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-cozy-text leading-tight">{title}</h3>
-                <p className="text-xs text-cozy-muted">
+                <h3 className="text-base font-bold text-cozy-text leading-tight">{title}</h3>
+                <p className="text-xs text-cozy-muted mt-0.5">
                   Choose a folder directly in your local filesystem
                 </p>
               </div>
@@ -214,10 +214,10 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
 
             <button
               onClick={() => onOpenChange(false)}
-              className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
               title="Close (Esc)"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
 
@@ -496,10 +496,10 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
             <button
               onClick={() => setShowNewFolderInput(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border transition-all shadow-soft-sm"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>New Folder</span>
@@ -508,10 +508,10 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
             <button
               onClick={() => handleSelectPath(currentPath, !!data?.isRepo)}
               disabled={isLoading || !currentPath}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all shadow-sm ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all shadow-glow-peach cursor-pointer ${
                 data?.isRepo
-                  ? 'bg-sky-600 hover:bg-sky-500 text-white'
-                  : 'bg-sky-600 hover:bg-sky-500 text-white'
+                  ? 'bg-rose-500 hover:bg-rose-600 text-white'
+                  : 'bg-rose-500 hover:bg-rose-600 text-white'
               }`}
             >
               <Check className="w-3.5 h-3.5" />
@@ -528,39 +528,39 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
 
         {/* Non-Repo Confirmation Modal (when user selects folder that has no git repo) */}
         {pendingNonRepoPath && (
-          <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="w-full max-w-md bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl p-5 animate-in zoom-in-95 duration-150">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 shrink-0">
+          <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl p-5 sm:p-6 animate-in zoom-in-95 duration-150">
+              <div className="flex items-start gap-3.5 mb-3.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-500 shrink-0 shadow-soft-sm">
                   <AlertCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-cozy-text">Not a Git Repository</h4>
+                  <h4 className="text-base font-bold text-cozy-text">Not a Git Repository</h4>
                   <p className="text-xs text-cozy-muted mt-0.5">
                     The chosen folder is not a git repository yet:
                   </p>
                 </div>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-cozy-bg border border-cozy-border font-mono text-xs text-cozy-text truncate mb-4">
+              <div className="p-3 rounded-2xl bg-cozy-surface/90 border border-cozy-border font-mono text-xs text-cozy-text truncate mb-4 shadow-soft-inner">
                 {pendingNonRepoPath}
               </div>
 
-              <p className="text-xs text-cozy-muted mb-4">
+              <p className="text-xs text-cozy-muted mb-5 leading-relaxed">
                 Would you like to initialize a new Git repository in this folder now?
               </p>
 
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2.5">
                 <button
                   onClick={() => setPendingNonRepoPath(null)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border transition-colors"
+                  className="px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border transition-all"
                 >
                   Choose Another
                 </button>
                 <button
                   onClick={handleConfirmInitGit}
                   disabled={isInitializingGit}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white transition-all shadow-sm"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white transition-all shadow-glow-peach cursor-pointer"
                 >
                   {isInitializingGit ? (
                     <>

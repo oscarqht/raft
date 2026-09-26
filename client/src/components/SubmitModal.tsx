@@ -129,36 +129,36 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="p-4 border-b border-cozy-border flex items-center justify-between bg-cozy-subtle/40">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-              <UploadCloud className="w-4 h-4 text-sky-400" />
+        <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+              <UploadCloud className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-cozy-text">Submit Changes</h3>
-              <p className="text-xs text-cozy-muted">
-                Commit & push <span className="font-mono text-sky-400">{task.branch}</span> to remote origin
+              <h3 className="text-base font-bold text-cozy-text">Submit Changes</h3>
+              <p className="text-xs text-cozy-muted mt-0.5">
+                Commit & push <span className="font-mono text-rose-500 font-semibold">{task.branch}</span> to remote origin
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
           {/* Changed Files Overview */}
           <div>
             <div className="flex items-center justify-between text-xs text-cozy-muted mb-2">
               <span className="font-medium text-cozy-text flex items-center gap-1.5">
-                <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                <FileCode className="w-3.5 h-3.5 text-rose-400" />
                 Changed Files ({totalChanges})
               </span>
             </div>
@@ -332,10 +332,10 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-cozy-border bg-cozy-subtle/30 flex items-center justify-end space-x-2">
+        <div className="p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-subtle/40 flex items-center justify-end space-x-2.5">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border transition-colors"
+            className="px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border transition-all"
           >
             Cancel
           </button>
@@ -343,7 +343,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             onClick={handleSubmit}
             disabled={isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim())}
             title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-sm"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-peach cursor-pointer"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>

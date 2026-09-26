@@ -165,20 +165,20 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 md:p-8 max-w-6xl mx-auto w-full">
+    <div className="flex-1 overflow-y-auto p-6 sm:p-8 md:p-10 max-w-6xl mx-auto w-full">
       {/* Top Navigation */}
       <div className="mb-6 flex items-center justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-xs text-cozy-muted hover:text-cozy-text transition-colors"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-rose-400/40 text-xs font-medium text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Projects</span>
         </button>
 
         <button
           onClick={() => setIsNewTaskOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Start New Task</span>
@@ -186,15 +186,15 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       </div>
 
       {/* Project Overview Card */}
-      <div className="p-6 rounded-2xl bg-cozy-surface border border-cozy-border mb-8 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
-              <FolderGit2 className="w-6 h-6 text-sky-400" />
+      <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 mb-8 shadow-soft">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+              <FolderGit2 className="w-6 h-6" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-bold text-cozy-text truncate">{project.name}</h1>
-              <p className="text-xs font-mono text-cozy-muted truncate" title={project.path}>
+              <h1 className="text-xl sm:text-2xl font-bold text-cozy-text truncate">{project.name}</h1>
+              <p className="text-xs font-mono text-cozy-muted truncate mt-0.5" title={project.path}>
                 {project.path}
               </p>
             </div>
@@ -203,15 +203,15 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleOpenConfigModal('discover')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 transition-all shadow-sm"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-400/30 transition-all shadow-soft-sm cursor-pointer"
               title="Let AI agent inspect repository and update configuration"
             >
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="w-3.5 h-3.5 text-rose-400" />
               <span>AI Re-discover</span>
             </button>
             <button
               onClick={() => handleOpenConfigModal('manual')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-border text-cozy-text border border-cozy-border transition-all shadow-sm"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border/80 transition-all shadow-soft-sm cursor-pointer"
               title="Manually edit project configuration"
             >
               <Sliders className="w-3.5 h-3.5 text-cozy-muted" />
@@ -220,52 +220,52 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-4 border-t border-cozy-border/60 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-5 border-t border-cozy-border/50 text-xs">
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3 rounded-xl bg-cozy-subtle border border-cozy-border hover:border-sky-500/40 cursor-pointer transition-all group relative"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Base Branch"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-cozy-muted text-[11px] block">Base Branch</span>
+              <span className="text-cozy-muted text-[11px] block font-medium">Base Branch</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <span className="font-mono text-sky-400 font-semibold">{project.branch_convention || 'main'}</span>
+            <span className="font-mono text-rose-500 font-semibold">{project.branch_convention || 'main'}</span>
           </div>
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3 rounded-xl bg-cozy-subtle border border-cozy-border hover:border-emerald-500/40 cursor-pointer transition-all group relative"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Dev Command"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-cozy-muted text-[11px] block">Dev Command</span>
+              <span className="text-cozy-muted text-[11px] block font-medium">Dev Command</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <span className="font-mono text-emerald-400 font-semibold truncate block" title={project.dev_cmd}>
+            <span className="font-mono text-emerald-500 font-semibold truncate block" title={project.dev_cmd}>
               {project.dev_cmd}
             </span>
           </div>
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3 rounded-xl bg-cozy-subtle border border-cozy-border hover:border-amber-500/40 cursor-pointer transition-all group relative"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Port"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-cozy-muted text-[11px] block">Port</span>
+              <span className="text-cozy-muted text-[11px] block font-medium">Port</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <span className="font-mono text-amber-400 font-semibold">:{project.dev_port}</span>
+            <span className="font-mono text-amber-500 font-semibold">:{project.dev_port}</span>
           </div>
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3 rounded-xl bg-cozy-subtle border border-cozy-border hover:border-sky-500/40 cursor-pointer transition-all group relative"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Build Command"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-cozy-muted text-[11px] block">Build Command</span>
+              <span className="text-cozy-muted text-[11px] block font-medium">Build Command</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span className="font-mono text-cozy-text font-semibold truncate block" title={project.build_cmd}>
@@ -275,11 +275,11 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3 rounded-xl bg-cozy-subtle border border-cozy-border hover:border-sky-500/40 cursor-pointer transition-all group relative col-span-2 sm:col-span-1"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative col-span-2 sm:col-span-1 shadow-soft-sm"
             title="Click to edit Test Command"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-cozy-muted text-[11px] block">Test Command</span>
+              <span className="text-cozy-muted text-[11px] block font-medium">Test Command</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span className="font-mono text-cozy-text font-semibold truncate block" title={project.test_cmd || 'None'}>
@@ -291,9 +291,9 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
       {/* Task List Header */}
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-cozy-text flex items-center gap-2">
+        <h2 className="text-base font-bold text-cozy-text flex items-center gap-2.5">
           Ongoing & Completed Tasks
-          <span className="px-2 py-0.5 rounded-full text-xs bg-cozy-subtle text-cozy-muted border border-cozy-border">
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cozy-subtle text-cozy-muted border border-cozy-border/70 shadow-soft-sm">
             {tasks.length}
           </span>
         </h2>
@@ -301,58 +301,58 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
       {/* Tasks Grid */}
       {tasks.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl border border-dashed border-cozy-border bg-cozy-surface/40 flex flex-col items-center">
-          <div className="w-12 h-12 rounded-2xl bg-cozy-subtle border border-cozy-border flex items-center justify-center mb-3">
-            <GitBranch className="w-6 h-6 text-sky-400" />
+        <div className="p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
+          <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-rose-500/10 via-amber-500/10 to-sky-500/10 border border-rose-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">
+            <GitBranch className="w-6 h-6 text-rose-400" />
           </div>
-          <h3 className="text-sm font-semibold text-cozy-text mb-1">No tasks created yet</h3>
-          <p className="text-xs text-cozy-muted max-w-sm mb-4">
+          <h3 className="text-base font-semibold text-cozy-text mb-1">No tasks created yet</h3>
+          <p className="text-xs text-cozy-muted max-w-sm mb-5 leading-relaxed">
             Start a task to create an isolated git worktree and branch. You can run multiple AI agents concurrently on it without affecting your main repo work.
           </p>
           <button
             onClick={() => setIsNewTaskOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Create First Task</span>
           </button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           {tasks.map((t) => (
             <div
               key={t.id}
               onClick={() => onSelectTask(t.id, t)}
-              className="group p-4 rounded-xl bg-cozy-surface border border-cozy-border hover:border-sky-500/40 hover:shadow-md transition-all cursor-pointer flex items-center justify-between"
+              className="group p-5 rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-rose-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
             >
-              <div className="flex items-center space-x-3 min-w-0">
-                <div className="w-9 h-9 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
-                  <GitBranch className="w-4 h-4 text-sky-400" />
+              <div className="flex items-center space-x-3.5 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/10 to-amber-500/10 border border-rose-400/25 flex items-center justify-center shrink-0 shadow-soft-sm">
+                  <GitBranch className="w-4 h-4 text-rose-500" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center space-x-2">
-                    <h4 className="text-sm font-semibold text-cozy-text truncate group-hover:text-sky-400 transition-colors">
+                  <div className="flex items-center space-x-2.5">
+                    <h4 className="text-sm font-semibold text-cozy-text truncate group-hover:text-rose-500 transition-colors">
                       {t.name}
                     </h4>
-                    <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-rose-500/10 text-rose-500 border border-rose-400/20 font-medium">
                       {t.branch}
                     </span>
                   </div>
-                  <p className="text-xs text-cozy-muted font-mono truncate mt-0.5" title={t.worktree_path}>
+                  <p className="text-xs text-cozy-muted font-mono truncate mt-1" title={t.worktree_path}>
                     Based on {t.base_branch} &bull; {t.worktree_path}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-1.5 shrink-0">
-                <span className="text-[11px] text-cozy-muted hidden sm:inline flex items-center gap-1 mr-1">
+              <div className="flex items-center space-x-2 shrink-0">
+                <span className="text-[11px] text-cozy-muted hidden sm:inline flex items-center gap-1.5 mr-1 font-medium">
                   <Clock className="w-3 h-3" />
                   {new Date(t.created_at).toLocaleDateString()}
                 </span>
 
                 <button
                   onClick={(e) => handleOpenEditTask(t, e)}
-                  className="p-1.5 rounded-lg text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-sky-400 hover:bg-sky-500/10 transition-all"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-cozy-subtle transition-all"
                   title="Edit task name and base branch"
                 >
                   <Pencil className="w-4 h-4" />
@@ -360,13 +360,13 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
                 <button
                   onClick={(e) => handleDeleteTask(t.id, e)}
-                  className="p-1.5 rounded-lg text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                   title="Delete task and worktree"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
 
-                <div className="w-8 h-8 rounded-lg bg-cozy-subtle flex items-center justify-center text-cozy-muted group-hover:text-sky-400 group-hover:bg-sky-500/10 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-cozy-subtle flex items-center justify-center text-cozy-muted group-hover:text-rose-500 group-hover:bg-rose-500/10 transition-all">
                   <ArrowRight className="w-4 h-4" />
                 </div>
               </div>
@@ -377,23 +377,23 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
       {/* New Task Modal */}
       {isNewTaskOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl p-6">
-            <h3 className="text-base font-semibold text-cozy-text mb-1 flex items-center gap-2">
-              <GitBranch className="w-5 h-5 text-sky-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl p-6 sm:p-7">
+            <h3 className="text-base font-bold text-cozy-text mb-1 flex items-center gap-2">
+              <GitBranch className="w-5 h-5 text-rose-500" />
               Start New Coding Task
             </h3>
-            <p className="text-xs text-cozy-muted mb-4">
+            <p className="text-xs text-cozy-muted mb-5 leading-relaxed">
               Raft will create a new git worktree and branch out from your chosen base branch.
             </p>
 
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-cozy-text block mb-1">Base Branch</label>
+                <label className="text-xs font-semibold text-cozy-text block mb-1.5">Base Branch</label>
                 <select
                   value={baseBranch}
                   onChange={(e) => setBaseBranch(e.target.value)}
-                  className="w-full bg-cozy-bg border border-cozy-border rounded-xl px-3 py-2 text-xs font-mono text-cozy-text focus:outline-none focus:border-sky-500"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400"
                 >
                   {availableBranches.map((b) => (
                     <option key={b} value={b}>
@@ -404,29 +404,29 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
               </div>
 
               <div>
-                <label className="text-xs font-medium text-cozy-text block mb-1">Task Name / Feature Slug</label>
+                <label className="text-xs font-semibold text-cozy-text block mb-1.5">Task Name / Feature Slug</label>
                 <input
                   type="text"
                   value={taskName}
                   onChange={(e) => setTaskName(e.target.value)}
                   placeholder="e.g. auth-flow, fix-search-bar"
-                  className="w-full bg-cozy-bg border border-cozy-border rounded-xl px-3.5 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-sky-500"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-4 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-rose-400"
                   autoFocus
                 />
               </div>
             </div>
 
-            <div className="mt-6 flex items-center justify-end space-x-2">
+            <div className="mt-6 flex items-center justify-end space-x-2.5">
               <button
                 onClick={() => setIsNewTaskOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border transition-colors"
+                className="px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateTask}
                 disabled={isCreating || !taskName.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white transition-all shadow-sm"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white transition-all shadow-glow-peach cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>{isCreating ? 'Creating Worktree...' : 'Launch Task'}</span>

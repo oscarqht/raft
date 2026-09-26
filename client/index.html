@@ -5,6 +5,9 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Raft — Cozy AI Coding Workspace</title>
     <script>
@@ -13,16 +16,16 @@
           var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           if (isDark) {
             document.documentElement.classList.add('dark');
-            document.documentElement.style.backgroundColor = '#0f1117';
+            document.documentElement.style.backgroundColor = '#13151f';
           } else {
             document.documentElement.classList.remove('dark');
-            document.documentElement.style.backgroundColor = '#f8fafc';
+            document.documentElement.style.backgroundColor = '#f8fafd';
           }
         } catch (e) {}
       })();
     </script>
   </head>
-  <body class="bg-cozy-bg text-cozy-text antialiased selection:bg-sky-500/30 selection:text-sky-200">
+  <body class="bg-cozy-bg text-cozy-text antialiased selection:bg-rose-500/20 selection:text-rose-600 dark:selection:text-rose-300">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

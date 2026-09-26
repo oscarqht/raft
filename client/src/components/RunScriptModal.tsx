@@ -99,20 +99,25 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
       <div
-        className="bg-cozy-surface border border-cozy-border rounded-xl shadow-2xl flex flex-col w-full max-w-xl max-h-[85vh] overflow-hidden"
+        className="w-full max-w-xl max-h-[85vh] rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border bg-cozy-subtle/40">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-5 h-5 text-sky-400" />
-            <h2 className="text-base font-semibold text-cozy-text">Run Script</h2>
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+              <Terminal className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-cozy-text">Run Script</h2>
+              <p className="text-xs text-cozy-muted mt-0.5">Execute predefined or custom terminal scripts</p>
+            </div>
           </div>
           <button
             type="button"
-            className="p-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
             onClick={onClose}
           >
             <X className="w-4 h-4" />
@@ -120,9 +125,9 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-5 flex-1 overflow-y-auto space-y-6">
+        <div className="p-5 sm:p-6 flex-1 overflow-y-auto space-y-6">
           {error && (
-            <div className="flex items-center gap-2 p-3 text-xs bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-lg">
+            <div className="flex items-center gap-2 p-3.5 text-xs bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl shadow-soft-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -130,13 +135,13 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
 
           {/* Section 1: Saved Scripts */}
           <div>
-            <div className="flex items-center justify-between mb-2.5">
+            <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-semibold text-cozy-text uppercase tracking-wider">
                 Saved Project Scripts
               </span>
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-400/20 transition-all cursor-pointer shadow-soft-sm"
                 onClick={() => {
                   onClose();
                   onOpenManageScripts();
@@ -148,13 +153,13 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
             </div>
 
             {scripts.length === 0 ? (
-              <div className="p-4 border border-dashed border-cozy-border rounded-lg text-center bg-cozy-subtle/20">
-                <p className="text-xs text-cozy-muted mb-2.5">
+              <div className="p-5 border border-dashed border-cozy-border/80 rounded-2xl text-center bg-cozy-subtle/30 shadow-soft-inner">
+                <p className="text-xs text-cozy-muted mb-3">
                   No saved scripts for this project yet.
                 </p>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-md transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 bg-rose-500/10 border border-rose-400/20 rounded-full transition-all shadow-soft-sm"
                   onClick={() => {
                     onClose();
                     onOpenManageScripts();
@@ -165,14 +170,14 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                 {scripts.map((script) => (
                   <div
                     key={script.id}
-                    className="flex items-center justify-between p-2.5 bg-cozy-subtle/40 border border-cozy-border hover:border-cozy-border/80 rounded-lg group transition-all"
+                    className="flex items-center justify-between p-3.5 bg-cozy-subtle/60 border border-cozy-border/70 hover:border-rose-400/30 rounded-2xl group transition-all shadow-soft-sm hover:shadow-soft"
                   >
                     <div className="min-w-0 flex-1 pr-3">
-                      <div className="text-xs font-medium text-cozy-text truncate">
+                      <div className="text-xs font-semibold text-cozy-text truncate">
                         {script.name}
                       </div>
                       <div className="text-[11px] font-mono text-cozy-muted truncate mt-0.5">
@@ -181,7 +186,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                     </div>
                     <button
                       type="button"
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 shadow-sm transition-colors shrink-0 disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 shadow-glow-peach transition-all shrink-0 disabled:opacity-50 cursor-pointer"
                       onClick={() => handleRunSavedScript(script)}
                       disabled={isRunning}
                     >
@@ -196,17 +201,17 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-cozy-border" />
+              <div className="w-full border-t border-cozy-border/60" />
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-cozy-surface px-2 text-cozy-muted">Or run arbitrary command</span>
+            <div className="relative flex justify-center text-xs uppercase tracking-wider">
+              <span className="bg-cozy-surface px-3 text-cozy-muted font-medium">Or run arbitrary command</span>
             </div>
           </div>
 
           {/* Section 2: Arbitrary Script */}
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             <div>
-              <label className="block text-xs font-medium text-cozy-text mb-1.5">
+              <label className="block text-xs font-semibold text-cozy-text mb-1.5">
                 Arbitrary Terminal Command
               </label>
               <div className="relative">
@@ -215,7 +220,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                   value={arbitraryCmd}
                   onChange={(e) => setArbitraryCmd(e.target.value)}
                   placeholder="e.g. npm run test:e2e or git status"
-                  className="w-full pl-3 pr-3 py-2 text-xs font-mono bg-cozy-surface border border-cozy-border rounded-lg text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-sky-500"
+                  className="w-full px-4 py-2.5 text-xs font-mono bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !saveToProject)) {
                       e.preventDefault();
@@ -224,7 +229,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                   }}
                 />
               </div>
-              <p className="text-[11px] text-cozy-muted mt-1">
+              <p className="text-[11px] text-cozy-muted mt-1.5">
                 Will execute in the active task worktree directory.
               </p>
             </div>
@@ -236,10 +241,10 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                   type="checkbox"
                   checked={saveToProject}
                   onChange={(e) => setSaveToProject(e.target.checked)}
-                  className="rounded border-cozy-border text-sky-500 focus:ring-0 focus:ring-offset-0 bg-cozy-surface"
+                  className="rounded-lg border-cozy-border text-rose-500 focus:ring-0 focus:ring-offset-0 bg-cozy-surface"
                 />
-                <span className="text-xs text-cozy-text flex items-center gap-1.5">
-                  <BookmarkPlus className="w-3.5 h-3.5 text-sky-400" />
+                <span className="text-xs text-cozy-text font-medium flex items-center gap-1.5">
+                  <BookmarkPlus className="w-3.5 h-3.5 text-rose-500" />
                   Save this command to project scripts
                 </span>
               </label>
@@ -254,7 +259,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                     value={customName}
                     onChange={(e) => setCustomName(e.target.value)}
                     placeholder="e.g. End-to-End Tests"
-                    className="w-full px-3 py-1.5 text-xs bg-cozy-surface border border-cozy-border rounded-md text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-sky-500"
+                    className="w-full px-3.5 py-2 text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
                   />
                 </div>
               )}
@@ -263,7 +268,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-lg shadow-sm transition-all disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-full shadow-glow-peach transition-all disabled:opacity-50 cursor-pointer"
                 onClick={handleRunArbitrary}
                 disabled={isRunning || !arbitraryCmd.trim()}
               >

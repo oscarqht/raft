@@ -18,20 +18,40 @@ export default {
           accent: 'rgb(var(--cozy-accent) / <alpha-value>)',
           amber: 'rgb(var(--cozy-amber) / <alpha-value>)',
           emerald: 'rgb(var(--cozy-emerald) / <alpha-value>)',
+          sky: 'rgb(var(--cozy-sky) / <alpha-value>)',
+          peach: '#f43f5e',
+          mint: '#10b981',
+          lavender: '#8b5cf6',
         },
         cozylight: {
-          bg: '#f8fafc',
+          bg: '#f8fafd',
           surface: '#ffffff',
-          subtle: '#f1f5f9',
+          subtle: '#f3f6fa',
           border: '#e2e8f0',
-          text: '#0f172a',
+          text: '#1e293b',
           muted: '#64748b',
-          accent: '#0284c7',
+          accent: '#f43f5e',
         }
+      },
+      borderRadius: {
+        '2.5xl': '1.25rem',
+        'squircle': '1.75rem', // 28px
+        'squircle-lg': '2rem', // 32px
+      },
+      boxShadow: {
+        'soft-sm': '0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 4px -1px rgba(0, 0, 0, 0.02)',
+        'soft': '0 8px 24px -4px rgba(15, 23, 42, 0.04), 0 2px 8px -2px rgba(15, 23, 42, 0.02)',
+        'soft-md': '0 12px 32px -6px rgba(15, 23, 42, 0.06), 0 4px 12px -2px rgba(15, 23, 42, 0.03)',
+        'soft-lg': '0 20px 48px -10px rgba(15, 23, 42, 0.08), 0 8px 20px -4px rgba(15, 23, 42, 0.04)',
+        'soft-xl': '0 25px 60px -12px rgba(15, 23, 42, 0.12)',
+        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.06)',
+        'glass-hover': '0 14px 40px 0 rgba(31, 38, 135, 0.1)',
+        'glow-peach': '0 0 25px -4px rgba(244, 63, 94, 0.22)',
+        'glow-mint': '0 0 25px -4px rgba(16, 185, 129, 0.22)',
       },
       fontFamily: {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-        sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        sans: ['"Outfit"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
       }
     },
   },

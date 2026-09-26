@@ -153,16 +153,16 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
-      <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden relative">
+      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-2 sm:p-3 md:p-4 bg-cozy-bg">
         {/* Mobile Sub-header Segmented Pill Control */}
-        <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-cozy-surface/90 border-b border-cozy-border shrink-0 select-none">
-          <div className="flex items-center p-0.5 bg-cozy-subtle rounded-xl border border-cozy-border/60 w-full">
+        <div className="md:hidden flex items-center justify-between mb-2 select-none">
+          <div className="flex items-center p-1 bg-cozy-surface/90 backdrop-blur-md rounded-full border border-cozy-border/70 shadow-soft-sm w-full">
             <button
               type="button"
               onClick={() => setMobileTab('chat')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
                 mobileTab === 'chat'
-                  ? 'bg-sky-600 text-white shadow-sm'
+                  ? 'bg-rose-500 text-white shadow-glow-peach'
                   : 'text-cozy-muted hover:text-cozy-text'
               }`}
             >
@@ -172,9 +172,9 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             <button
               type="button"
               onClick={() => setMobileTab('preview')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
                 mobileTab === 'preview'
-                  ? 'bg-sky-600 text-white shadow-sm'
+                  ? 'bg-rose-500 text-white shadow-glow-peach'
                   : 'text-cozy-muted hover:text-cozy-text'
               }`}
             >
@@ -183,8 +183,8 @@ export const TaskPage: React.FC<TaskPageProps> = ({
               <span
                 className={`w-2 h-2 rounded-full transition-all ${
                   isDevRunning
-                    ? 'bg-emerald-400 animate-pulse'
-                    : 'bg-zinc-500/40'
+                    ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
+                    : 'bg-zinc-400/40'
                 }`}
                 title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
               />

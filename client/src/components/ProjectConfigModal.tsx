@@ -262,49 +262,49 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-cozy-border flex items-center justify-between bg-cozy-subtle/50">
+        <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
           <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0">
-              <Sliders className="w-4 h-4 text-sky-400" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+              <Sliders className="w-4 h-4 text-rose-500" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-cozy-text flex items-center gap-2">
+              <h3 className="text-base font-bold text-cozy-text flex items-center gap-2">
                 Project Configuration
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-cozy-subtle text-cozy-muted border border-cozy-border">
+                <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-cozy-subtle text-cozy-muted border border-cozy-border/70 shadow-soft-sm">
                   {project.name}
                 </span>
               </h3>
-              <p className="text-xs text-cozy-muted font-mono truncate max-w-md sm:max-w-lg" title={project.path}>
+              <p className="text-xs text-cozy-muted font-mono truncate max-w-md sm:max-w-lg mt-0.5" title={project.path}>
                 {project.path}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors shrink-0"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-2.5 text-xs text-rose-400 animate-in fade-in">
+            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-2.5 text-xs text-rose-400 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {/* AI Auto-Discovery Card */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-sky-500/10 via-indigo-500/5 to-transparent border border-sky-500/20 text-xs">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-transparent border border-rose-400/20 text-xs shadow-soft-sm">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-7 h-7 rounded-lg bg-sky-500/20 flex items-center justify-center shrink-0 text-sky-400">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center shrink-0 text-rose-500">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
@@ -320,7 +320,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   <button
                     type="button"
                     disabled
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600/50 text-white cursor-wait"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500/50 text-white cursor-wait"
                   >
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     <span>Scanning...</span>
@@ -329,7 +329,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   <button
                     type="button"
                     onClick={triggerDiscovery}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{scanCompleted || scanFailed ? 'Re-scan with AI' : 'Run AI Discovery'}</span>
@@ -730,14 +730,14 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-cozy-border bg-cozy-subtle/40 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-subtle/40 flex items-center justify-between">
           <div className="text-[11px] text-cozy-muted">
             {saveSuccess ? (
               <span className="text-emerald-400 flex items-center gap-1 font-medium">
                 <Check className="w-3.5 h-3.5" /> Settings saved successfully!
               </span>
             ) : isScanning ? (
-              <span className="text-sky-400 flex items-center gap-1">
+              <span className="text-rose-500 flex items-center gap-1.5 font-medium">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Running discovery agent...
               </span>
             ) : (
@@ -745,12 +745,12 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2.5">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="px-4 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-border text-cozy-text border border-cozy-border transition-colors disabled:opacity-50"
+              className="px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border transition-all disabled:opacity-50"
             >
               Cancel
             </button>
@@ -758,7 +758,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
               type="button"
               onClick={handleSave}
               disabled={isSaving || !name.trim()}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white transition-all shadow-sm"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white transition-all shadow-glow-peach cursor-pointer"
             >
               {saveSuccess ? (
                 <>

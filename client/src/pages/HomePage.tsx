@@ -69,22 +69,22 @@ export const HomePage: React.FC<HomePageProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 md:p-8 max-w-6xl mx-auto w-full">
+    <div className="flex-1 overflow-y-auto p-6 sm:p-8 md:p-10 max-w-6xl mx-auto w-full">
       {/* Welcome Banner */}
       <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-cozy-text flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-cozy-text flex items-center gap-2.5">
             Local Projects
-            <Sparkles className="w-5 h-5 text-amber-400" />
+            <Sparkles className="w-5 h-5 text-rose-400 fill-rose-400/20" />
           </h1>
-          <p className="text-sm text-cozy-muted mt-1">
+          <p className="text-sm text-cozy-muted mt-1 leading-relaxed">
             Manage your Git projects and launch AI-assisted tasks with isolated worktrees.
           </p>
         </div>
 
         <button
           onClick={() => setIsAddOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm shrink-0"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Add Project</span>
@@ -93,34 +93,34 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       {/* Projects Grid */}
       {projects.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl border border-dashed border-cozy-border bg-cozy-surface/40 flex flex-col items-center">
-          <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-4 overflow-hidden drop-shadow-md">
+        <div className="p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
+          <div className="w-20 h-20 rounded-2.5xl flex items-center justify-center mb-4 overflow-hidden drop-shadow-md">
             <img src="/logo.png" alt="Raft otter" className="w-full h-full object-contain" />
           </div>
           <h3 className="text-base font-semibold text-cozy-text mb-1">Welcome to Raft</h3>
-          <p className="text-sm text-cozy-muted max-w-md mb-6">
+          <p className="text-sm text-cozy-muted max-w-md mb-6 leading-relaxed">
             Add a local git repository to start using autonomous AI coding agents in clean git worktrees.
           </p>
           <button
             onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add First Project</span>
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {projects.map((p) => (
             <div
               key={p.id}
               onClick={() => handleSelect(p.id)}
-              className="group relative p-5 rounded-2xl bg-cozy-surface border border-cozy-border hover:border-sky-500/40 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between"
+              className="group relative p-6 rounded-squircle glass-card border border-white/80 dark:border-white/10 hover:border-rose-400/40 shadow-soft hover:shadow-soft-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between"
             >
               <div>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-                    <FolderGit2 className="w-5 h-5 text-sky-400" />
+                <div className="flex items-start justify-between mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm">
+                    <FolderGit2 className="w-6 h-6" />
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
@@ -128,14 +128,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                         e.stopPropagation();
                         setEditingProject(p);
                       }}
-                      className="p-1.5 rounded-lg text-cozy-muted hover:text-sky-400 hover:bg-sky-500/10 transition-all"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
                       title="Edit project configuration"
                     >
                       <Sliders className="w-4 h-4" />
                     </button>
                     <button
                       onClick={(e) => handleDelete(p.id, e)}
-                      className="p-1.5 rounded-lg text-cozy-muted hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-all"
                       title="Remove project"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -143,28 +143,28 @@ export const HomePage: React.FC<HomePageProps> = ({
                   </div>
                 </div>
 
-                <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-sky-400 transition-colors">
+                <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-rose-500 transition-colors">
                   {p.name}
                 </h3>
-                <p className="text-xs font-mono text-cozy-muted truncate mb-3" title={p.path}>
+                <p className="text-xs font-mono text-cozy-muted truncate mb-4" title={p.path}>
                   {p.path}
                 </p>
 
                 <div className="flex flex-wrap gap-2 text-xs mb-4">
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cozy-subtle border border-cozy-border text-cozy-muted font-mono text-[11px]">
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-muted font-mono text-[11px] shadow-soft-sm">
                     <GitBranch className="w-3 h-3 text-amber-400" />
                     {p.branch_convention || 'main'}
                   </span>
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cozy-subtle border border-cozy-border text-cozy-muted font-mono text-[11px]">
+                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-muted font-mono text-[11px] shadow-soft-sm">
                     <Terminal className="w-3 h-3 text-emerald-400" />
                     :{p.dev_port || 5173}
                   </span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-cozy-border/60 flex items-center justify-between text-xs text-cozy-muted">
+              <div className="pt-3.5 border-t border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted font-medium">
                 <span>{p.task_count || 0} active {p.task_count === 1 ? 'task' : 'tasks'}</span>
-                <span className="flex items-center gap-1 text-sky-400 group-hover:translate-x-0.5 transition-transform">
+                <span className="flex items-center gap-1 text-rose-500 group-hover:translate-x-1 transition-transform font-semibold">
                   Open Project <ArrowRight className="w-3 h-3" />
                 </span>
               </div>

@@ -584,11 +584,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-cozy-bg md:border-r border-cozy-border min-w-0 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden">
       {/* Top Header: Tabs + Quick Action Buttons */}
-      <div className="h-11 border-b border-cozy-border bg-cozy-surface/60 px-2 sm:px-3 flex items-center justify-between shrink-0 select-none gap-1 sm:gap-2">
+      <div className="min-h-[64px] py-3.5 px-4 sm:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 select-none gap-3">
         {/* Chat Tabs */}
-        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-1 sm:mr-2 touch-pan-x">
+        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar flex-1 mr-2 touch-pan-x">
           {chats.map((c) => {
             const isActive = c.id === activeChatId;
             const isEditing = editingChatId === c.id;
@@ -596,10 +596,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <div
                 key={c.id}
                 onClick={() => setActiveChatId(c.id)}
-                className={`group flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all border shrink-0 ${
+                className={`group flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all border shrink-0 ${
                   isActive
-                    ? 'bg-cozy-subtle border-cozy-border text-cozy-text shadow-sm'
-                    : 'bg-transparent border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/40'
+                    ? 'bg-rose-500/10 border-rose-400/40 text-rose-500 shadow-soft-sm font-semibold'
+                    : 'bg-cozy-subtle/50 border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/80'
                 }`}
               >
                 {isEditing ? (
@@ -611,13 +611,13 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     onBlur={() => handleSaveRename(c.id)}
                     onKeyDown={(e) => handleRenameKeyDown(c.id, e)}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-cozy-surface text-cozy-text border border-sky-500 rounded px-1.5 py-0.5 text-xs outline-none w-24"
+                    className="bg-cozy-surface text-cozy-text border border-rose-400 rounded-full px-2 py-0.5 text-xs outline-none w-24"
                     autoFocus
                   />
                 ) : (
                   <>
                     <span
-                      className="truncate max-w-[90px] sm:max-w-[110px]"
+                      className="truncate max-w-[90px] sm:max-w-[120px]"
                       onDoubleClick={(e) => handleStartRename(c, e)}
                       title="Double-click to rename"
                     >
@@ -626,7 +626,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleStartRename(c, e)}
-                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-sky-400 transition-opacity"
+                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-opacity"
                       title="Rename chat"
                     >
                       <Pencil className="w-3 h-3" />
@@ -648,7 +648,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           })}
           <button
             onClick={handleCreateChat}
-            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors shrink-0"
+            className="w-7 h-7 rounded-full text-cozy-muted hover:text-rose-500 bg-cozy-subtle/60 hover:bg-cozy-subtle border border-cozy-border/50 flex items-center justify-center transition-all shrink-0"
             title="Open new chat agent tab"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -656,30 +656,30 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </div>
 
         {/* Desktop Action Buttons: Scripts, Sync/Rebase & Submit */}
-        <div className="hidden sm:flex items-center space-x-1.5 shrink-0">
+        <div className="hidden sm:flex items-center space-x-2 shrink-0">
           {onOpenScripts && (
             <button
               onClick={onOpenScripts}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:border-sky-500/40 hover:text-sky-300 transition-all shadow-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-text hover:border-rose-400/40 hover:text-rose-500 transition-all shadow-soft-sm"
               title="Run project scripts or custom terminal commands"
             >
-              <Terminal className="w-3.5 h-3.5 text-sky-400" />
+              <Terminal className="w-3.5 h-3.5 text-rose-400" />
               <span>Scripts</span>
             </button>
           )}
 
           <button
             onClick={onOpenRebase}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:border-amber-500/40 hover:text-amber-300 transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all shadow-soft-sm"
             title="Rebase branch and resolve conflicts"
           >
-            <GitMerge className="w-3.5 h-3.5 text-amber-400" />
+            <GitMerge className="w-3.5 h-3.5 text-amber-500" />
             <span>Rebase</span>
           </button>
 
           <button
             onClick={onOpenSubmit}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
             title="Submit changes: commit and push"
           >
             <UploadCloud className="w-3.5 h-3.5" />
@@ -699,7 +699,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </button>
 
           {showMobileActionsMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-cozy-surface/95 backdrop-blur-md border border-cozy-border shadow-xl py-1 z-30 flex flex-col text-xs">
+            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
               {onOpenScripts && (
                 <button
                   type="button"
@@ -747,21 +747,20 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         isStreaming={isStreaming}
       />
       <div ref={messagesEndRef} />
-
       {/* Input Area */}
-      <div className="p-3 border-t border-cozy-border bg-cozy-surface/60">
+      <div className="p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-surface/50 backdrop-blur-md">
         {/* Agent / Model / Effort Selector (collapsible above editor) */}
         {showConfig ? (
-          <div className="mb-2.5 p-2.5 rounded-xl bg-cozy-subtle border border-cozy-border/80 shadow-sm transition-all space-y-2">
-            <div className="flex items-center justify-between pb-1.5 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
-              <span className="flex items-center gap-1.5 text-cozy-text font-semibold">
-                <Sliders className="w-3.5 h-3.5 text-sky-400" />
+          <div className="mb-3 p-3.5 rounded-2xl bg-cozy-subtle/90 border border-cozy-border/80 shadow-soft-sm transition-all space-y-2.5">
+            <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
+              <span className="flex items-center gap-2 text-cozy-text font-semibold">
+                <Sliders className="w-3.5 h-3.5 text-rose-500" />
                 Agent & Model Configuration
               </span>
               <button
                 type="button"
                 onClick={() => setShowConfig(false)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface transition-colors text-xs"
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface transition-colors text-xs"
                 title="Collapse configuration"
               >
                 <span>Collapse</span>
@@ -770,12 +769,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-cozy-muted pt-0.5">
-              <div className="flex items-center space-x-1.5">
+              <div className="flex items-center space-x-2">
                 <span className="font-medium text-cozy-text shrink-0">Agent:</span>
                 <select
                   value={tabCli}
                   onChange={(e) => handleCliChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500"
+                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400"
                 >
                   {clis.map((c) => (
                     <option key={c.name} value={c.name}>
@@ -785,12 +784,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 </select>
               </div>
 
-              <div className="flex items-center space-x-1.5 flex-1 min-w-[200px]">
+              <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
                 <span className="font-medium text-cozy-text shrink-0">Model:</span>
                 <select
                   value={tabModel}
                   onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500 truncate"
+                  className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400 truncate"
                 >
                   {availableModels.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -800,12 +799,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 </select>
               </div>
 
-              <div className="flex items-center space-x-1.5 shrink-0">
+              <div className="flex items-center space-x-2 shrink-0">
                 <span className="font-medium text-cozy-text shrink-0">Effort:</span>
                 <select
                   value={tabEffort}
                   onChange={(e) => handleEffortChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border rounded-lg px-2 py-1 text-cozy-text text-xs focus:outline-none focus:border-sky-500 capitalize"
+                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400 capitalize"
                 >
                   {(() => {
                     const current = availableModels.find((m) => m.id === tabModel);
@@ -821,15 +820,15 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             </div>
           </div>
         ) : (
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2.5 flex items-center justify-between">
             <button
               type="button"
               onClick={() => setShowConfig(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border hover:border-cozy-border-hover text-cozy-muted hover:text-cozy-text transition-all group max-w-full min-w-0"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-rose-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all group max-w-full min-w-0"
               title="Click to configure agent, model, and reasoning effort"
             >
-              <Sliders className="w-3 h-3 text-sky-400/80 shrink-0" />
-              <span className="font-medium text-cozy-text shrink-0">{tabCli || 'agy'}</span>
+              <Sliders className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              <span className="font-semibold text-rose-500 shrink-0">{tabCli || 'agy'}</span>
               <span className="text-cozy-muted/50 shrink-0">·</span>
               <span className="truncate max-w-[130px] sm:max-w-[220px]">
                 {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
@@ -840,28 +839,28 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   <span className="text-cozy-muted capitalize">{tabEffort}</span>
                 </>
               )}
-              <ChevronDown className="w-3 h-3 text-cozy-muted group-hover:text-cozy-text ml-0.5 transition-transform" />
+              <ChevronDown className="w-3.5 h-3.5 text-cozy-muted group-hover:text-rose-500 ml-0.5 transition-transform" />
             </button>
           </div>
         )}
-        <div className="relative flex items-end rounded-xl bg-cozy-subtle border border-cozy-border focus-within:border-sky-500/50 shadow-sm transition-all p-2">
+        <div className="relative flex items-end rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-rose-400/60 focus-within:ring-2 focus-within:ring-rose-400/20 shadow-soft-sm transition-all p-2.5">
           {/* Skills Autocompletion Popup */}
           {showSkillsPopup && (
             <div
               ref={skillsPopupRef}
-              className="absolute bottom-full left-0 right-0 mb-2 bg-cozy-surface/95 backdrop-blur border border-cozy-border rounded-xl shadow-2xl overflow-hidden z-30 transition-all"
+              className="absolute bottom-full left-0 right-0 mb-2.5 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] overflow-hidden z-30 transition-all"
             >
-              <div className="px-3 py-2 bg-cozy-subtle/80 border-b border-cozy-border flex items-center justify-between text-xs text-cozy-muted">
-                <div className="flex items-center space-x-1.5 font-medium text-cozy-text">
-                  <Sparkles className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Skills & Commands for <span className="text-sky-400 uppercase font-mono">{tabCli || 'agy'}</span></span>
+              <div className="px-3.5 py-2.5 bg-cozy-subtle/70 border-b border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted">
+                <div className="flex items-center space-x-2 font-medium text-cozy-text">
+                  <Sparkles className="w-4 h-4 text-rose-400" />
+                  <span>Skills & Commands for <span className="text-rose-500 font-semibold uppercase font-mono">{tabCli || 'agy'}</span></span>
                 </div>
                 <div className="text-[11px] text-cozy-muted">
                   {filteredSkills.length} available
                 </div>
               </div>
 
-              <div ref={popupListRef} className="max-h-60 overflow-y-auto py-1 px-1">
+              <div ref={popupListRef} className="max-h-60 overflow-y-auto py-1 px-1.5 space-y-0.5">
                 {filteredSkills.length > 0 ? (
                   filteredSkills.map((skill, idx) => {
                     const isSelected = idx === selectedSkillIndex;
@@ -878,16 +877,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                         case 'plan':
                           return <ListTodo className="w-3.5 h-3.5 text-blue-400" />;
                         case 'grill-me':
-                          return <HelpCircle className="w-3.5 h-3.5 text-violet-400" />;
+                          return <HelpCircle className="w-3.5 h-3.5 text-rose-400" />;
                         case 'learn':
-                          return <BookOpen className="w-3.5 h-3.5 text-amber-300" />;
+                          return <BookOpen className="w-3.5 h-3.5 text-amber-400" />;
                         case 'review':
-                          return <Sparkles className="w-3.5 h-3.5 text-cyan-400" />;
+                          return <Sparkles className="w-3.5 h-3.5 text-rose-400" />;
                         default:
                           if (skill.source === 'workspace') {
                             return <Layers className="w-3.5 h-3.5 text-emerald-400" />;
                           }
-                          return <Terminal className="w-3.5 h-3.5 text-sky-400" />;
+                          return <Terminal className="w-3.5 h-3.5 text-rose-400" />;
                       }
                     };
 
@@ -899,27 +898,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                           selectSkill(skill);
                         }}
                         onMouseEnter={() => setSelectedSkillIndex(idx)}
-                        className={`px-2.5 py-1.5 cursor-pointer transition-colors rounded-lg flex items-center justify-between gap-2.5 ${
+                        className={`px-3 py-2 cursor-pointer transition-all rounded-xl flex items-center justify-between gap-2.5 ${
                           isSelected
-                            ? 'bg-sky-500/15 text-cozy-text'
-                            : 'hover:bg-cozy-subtle/50 text-cozy-muted hover:text-cozy-text'
+                            ? 'bg-rose-500/10 text-rose-500 font-medium'
+                            : 'hover:bg-cozy-subtle/60 text-cozy-muted hover:text-cozy-text'
                         }`}
                       >
                         <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                          <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 bg-cozy-bg/80 border border-cozy-border/50">
+                          <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 bg-cozy-subtle border border-cozy-border/60">
                             {getSkillIcon()}
                           </div>
-                          <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-sky-400' : 'text-cozy-text'}`}>
+                          <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-rose-500' : 'text-cozy-text'}`}>
                             {skill.name}
                           </span>
                           {skill.description && (
-                            <span className="text-xs text-cozy-muted/80 truncate">
+                            <span className="text-xs text-cozy-muted truncate">
                               {skill.description}
                             </span>
                           )}
                         </div>
                         {skill.source === 'workspace' && (
-                          <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 flex-shrink-0">
+                          <span className="text-[10px] uppercase font-medium px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-500 border-emerald-500/20 flex-shrink-0">
                             workspace
                           </span>
                         )}
@@ -933,10 +932,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 )}
               </div>
 
-              <div className="px-3 py-1.5 bg-cozy-subtle/50 border-t border-cozy-border text-[11px] text-cozy-muted/70 flex items-center justify-between">
-                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">↑↓</kbd> Navigate</span>
-                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Tab</kbd> / <kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Enter</kbd> Select</span>
-                <span><kbd className="font-mono px-1 py-0.5 bg-cozy-bg rounded border border-cozy-border text-[10px]">Esc</kbd> Dismiss</span>
+              <div className="px-3.5 py-2 bg-cozy-subtle/50 border-t border-cozy-border/50 text-[11px] text-cozy-muted/80 flex items-center justify-between">
+                <span><kbd className="font-mono px-1.5 py-0.5 bg-cozy-surface rounded-md border border-cozy-border/60 text-[10px]">↑↓</kbd> Navigate</span>
+                <span><kbd className="font-mono px-1.5 py-0.5 bg-cozy-surface rounded-md border border-cozy-border/60 text-[10px]">Tab</kbd> / <kbd className="font-mono px-1.5 py-0.5 bg-cozy-surface rounded-md border border-cozy-border/60 text-[10px]">Enter</kbd> Select</span>
+                <span><kbd className="font-mono px-1.5 py-0.5 bg-cozy-surface rounded-md border border-cozy-border/60 text-[10px]">Esc</kbd> Dismiss</span>
               </div>
             </div>
           )}
@@ -956,14 +955,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             onKeyDown={handleKeyDown}
             placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`}
             rows={2}
-            className="flex-1 bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1"
+            className="flex-1 bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1 leading-relaxed"
           />
 
-          <div className="flex items-center space-x-1.5 pl-2">
+          <div className="flex items-center space-x-1.5 pl-2 pb-0.5">
             {isStreaming ? (
               <button
                 onClick={handleAbort}
-                className="p-2 rounded-lg bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors"
+                className="p-2.5 rounded-full bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 transition-all"
                 title="Stop generation"
               >
                 <Square className="w-4 h-4 fill-current" />
@@ -972,7 +971,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <button
                 onClick={handleSendMessage}
                 disabled={!inputPrompt.trim()}
-                className="p-2 rounded-lg bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-40 disabled:hover:bg-sky-600 transition-colors shadow-sm"
+                className="p-2.5 rounded-full bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-35 disabled:hover:bg-rose-500 transition-all shadow-glow-peach"
                 title="Send message"
               >
                 <Send className="w-4 h-4" />
@@ -980,9 +979,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             )}
           </div>
         </div>
-        <div className="mt-1.5 flex items-center justify-between text-[11px] text-cozy-muted/60 px-1">
-          <span>Branch: <span className="font-mono text-sky-400/80">{task.branch}</span></span>
-          <span>Base: <span className="font-mono text-cozy-muted">{task.base_branch}</span></span>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-cozy-muted/70 px-1">
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+            Branch: <span className="text-cozy-text font-medium">{task.branch}</span>
+          </span>
+          <span>Base: <span className="text-cozy-muted font-medium">{task.base_branch}</span></span>
         </div>
       </div>
     </div>

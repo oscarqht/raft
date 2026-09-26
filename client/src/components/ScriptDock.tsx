@@ -28,31 +28,31 @@ export const ScriptDock: React.FC = () => {
         return (
           <div
             key={item.id}
-            className={`pointer-events-auto bg-cozy-surface/95 backdrop-blur-md border rounded-xl p-3 w-full sm:w-80 text-xs shadow-xl transition-all flex flex-col gap-2.5 ${
+            className={`pointer-events-auto rounded-2.5xl glass-panel border p-3.5 w-full sm:w-84 text-xs shadow-soft-lg transition-all flex flex-col gap-2.5 ${
               isRunning
-                ? 'border-sky-500/40 shadow-sky-500/10'
+                ? 'border-rose-400/40 shadow-glow-peach/20'
                 : isFailed
-                ? 'border-rose-500/40 shadow-rose-500/10 bg-rose-500/[0.03]'
+                ? 'border-rose-500/40 shadow-soft-md bg-rose-500/[0.03]'
                 : isCompleted
-                ? 'border-emerald-500/40 shadow-emerald-500/10'
-                : 'border-cozy-border'
+                ? 'border-emerald-500/40 shadow-glow-mint/20'
+                : 'border-white/60 dark:border-white/10'
             }`}
           >
             {/* Top row: Name, status badge, manual dismiss */}
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div
-                  className="font-semibold text-cozy-text truncate text-sm flex items-center gap-1.5"
+                  className="font-bold text-cozy-text truncate text-sm flex items-center gap-1.5"
                   title={item.scriptName}
                 >
                   <Terminal
                     className={`w-3.5 h-3.5 shrink-0 ${
                       isFailed
-                        ? 'text-rose-400'
+                        ? 'text-rose-500'
                         : isRunning
-                        ? 'text-sky-400'
+                        ? 'text-rose-500'
                         : isCompleted
-                        ? 'text-emerald-400'
+                        ? 'text-emerald-500'
                         : 'text-cozy-muted'
                     }`}
                   />
@@ -68,20 +68,20 @@ export const ScriptDock: React.FC = () => {
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                  className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold shadow-soft-sm ${
                     isRunning
                       ? item.isCanceling
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse'
-                        : 'bg-sky-500/10 text-sky-400 border border-sky-500/20 animate-pulse'
+                        ? 'bg-amber-500/15 text-amber-500 border border-amber-400/30 animate-pulse'
+                        : 'bg-rose-500/15 text-rose-500 border border-rose-400/30 animate-pulse'
                       : isFailed
-                      ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                      ? 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
                       : isCompleted
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                      : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
+                      ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
+                      : 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30'
                   }`}
                 >
                   {isRunning && <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />}
-                  {isCompleted && <Check className="w-2.5 h-2.5 mr-1 text-emerald-400" />}
+                  {isCompleted && <Check className="w-2.5 h-2.5 mr-1 text-emerald-500" />}
                   {item.isCanceling
                     ? 'stopping...'
                     : isFailed
@@ -89,11 +89,11 @@ export const ScriptDock: React.FC = () => {
                     : item.status}
                 </span>
 
-                {/* Manual dismiss button for user to dismiss at any time once not running */}
+                {/* Manual dismiss button */}
                 {!isRunning && (
                   <button
                     type="button"
-                    className="p-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors cursor-pointer"
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all cursor-pointer"
                     onClick={() => dismissExecution(item.id)}
                     title="Dismiss badge"
                   >
@@ -104,10 +104,10 @@ export const ScriptDock: React.FC = () => {
             </div>
 
             {/* Bottom action row: View Logs & Cancel / Force Kill */}
-            <div className="flex items-center justify-between gap-2 pt-2 border-t border-cozy-border/60">
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-cozy-border/50">
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-2 py-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all text-xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-cozy-muted hover:text-cozy-text bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/60 transition-all text-xs cursor-pointer shadow-soft-sm"
                 onClick={() => openModal(item.id)}
                 title="View terminal logs"
               >
@@ -118,7 +118,7 @@ export const ScriptDock: React.FC = () => {
               {isRunning ? (
                 <button
                   type="button"
-                  className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-400/30 transition-all cursor-pointer shadow-soft-sm"
                   onClick={() => cancelScript(item.id, item.isCanceling)}
                   title={item.isCanceling ? 'Force kill process' : 'Stop process'}
                 >
@@ -126,11 +126,11 @@ export const ScriptDock: React.FC = () => {
                   <span>{item.isCanceling ? 'Force Kill' : 'Stop'}</span>
                 </button>
               ) : isFailed ? (
-                <span className="text-[11px] text-rose-400 font-mono">
+                <span className="text-[11px] text-rose-500 font-mono font-medium">
                   Failed
                 </span>
               ) : isCompleted ? (
-                <span className="text-[11px] text-emerald-400 font-mono">
+                <span className="text-[11px] text-emerald-500 font-mono font-medium">
                   Finished
                 </span>
               ) : (

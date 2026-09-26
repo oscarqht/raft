@@ -92,7 +92,7 @@ const TextSection: React.FC<{ text: string }> = ({ text }) => {
 
         if (isList && lines.length > 0) {
           return (
-            <ul key={idx} className="space-y-1.5 my-2 pl-4 list-disc text-sm marker:text-sky-400/80 break-words [overflow-wrap:anywhere]">
+            <ul key={idx} className="space-y-1.5 my-2 pl-4 list-disc text-sm marker:text-rose-400 break-words [overflow-wrap:anywhere]">
               {lines.map((line, lIdx) => {
                 const l = line.trim();
                 if (!l) return null;
@@ -133,12 +133,12 @@ const CodeBlockItem: React.FC<{
   };
 
   return (
-    <div className="my-2 rounded-xl border border-cozy-border/80 bg-cozy-bg/95 overflow-hidden shadow-sm font-mono text-xs max-w-full">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-cozy-subtle/70 border-b border-cozy-border/60 text-[11px] text-cozy-muted">
+    <div className="my-2.5 rounded-2xl border border-cozy-border/80 bg-cozy-bg/95 overflow-hidden shadow-soft-sm font-mono text-xs max-w-full">
+      <div className="flex items-center justify-between px-3.5 py-2 bg-cozy-subtle/70 border-b border-cozy-border/60 text-[11px] text-cozy-muted">
         <span className="flex items-center gap-1.5 font-medium">
-          <Terminal className="w-3.5 h-3.5 text-sky-400" />
+          <Terminal className="w-3.5 h-3.5 text-rose-400" />
           {language || 'code'}
-          {isStreaming && <span className="text-[10px] text-sky-400 animate-pulse">●</span>}
+          {isStreaming && <span className="text-[10px] text-rose-400 animate-pulse">●</span>}
         </span>
         <button
           onClick={handleCopy}
