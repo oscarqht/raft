@@ -773,27 +773,103 @@ export function spawnAgentCli(
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 
+  let lineBuffer = '';
+  let hasStreamedDeltas = false;
+
   proc.stdout?.on('data', (data: Buffer) => {
-    const raw = data.toString('utf-8');
-    // Check if JSON stream lines
-    const lines = raw.split('\n');
+    lineBuffer += data.toString('utf-8');
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop() || '';
+
     for (const line of lines) {
-      if (!line.trim()) continue;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      let handled = false;
       try {
-        const parsed = JSON.parse(line);
-        if (parsed.type || parsed.event || parsed.role) {
-          onEvent({
-            type: parsed.type === 'thought' ? 'thought' : 'chunk',
-            content: parsed.content || parsed.text || JSON.stringify(parsed),
-            metadata: parsed,
-          });
-          continue;
+        const parsed = JSON.parse(trimmed);
+        if (parsed.event || parsed.type || parsed.role) {
+          handled = true;
+          // Handle agy stream-json format
+          if (parsed.event === 'step_update') {
+            const step = parsed.step_update;
+            if (step) {
+              if (step.step_type === 'tool' && step.state === 'ACTIVE') {
+                const toolName = step.tool_name || step.tool_info?.name || 'tool';
+                const params = step.tool_info?.parameters || {};
+                let desc = '';
+                if (params.CommandLine) {
+                  desc = `Run: ${params.CommandLine}`;
+                } else if (params.AbsolutePath || params.TargetFile) {
+                  const target = params.AbsolutePath || params.TargetFile;
+                  const basename = path.basename(target) || target;
+                  desc = `${toolName.replace(/_/g, ' ')}: ${basename}`;
+                } else if (params.query) {
+                  desc = `Search: "${params.query}"`;
+                } else if (params.Url) {
+                  desc = `Fetch: ${params.Url}`;
+                } else {
+                  desc = toolName.replace(/_/g, ' ');
+                }
+
+                onEvent({
+                  type: 'thought',
+                  content: `→ ${desc}\n`,
+                  metadata: parsed,
+                });
+              } else if (step.step_type === 'agent_response' && step.text_delta) {
+                hasStreamedDeltas = true;
+                onEvent({
+                  type: 'chunk',
+                  content: step.text_delta,
+                  metadata: parsed,
+                });
+              }
+            }
+          } else if (parsed.event === 'result') {
+            const finalResponse = parsed.result?.response;
+            if (finalResponse) {
+              onEvent({
+                type: 'chunk',
+                content: finalResponse,
+                metadata: { ...parsed, isFinalResult: true },
+              });
+            }
+          } else if (parsed.type || parsed.role) {
+            // General JSON event (Claude, Codex, etc.)
+            const content = parsed.content || parsed.text || parsed.delta?.text;
+            if (content) {
+              onEvent({
+                type: parsed.type === 'thought' ? 'thought' : 'chunk',
+                content: typeof content === 'string' ? content : JSON.stringify(content),
+                metadata: parsed,
+              });
+            }
+          }
         }
       } catch {
-        // Not a single JSON line, stream as text chunk
+        // Not a JSON line
+      }
+
+      if (!handled) {
+        onEvent({ type: 'chunk', content: line + '\n' });
       }
     }
-    onEvent({ type: 'chunk', content: raw });
+  });
+
+  proc.stdout?.on('end', () => {
+    if (lineBuffer.trim()) {
+      try {
+        const parsed = JSON.parse(lineBuffer.trim());
+        if (parsed.event === 'result' && !hasStreamedDeltas && parsed.result?.response) {
+          onEvent({ type: 'chunk', content: parsed.result.response, metadata: parsed });
+        } else if (parsed.event !== 'step_update') {
+          onEvent({ type: 'chunk', content: lineBuffer });
+        }
+      } catch {
+        onEvent({ type: 'chunk', content: lineBuffer });
+      }
+    }
   });
 
   proc.stderr?.on('data', (data: Buffer) => {
@@ -802,7 +878,7 @@ export function spawnAgentCli(
   });
 
   proc.on('close', (code) => {
-    onEvent({ type: 'done', content: `Process exited with code ${code}`, metadata: { code } });
+    onEvent({ type: 'done', content: `\nProcess completed (exit code ${code ?? 0})\n`, metadata: { code } });
   });
 
   proc.on('error', (err) => {
@@ -817,6 +893,7 @@ export async function runDiscoveryAgent(
   projectPath: string,
   cliName: string,
   model?: string,
+  thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
   onEvent?: (event: StreamEvent) => void
 ): Promise<{
   dev_cmd: string;
@@ -826,18 +903,29 @@ export async function runDiscoveryAgent(
   branch_convention: string;
   summary: string;
 }> {
-  const emit = onEvent || (() => {});
-  emit({ type: 'status', content: `Starting discovery with ${cliName}...` });
+  let thinkingEffort: string | undefined;
+  let emit: (event: StreamEvent) => void;
+  if (typeof thinkingEffortOrOnEvent === 'function') {
+    emit = thinkingEffortOrOnEvent;
+    thinkingEffort = undefined;
+  } else {
+    thinkingEffort = thinkingEffortOrOnEvent;
+    emit = onEvent || (() => {});
+  }
 
-  const discoveryPrompt = `Analyze this repository to determine:
+  emit({ type: 'status', content: `Starting discovery with ${cliName}...\n` });
+
+  const discoveryPrompt = `Quickly inspect the top-level repository configuration files (such as package.json, Makefile, Cargo.toml, README.md, etc.) to determine:
 1. The command to run the local development server (e.g., "npm run dev", "npm start", "cargo run", etc.)
 2. The default localhost port the dev server runs on (e.g., 5173, 3000, 8080)
 3. The build command (e.g., "npm run build", "cargo build")
-4. The test command (e.g., "npm test")
-5. The git branch convention (main branch name, e.g., "main" or "master")
+4. The test command (e.g., "npm test", "npm run test", or "npm test" as default)
+5. The git branch convention (e.g., "main" or "master")
 
-Inspect package.json, Makefile, Cargo.toml, or whatever config files are present.
-Output your final answer ONLY as a JSON object at the very end in the exact format:
+Important instructions:
+- Keep your analysis quick and concise. Read the root config files first.
+- If a command is not explicitly found, use the standard convention (e.g. "npm test") rather than searching git history.
+- Provide your final answer as a JSON block at the end in this format:
 \`\`\`json
 {
   "dev_cmd": "npm run dev",
@@ -845,7 +933,7 @@ Output your final answer ONLY as a JSON object at the very end in the exact form
   "build_cmd": "npm run build",
   "test_cmd": "npm test",
   "branch_convention": "main",
-  "summary": "Vite + React project running on port 5173"
+  "summary": "Brief 1-line description of project"
 }
 \`\`\``;
 
@@ -855,15 +943,22 @@ Output your final answer ONLY as a JSON object at the very end in the exact form
   if (cliName === 'agy') {
     args.push('-p', discoveryPrompt);
     if (model) args.push('--model', model);
+    const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+    args.push('--effort', effort);
+    args.push('--output-format', 'stream-json');
     args.push('--dangerously-skip-permissions');
   } else if (cliName === 'claude') {
     args.push('-p', discoveryPrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
     args.push('--dangerously-skip-permissions');
   } else {
     // codex
     args.push('exec', discoveryPrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') {
+      args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+    }
     args.push('-c', 'service_tier="fast"');
   }
 
@@ -876,13 +971,17 @@ Output your final answer ONLY as a JSON object at the very end in the exact form
       }
     });
 
-    // Timeout protection after 45 seconds
-    setTimeout(() => {
+    // Timeout protection after 120 seconds
+    const timer = setTimeout(() => {
       try {
         proc.kill();
       } catch {}
       resolve();
-    }, 45000);
+    }, 120000);
+
+    proc.on('close', () => {
+      clearTimeout(timer);
+    });
   });
 
   // Parse JSON from output
@@ -939,9 +1038,18 @@ export function runRebaseAgent(
   baseBranch: string,
   cliName: string,
   model?: string,
+  thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
   onEvent?: (event: StreamEvent) => void
 ): ChildProcess {
-  const emit = onEvent || (() => {});
+  let thinkingEffort: string | undefined;
+  let emit: (event: StreamEvent) => void;
+  if (typeof thinkingEffortOrOnEvent === 'function') {
+    emit = thinkingEffortOrOnEvent;
+    thinkingEffort = undefined;
+  } else {
+    thinkingEffort = thinkingEffortOrOnEvent;
+    emit = onEvent || (() => {});
+  }
   emit({ type: 'status', content: `Pulling ${baseBranch} and rebasing...` });
 
   const rebasePrompt = `Pull the base branch "${baseBranch}" from remote origin and rebase the current branch onto origin/${baseBranch}. If any conflicts arise, inspect the conflicting files and resolve the merge conflicts so that git rebase --continue finishes successfully and the repository is left in a clean rebased state. Output a clear summary of what was done.`;
@@ -950,14 +1058,21 @@ export function runRebaseAgent(
   if (cliName === 'agy') {
     args.push('-p', rebasePrompt);
     if (model) args.push('--model', model);
+    const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+    args.push('--effort', effort);
+    args.push('--output-format', 'stream-json');
     args.push('--dangerously-skip-permissions');
   } else if (cliName === 'claude') {
     args.push('-p', rebasePrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
     args.push('--dangerously-skip-permissions');
   } else {
     args.push('exec', rebasePrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') {
+      args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+    }
     args.push('-c', 'service_tier="fast"');
   }
 
@@ -971,9 +1086,18 @@ export function runSubmitAgent(
   commitMessage: string,
   cliName: string,
   model?: string,
+  thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
   onEvent?: (event: StreamEvent) => void
 ): ChildProcess {
-  const emit = onEvent || (() => {});
+  let thinkingEffort: string | undefined;
+  let emit: (event: StreamEvent) => void;
+  if (typeof thinkingEffortOrOnEvent === 'function') {
+    emit = thinkingEffortOrOnEvent;
+    thinkingEffort = undefined;
+  } else {
+    thinkingEffort = thinkingEffortOrOnEvent;
+    emit = onEvent || (() => {});
+  }
   emit({ type: 'status', content: `Submitting changes...` });
 
   const submitPrompt = `Stage all changes, create a git commit with the message "${commitMessage.replace(/"/g, '\\"')}", and push the branch "${branchName}" to origin. If remote branch does not exist yet, push with -u origin ${branchName}. Output a confirmation when complete.`;
@@ -982,14 +1106,21 @@ export function runSubmitAgent(
   if (cliName === 'agy') {
     args.push('-p', submitPrompt);
     if (model) args.push('--model', model);
+    const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+    args.push('--effort', effort);
+    args.push('--output-format', 'stream-json');
     args.push('--dangerously-skip-permissions');
   } else if (cliName === 'claude') {
     args.push('-p', submitPrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
     args.push('--dangerously-skip-permissions');
   } else {
     args.push('exec', submitPrompt);
     if (model) args.push('--model', model);
+    if (thinkingEffort && thinkingEffort !== 'none') {
+      args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+    }
     args.push('-c', 'service_tier="fast"');
   }
 

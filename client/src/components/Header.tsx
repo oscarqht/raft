@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Terminal, Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2 } from 'lucide-react';
 import { Settings } from '../types';
 
@@ -9,7 +10,7 @@ interface HeaderProps {
     taskId?: string;
     taskName?: string;
   };
-  onNavigate: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
+  onNavigate?: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
 }
 
@@ -18,12 +19,32 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   settings,
 }) => {
+  const navigate = useNavigate();
+
+  const handleNav = (page: 'home' | 'project' | 'task' | 'settings', params?: any) => {
+    if (onNavigate) {
+      onNavigate(page, params);
+      return;
+    }
+    if (page === 'home') navigate('/');
+    else if (page === 'settings') navigate('/settings');
+    else if (page === 'project' && params?.projectId) navigate(`/projects/${params.projectId}`);
+    else if (page === 'task' && params?.taskId) {
+      if (params?.projectId || currentPath?.projectId) {
+        navigate(`/projects/${params?.projectId || currentPath?.projectId}/tasks/${params.taskId}`);
+      } else {
+        navigate(`/tasks/${params.taskId}`);
+      }
+    }
+  };
+
   return (
     <header className="h-14 border-b border-cozy-border bg-cozy-surface/80 backdrop-blur px-4 flex items-center justify-between shrink-0 select-none">
       {/* Left: Brand & Breadcrumbs */}
       <div className="flex items-center space-x-3 text-sm">
-        <button
-          onClick={() => onNavigate('home')}
+        <Link
+          to="/"
+          onClick={() => onNavigate?.('home')}
           className="flex items-center space-x-2 text-sky-400 font-semibold hover:text-sky-300 transition-colors"
         >
           <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
@@ -33,18 +54,19 @@ export const Header: React.FC<HeaderProps> = ({
             termai
             <Sparkles className="w-3.5 h-3.5 text-amber-400 inline" />
           </span>
-        </button>
+        </Link>
 
-        {currentPath?.projectName && (
+        {currentPath?.projectName && currentPath?.projectId && (
           <div className="flex items-center space-x-2 text-cozy-muted">
             <ChevronRight className="w-4 h-4 text-cozy-border" />
-            <button
-              onClick={() => onNavigate('project', { projectId: currentPath.projectId })}
+            <Link
+              to={`/projects/${currentPath.projectId}`}
+              onClick={() => onNavigate?.('project', { projectId: currentPath.projectId })}
               className="flex items-center gap-1.5 hover:text-cozy-text transition-colors max-w-[160px] truncate"
             >
               <FolderGit2 className="w-3.5 h-3.5 text-cozy-muted" />
               <span className="truncate">{currentPath.projectName}</span>
-            </button>
+            </Link>
           </div>
         )}
 
@@ -61,8 +83,9 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Agent Status & Controls */}
       <div className="flex items-center space-x-2.5">
         {settings && (
-          <button
-            onClick={() => onNavigate('settings')}
+          <Link
+            to="/settings"
+            onClick={() => onNavigate?.('settings')}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text hover:border-sky-500/30 transition-all"
             title="Active AI Agent CLI"
           >
@@ -70,16 +93,17 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-semibold text-sky-400">{settings.agent_cli}</span>
             <span className="text-cozy-border">|</span>
             <span className="text-cozy-muted truncate max-w-[120px]">{settings.default_model || 'default'}</span>
-          </button>
+          </Link>
         )}
 
-        <button
-          onClick={() => onNavigate('settings')}
+        <Link
+          to="/settings"
+          onClick={() => onNavigate?.('settings')}
           className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border border-transparent hover:border-cozy-border transition-colors"
           title="Settings"
         >
           <SettingsIcon className="w-4 h-4" />
-        </button>
+        </Link>
       </div>
     </header>
   );

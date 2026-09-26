@@ -104,3 +104,28 @@ export interface GitStatus {
   unstaged: string[];
   untracked: string[];
 }
+
+export interface FSItem {
+  name: string;
+  path: string;
+  isRepo: boolean;
+}
+
+export interface FSShortcut {
+  name: string;
+  path: string;
+}
+
+export interface FSResponse {
+  path: string;
+  isRepo: boolean;
+  folders: FSItem[];
+  parent: string | null;
+  drives?: string[];
+  shortcuts?: FSShortcut[];
+}
+
+export interface SelectionMeta {
+  isRepo: boolean;
+}
+

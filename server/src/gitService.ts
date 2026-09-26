@@ -35,6 +35,30 @@ export function normalizePath(p: string): string {
 }
 
 export class GitService {
+  static initRepo(targetPath: string): RepoInfo {
+    try {
+      const resolved = path.resolve(targetPath);
+      if (!fs.existsSync(resolved)) {
+        fs.mkdirSync(resolved, { recursive: true });
+      }
+      execSync('git init', {
+        cwd: resolved,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      return GitService.getRepoInfo(resolved);
+    } catch (err: any) {
+      return {
+        isRepo: false,
+        repoRoot: '',
+        currentBranch: '',
+        branches: [],
+        worktrees: [],
+        error: err.message,
+      };
+    }
+  }
+
   static getRepoInfo(targetPath: string): RepoInfo {
     try {
       if (!fs.existsSync(targetPath)) {

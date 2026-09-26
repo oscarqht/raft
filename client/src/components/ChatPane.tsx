@@ -60,6 +60,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       setTabCli(currentChat.agent_cli || settings?.agent_cli || 'agy');
       setTabModel(currentChat.model || settings?.default_model || '');
       setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
+      if (currentChat.status === 'running') {
+        setIsStreaming(true);
+      } else {
+        setIsStreaming(false);
+      }
     }
 
     getChatMessages(activeChatId).then(setMessages).catch(() => {});
@@ -78,21 +83,96 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const handleMessage = (event: MessageEvent) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.sessionId && msg.sessionId === activeChatId) {
+        const eventSessionId = msg.sessionId || msg.message?.session_id;
+        if (eventSessionId && eventSessionId === activeChatId) {
           if (msg.type === 'message_saved') {
-            setMessages((prev) => [...prev, msg.message]);
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === msg.message.id)) {
+                return prev;
+              }
+              return [...prev, msg.message];
+            });
           } else if (msg.type === 'chat_stream') {
             setIsStreaming(true);
-            if (msg.event?.content) {
-              setStreamingChunk((prev) => prev + msg.event.content);
-            }
+            const fullContent = msg.fullContent;
+            const deltaContent = msg.event?.content || '';
+
+            setMessages((prev) => {
+              // 1. Look for existing message with matching ID
+              let existingIdx = prev.findIndex((m) => m.id === msg.messageId);
+
+              // 2. If not found by ID, look for the last assistant message
+              if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                existingIdx = prev.length - 1;
+              }
+
+              if (existingIdx !== -1) {
+                const updated = [...prev];
+                const target = updated[existingIdx];
+                let nextContent = '';
+
+                if (typeof fullContent === 'string') {
+                  nextContent = fullContent;
+                } else if (deltaContent) {
+                  const currentText = target.content || '';
+                  if (currentText.endsWith(deltaContent)) {
+                    nextContent = currentText;
+                  } else {
+                    let overlap = 0;
+                    const maxOverlap = Math.min(currentText.length, deltaContent.length);
+                    for (let len = maxOverlap; len > 0; len--) {
+                      if (currentText.endsWith(deltaContent.slice(0, len))) {
+                        overlap = len;
+                        break;
+                      }
+                    }
+                    nextContent = currentText + deltaContent.slice(overlap);
+                  }
+                } else {
+                  nextContent = target.content || '';
+                }
+
+                updated[existingIdx] = {
+                  ...target,
+                  id: msg.messageId || target.id,
+                  content: nextContent,
+                };
+                return updated;
+              }
+
+              // 3. If no assistant message exists yet, create one
+              return [
+                ...prev,
+                {
+                  id: msg.messageId || `assistant-${Date.now()}`,
+                  session_id: eventSessionId,
+                  role: 'assistant',
+                  content: typeof fullContent === 'string' ? fullContent : deltaContent,
+                  timestamp: Date.now(),
+                },
+              ];
+            });
           } else if (msg.type === 'chat_turn_complete') {
             setIsStreaming(false);
             setStreamingChunk('');
-            setMessages((prev) => [...prev, msg.message]);
+            setMessages((prev) => {
+              let existingIdx = prev.findIndex((m) => m.id === msg.message.id);
+              if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
+                existingIdx = prev.length - 1;
+              }
+              if (existingIdx !== -1) {
+                const updated = [...prev];
+                updated[existingIdx] = msg.message;
+                return updated;
+              }
+              return [...prev, msg.message];
+            });
           } else if (msg.type === 'aborted') {
             setIsStreaming(false);
             setStreamingChunk('');
+            if (activeChatId) {
+              getChatMessages(activeChatId).then(setMessages).catch(() => {});
+            }
           }
         }
       } catch {}
@@ -134,6 +214,29 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const handleSendMessage = () => {
     if (!inputPrompt.trim() || !activeChatId || !ws || isStreaming) return;
     const prompt = inputPrompt.trim();
+    const newMsgId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const now = Date.now();
+
+    const optimisticUserMessage: ChatMessage = {
+      id: newMsgId,
+      session_id: activeChatId,
+      role: 'user',
+      content: prompt,
+      timestamp: now,
+    };
+
+    const optimisticAssistantMessage: ChatMessage = {
+      id: `pending-${now}`,
+      session_id: activeChatId,
+      role: 'assistant',
+      content: '',
+      timestamp: now + 1,
+    };
+
+    setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
     setInputPrompt('');
     setIsStreaming(true);
     setStreamingChunk('');
@@ -142,6 +245,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       JSON.stringify({
         type: 'send_chat_message',
         sessionId: activeChatId,
+        messageId: newMsgId,
         prompt,
         agentCli: tabCli,
         model: tabModel,
@@ -152,8 +256,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   const handleAbort = () => {
     if (!ws) return;
-    ws.send(JSON.stringify({ type: 'abort' }));
+    ws.send(JSON.stringify({ type: 'abort', sessionId: activeChatId }));
     setIsStreaming(false);
+    setStreamingChunk('');
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

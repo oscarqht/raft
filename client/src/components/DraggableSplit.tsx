@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, ReactNode } from 'react';
+import React, { useState, useRef, useEffect, ReactNode, useCallback } from 'react';
 
 interface DraggableSplitProps {
   left: ReactNode;
@@ -21,56 +21,130 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   const [ratio, setRatio] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      return saved ? parseFloat(saved) : initialRatio;
-    } catch {
-      return initialRatio;
-    }
+      if (saved) {
+        const parsed = parseFloat(saved);
+        if (!isNaN(parsed) && parsed > 0 && parsed < 1) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return initialRatio;
   });
 
-  const isDragging = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const isDraggingRef = useRef(false);
+  const ratioRef = useRef(ratio);
+  ratioRef.current = ratio;
+
+  const rafIdRef = useRef<number | null>(null);
+
+  const updateRatio = useCallback(
+    (clientX: number) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const totalWidth = rect.width;
+      if (totalWidth <= 0) return;
+
+      const maxLeftWidth = Math.max(minLeftWidth, totalWidth - minRightWidth);
+      const currentX = clientX - rect.left;
+      const clampedX = Math.max(minLeftWidth, Math.min(maxLeftWidth, currentX));
+      const newRatio = clampedX / totalWidth;
+
+      ratioRef.current = newRatio;
+
+      if (rafIdRef.current === null) {
+        rafIdRef.current = requestAnimationFrame(() => {
+          setRatio(ratioRef.current);
+          rafIdRef.current = null;
+        });
+      }
+    },
+    [minLeftWidth, minRightWidth]
+  );
+
+  const stopDragging = useCallback(() => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    setIsDragging(false);
+
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    setRatio(ratioRef.current);
+
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+
+    try {
+      localStorage.setItem(storageKey, ratioRef.current.toString());
+    } catch {}
+  }, [storageKey]);
 
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const currentX = e.clientX - rect.left;
-      const totalWidth = rect.width;
-
-      const clampedX = Math.max(minLeftWidth, Math.min(totalWidth - minRightWidth, currentX));
-      const newRatio = clampedX / totalWidth;
-      setRatio(newRatio);
-      try {
-        localStorage.setItem(storageKey, newRatio.toString());
-      } catch {}
+    const handlePointerMove = (e: MouseEvent | PointerEvent) => {
+      if (!isDraggingRef.current) return;
+      updateRatio(e.clientX);
     };
 
-    const handleMouseUp = () => {
-      if (isDragging.current) {
-        isDragging.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+    const handlePointerUp = () => {
+      if (isDraggingRef.current) {
+        stopDragging();
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [minLeftWidth, minRightWidth, storageKey]);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
 
-  const startDragging = () => {
-    isDragging.current = true;
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [updateRatio, stopDragging]);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only primary button
+    e.preventDefault();
+
+    isDraggingRef.current = true;
+    setIsDragging(true);
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
   };
 
   return (
-    <div ref={containerRef} className="flex-1 flex overflow-hidden relative w-full h-full">
+    <div ref={containerRef} className="flex-1 flex overflow-hidden relative w-full h-full select-none">
+      {/* Full-screen invisible overlay during dragging to prevent iframe from capturing pointer events */}
+      {isDragging && (
+        <div
+          className="fixed inset-0 z-50 cursor-col-resize select-none pointer-events-auto"
+          onPointerMove={(e) => updateRatio(e.clientX)}
+          onPointerUp={stopDragging}
+        />
+      )}
+
       {/* Left Pane */}
       <div
-        style={{ width: `calc(${ratio * 100}% - 3px)` }}
+        style={{
+          width: `calc(${ratio * 100}% - 3px)`,
+          pointerEvents: isDragging ? 'none' : 'auto',
+        }}
         className="h-full flex flex-col min-w-0 overflow-hidden"
       >
         {left}
@@ -78,16 +152,30 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
 
       {/* Draggable Divider */}
       <div
-        onMouseDown={startDragging}
-        className="w-[6px] h-full cursor-col-resize hover:bg-sky-500/40 active:bg-sky-500 transition-colors flex items-center justify-center shrink-0 z-10 select-none group"
+        onPointerDown={handlePointerDown}
+        className={`relative w-[6px] h-full cursor-col-resize hover:bg-sky-500/40 transition-colors flex items-center justify-center shrink-0 z-20 select-none group touch-none ${
+          isDragging ? 'bg-sky-500' : 'bg-transparent'
+        }`}
         title="Drag to resize panels"
       >
-        <div className="w-[2px] h-8 rounded-full bg-cozy-border group-hover:bg-sky-400 group-hover:h-12 transition-all"></div>
+        {/* Invisible wider hit area for easier grabbing */}
+        <div className="absolute inset-y-0 -left-1.5 -right-1.5 z-10 cursor-col-resize" />
+
+        <div
+          className={`w-[2px] rounded-full transition-all z-20 ${
+            isDragging
+              ? 'bg-sky-300 h-16'
+              : 'h-8 bg-cozy-border group-hover:bg-sky-400 group-hover:h-12'
+          }`}
+        />
       </div>
 
       {/* Right Pane */}
       <div
-        style={{ width: `calc(${(1 - ratio) * 100}% - 3px)` }}
+        style={{
+          width: `calc(${(1 - ratio) * 100}% - 3px)`,
+          pointerEvents: isDragging ? 'none' : 'auto',
+        }}
         className="h-full flex flex-col min-w-0 overflow-hidden"
       >
         {right}

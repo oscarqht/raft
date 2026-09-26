@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, FolderGit2, GitBranch, Terminal, Trash2, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
-import { Project, Settings } from '../types';
+import { useNavigate } from 'react-router-dom';
+import { Plus, FolderGit2, GitBranch, Terminal, Trash2, ArrowRight, Sparkles, Sliders } from 'lucide-react';
+import { Project, Settings, SelectionMeta } from '../types';
 import { getProjects, deleteProject, validateProjectPath } from '../api';
 import { DiscoveryModal } from '../components/DiscoveryModal';
+import { FileSystemBrowser } from '../components/FileSystemBrowser';
+import { ProjectConfigModal } from '../components/ProjectConfigModal';
 
 interface HomePageProps {
-  onSelectProject: (projectId: string) => void;
+  onSelectProject?: (projectId: string) => void;
   settings: Settings | null;
   ws: WebSocket | null;
 }
@@ -15,13 +18,20 @@ export const HomePage: React.FC<HomePageProps> = ({
   settings,
   ws,
 }) => {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [inputPath, setInputPath] = useState('');
-  const [isValidating, setIsValidating] = useState(false);
-  const [validationError, setValidationError] = useState('');
   const [discoveryPath, setDiscoveryPath] = useState('');
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  const handleSelect = (id: string) => {
+    if (onSelectProject) {
+      onSelectProject(id);
+    } else {
+      navigate(`/projects/${id}`);
+    }
+  };
 
   const loadProjects = async () => {
     try {
@@ -34,26 +44,19 @@ export const HomePage: React.FC<HomePageProps> = ({
     loadProjects();
   }, []);
 
-  const handleValidateAndDiscover = async () => {
-    if (!inputPath.trim()) return;
-    setIsValidating(true);
-    setValidationError('');
-
+  const handleSelectRepository = async (selectedPath: string, _meta: SelectionMeta) => {
+    if (!selectedPath) return;
     try {
-      const result = await validateProjectPath(inputPath.trim());
-      if (!result.isRepo) {
-        setValidationError(result.error || 'The specified folder is not a valid git repository.');
-        setIsValidating(false);
-        return;
-      }
-      setDiscoveryPath(result.repoRoot || inputPath.trim());
+      const result = await validateProjectPath(selectedPath.trim());
+      setDiscoveryPath(result.repoRoot || selectedPath.trim());
       setIsAddOpen(false);
-      setInputPath('');
       setIsDiscoveryOpen(true);
     } catch (err: any) {
-      setValidationError(err.message);
-    } finally {
-      setIsValidating(false);
+      console.error('Validation error:', err);
+      // Fallback to selected path
+      setDiscoveryPath(selectedPath.trim());
+      setIsAddOpen(false);
+      setIsDiscoveryOpen(true);
     }
   };
 
@@ -111,7 +114,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           {projects.map((p) => (
             <div
               key={p.id}
-              onClick={() => onSelectProject(p.id)}
+              onClick={() => handleSelect(p.id)}
               className="group relative p-5 rounded-2xl bg-cozy-surface border border-cozy-border hover:border-sky-500/40 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between"
             >
               <div>
@@ -119,13 +122,25 @@ export const HomePage: React.FC<HomePageProps> = ({
                   <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
                     <FolderGit2 className="w-5 h-5 text-sky-400" />
                   </div>
-                  <button
-                    onClick={(e) => handleDelete(p.id, e)}
-                    className="p-1.5 rounded-lg text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
-                    title="Remove project"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingProject(p);
+                      }}
+                      className="p-1.5 rounded-lg text-cozy-muted hover:text-sky-400 hover:bg-sky-500/10 transition-all"
+                      title="Edit project configuration"
+                    >
+                      <Sliders className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(p.id, e)}
+                      className="p-1.5 rounded-lg text-cozy-muted hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                      title="Remove project"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-sky-400 transition-colors">
@@ -158,73 +173,44 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       )}
 
-      {/* Add Project Path Modal */}
-      {isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-cozy-surface border border-cozy-border rounded-2xl shadow-2xl p-6">
-            <h3 className="text-base font-semibold text-cozy-text mb-1 flex items-center gap-2">
-              <FolderGit2 className="w-5 h-5 text-sky-400" />
-              Add Local Git Repository
-            </h3>
-            <p className="text-xs text-cozy-muted mb-4">
-              Enter the absolute path to your local repository on this machine.
-            </p>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-cozy-text block mb-1">Repository Path</label>
-                <input
-                  type="text"
-                  value={inputPath}
-                  onChange={(e) => setInputPath(e.target.value)}
-                  placeholder="/Users/username/projects/my-app"
-                  className="w-full bg-cozy-bg border border-cozy-border rounded-xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-sky-500"
-                  autoFocus
-                />
-              </div>
-
-              {validationError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{validationError}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex items-center justify-end space-x-2">
-              <button
-                onClick={() => {
-                  setIsAddOpen(false);
-                  setValidationError('');
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleValidateAndDiscover}
-                disabled={isValidating || !inputPath.trim()}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-white transition-all shadow-sm"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{isValidating ? 'Validating...' : 'Auto-Discover with AI'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Web-based in-page folder selector (like trident) */}
+      <FileSystemBrowser
+        open={isAddOpen}
+        onOpenChange={setIsAddOpen}
+        title="Add Local Git Repository"
+        selectionMode="repository"
+        onSelect={handleSelectRepository}
+      />
 
       {/* Discovery Modal */}
       <DiscoveryModal
         projectPath={discoveryPath}
         isOpen={isDiscoveryOpen}
         onClose={() => setIsDiscoveryOpen(false)}
-        onSuccess={() => {
+        onSuccess={(newProject?: Project) => {
           loadProjects();
+          if (newProject?.id) {
+            handleSelect(newProject.id);
+          }
         }}
         settings={settings}
         ws={ws}
       />
+
+      {/* Edit Project Configuration Modal */}
+      {editingProject && (
+        <ProjectConfigModal
+          project={editingProject}
+          isOpen={!!editingProject}
+          onClose={() => setEditingProject(null)}
+          onSuccess={() => {
+            loadProjects();
+            setEditingProject(null);
+          }}
+          settings={settings}
+          ws={ws}
+        />
+      )}
     </div>
   );
 };

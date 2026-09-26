@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu } from 'lucide-react';
 import { ChatMessage } from '../types';
+import { MarkdownView } from './MarkdownView';
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
@@ -14,12 +15,38 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   isStreaming,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const listEndRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = (id: string, text: string) => {
-    navigator.clipboard.writeText(text);
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(() => {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
+
+  const fallbackCopy = (text: string) => {
+    try {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    } catch {}
+  };
+
+  useEffect(() => {
+    listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, liveStreamingChunk, isStreaming]);
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -35,46 +62,102 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         </div>
       )}
 
-      {messages.map((msg) => (
-        <MessageItem key={msg.id} msg={msg} copiedId={copiedId} onCopy={handleCopy} />
+      {messages.map((msg, index) => (
+        <MessageItem
+          key={msg.id}
+          msg={msg}
+          isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
+          copiedId={copiedId}
+          onCopy={handleCopy}
+        />
       ))}
 
-      {/* Live streaming message */}
-      {isStreaming && (
+      {/* Fallback streaming thinking indicator if no assistant message exists yet */}
+      {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
         <div className="flex items-start space-x-3">
           <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 mt-0.5">
             <Bot className="w-4 h-4 text-sky-400 animate-pulse" />
           </div>
           <div className="flex-1 space-y-2 max-w-[90%]">
             <div className="bg-cozy-subtle border border-cozy-border/80 rounded-2xl px-4 py-3 text-sm text-cozy-text shadow-sm">
-              <div className="whitespace-pre-wrap font-sans leading-relaxed break-words">
-                {liveStreamingChunk || (
-                  <span className="flex items-center gap-2 text-cozy-muted text-xs animate-pulse">
-                    <Cpu className="w-3.5 h-3.5 text-sky-400" />
-                    Thinking and inspecting code...
-                  </span>
-                )}
-              </div>
+              <span className="flex items-center gap-2 text-cozy-muted text-xs animate-pulse">
+                <Cpu className="w-3.5 h-3.5 text-sky-400" />
+                Thinking and inspecting code...
+              </span>
             </div>
           </div>
         </div>
       )}
+
+      <div ref={listEndRef} />
     </div>
   );
 };
 
 const MessageItem: React.FC<{
   msg: ChatMessage;
+  isStreaming?: boolean;
   copiedId: string | null;
   onCopy: (id: string, text: string) => void;
-}> = ({ msg, copiedId, onCopy }) => {
+}> = ({ msg, isStreaming, copiedId, onCopy }) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
 
-  // Check if content has thought blocks
+  // Extract thoughts/actions vs clean response content
+  let thoughts: string | null = null;
+  let cleanContent = '';
+
   const thoughtMatch = msg.content.match(/<thought>([\s\S]*?)<\/thought>/);
-  const cleanContent = msg.content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
-  const thoughts = thoughtMatch ? thoughtMatch[1].trim() : null;
+  if (thoughtMatch) {
+    thoughts = thoughtMatch[1].trim();
+    cleanContent = msg.content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+  } else if (!isUser) {
+    // Check for raw lines starting with '→' or '[run_command]' / '[view_file]'
+    const lines = msg.content.split('\n');
+    const thoughtLines: string[] = [];
+    const contentLines: string[] = [];
+    let inThoughts = true;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (
+        inThoughts &&
+        (trimmed.startsWith('→') ||
+          trimmed.startsWith('[') ||
+          trimmed.startsWith('Run:') ||
+          trimmed.startsWith('Search:'))
+      ) {
+        thoughtLines.push(line);
+      } else {
+        inThoughts = false;
+        contentLines.push(line);
+      }
+    }
+
+    if (thoughtLines.length > 0) {
+      thoughts = thoughtLines.join('\n').trim();
+      cleanContent = contentLines.join('\n').trim();
+    } else {
+      cleanContent = msg.content.trim();
+    }
+  } else {
+    cleanContent = msg.content.trim();
+  }
+
+  const actionsCount = thoughts
+    ? (thoughts.match(/→/g) || []).length || thoughts.split('\n').filter(Boolean).length
+    : 0;
+
+  // Text that should be copied when clicking copy
+  const textToCopy = cleanContent || (thoughts ? thoughts : msg.content);
+  const isCopied = copiedId === msg.id;
+
+  // Fallback friendly message if assistant completed actions with no explicit closing text
+  const displayContent =
+    cleanContent ||
+    (!isStreaming && !isUser && thoughts
+      ? `Completed ${actionsCount > 0 ? `${actionsCount} ` : ''}workspace actions and finished tasks.`
+      : '');
 
   return (
     <div className={`flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
@@ -90,44 +173,92 @@ const MessageItem: React.FC<{
       </div>
 
       {/* Bubble Content */}
-      <div className={`space-y-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-        {/* Collapsible Thoughts if present */}
+      <div className={`space-y-1.5 max-w-[85%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+        {/* Collapsible Actions & Reasoning if present */}
         {thoughts && (
-          <div className="mb-1">
+          <div className="mb-1 w-full">
             <button
               onClick={() => setShowThoughts(!showThoughts)}
-              className="flex items-center gap-1.5 text-xs text-amber-400/80 hover:text-amber-300 transition-colors py-0.5 px-2 rounded bg-amber-500/10 border border-amber-500/20"
+              className="flex items-center gap-2 text-xs text-cozy-muted hover:text-cozy-text transition-colors py-1 px-2.5 rounded-lg bg-cozy-subtle/80 border border-cozy-border/70 hover:border-cozy-border cursor-pointer"
             >
-              {showThoughts ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-              <span>Agent Reasoning</span>
+              <Terminal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <span className="font-medium text-cozy-text">Agent Actions & Reasoning</span>
+              {actionsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-sky-500/10 text-sky-400 text-[10px] font-mono border border-sky-500/20">
+                  {actionsCount} {actionsCount === 1 ? 'step' : 'steps'}
+                </span>
+              )}
+              {showThoughts ? (
+                <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted" />
+              )}
             </button>
             {showThoughts && (
-              <div className="mt-1 p-2.5 rounded-lg bg-cozy-bg border border-cozy-border/60 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-48 overflow-y-auto">
+              <div className="group/thought relative mt-1.5 p-3 rounded-xl bg-cozy-bg/95 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-56 overflow-y-auto pr-9 shadow-inner leading-relaxed">
                 {thoughts}
+                <button
+                  onClick={() => onCopy(`${msg.id}-thought`, thoughts)}
+                  className="absolute top-2 right-2 p-1 rounded bg-cozy-subtle/90 hover:bg-cozy-border text-cozy-muted opacity-0 group-hover/thought:opacity-100 transition-opacity hover:text-cozy-text"
+                  title={copiedId === `${msg.id}-thought` ? 'Copied!' : 'Copy actions log'}
+                >
+                  {copiedId === `${msg.id}-thought` ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
               </div>
             )}
           </div>
         )}
 
         <div
-          className={`group relative rounded-2xl px-4 py-2.5 text-sm shadow-sm transition-all ${
+          className={`group relative rounded-2xl px-4 py-3 text-sm shadow-sm transition-all pr-9 ${
             isUser
               ? 'bg-sky-600 text-white rounded-tr-none'
-              : 'bg-cozy-surface border border-cozy-border text-cozy-text rounded-tl-none'
+              : 'bg-cozy-surface border border-cozy-border text-cozy-text rounded-tl-none w-full'
           }`}
         >
-          <div className="whitespace-pre-wrap font-sans leading-relaxed break-words">
-            {cleanContent || msg.content}
-          </div>
+          {isUser ? (
+            <div className="whitespace-pre-wrap font-sans leading-relaxed break-words">{displayContent}</div>
+          ) : displayContent ? (
+            <MarkdownView content={displayContent} className="text-cozy-text font-sans" />
+          ) : isStreaming ? (
+            <div className="flex items-center gap-2 text-xs text-sky-400 font-mono py-1 animate-pulse">
+              <Cpu className="w-4 h-4 text-sky-400" />
+              <span>
+                {actionsCount > 0
+                  ? `Executing actions... (${actionsCount} completed)`
+                  : 'Inspecting repository and planning actions...'}
+              </span>
+            </div>
+          ) : null}
 
-          {/* Copy Button */}
-          {!isUser && (
+          {/* Running status indicator inside the active bubble */}
+          {isStreaming && displayContent && (
+            <div className="flex items-center gap-2 mt-3 pt-2 border-t border-cozy-border/30 text-xs text-sky-400/90 font-mono animate-pulse">
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Running...</span>
+            </div>
+          )}
+
+          {/* Copy Button (Both User & Assistant) */}
+          {textToCopy && (
             <button
-              onClick={() => onCopy(msg.id, cleanContent || msg.content)}
-              className="absolute top-2 right-2 p-1 rounded bg-cozy-subtle/80 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity hover:text-cozy-text"
-              title="Copy response"
+              onClick={() => onCopy(msg.id, textToCopy)}
+              className={`absolute top-2 right-2 p-1 rounded transition-all opacity-0 group-hover:opacity-100 ${
+                isUser
+                  ? 'bg-sky-700/80 hover:bg-sky-800 text-sky-100 hover:text-white'
+                  : 'bg-cozy-subtle/80 hover:bg-cozy-border text-cozy-muted hover:text-cozy-text'
+              }`}
+              title={isCopied ? 'Copied!' : isUser ? 'Copy message' : 'Copy response'}
             >
-              {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {isCopied ? (
+                <Check className={`w-3.5 h-3.5 ${isUser ? 'text-emerald-300' : 'text-emerald-400'}`} />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
             </button>
           )}
         </div>

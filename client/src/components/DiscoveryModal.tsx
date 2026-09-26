@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Sparkles, Terminal, CheckCircle2, RefreshCw, FolderGit2 } from 'lucide-react';
+import { X, Sparkles, Terminal, CheckCircle2, RefreshCw, FolderGit2, AlertCircle } from 'lucide-react';
 import { Settings, Project } from '../types';
 import { createProject } from '../api';
 
@@ -20,8 +20,9 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
   settings,
   ws,
 }) => {
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logText, setLogText] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
+  const [scanFailed, setScanFailed] = useState(false);
   const [discoveredData, setDiscoveredData] = useState<any>(null);
   const [name, setName] = useState('');
   const [devCmd, setDevCmd] = useState('npm run dev');
@@ -30,6 +31,8 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
   const [testCmd, setTestCmd] = useState('npm test');
   const [branchConvention, setBranchConvention] = useState('main');
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   // Derive initial project name from path
   useEffect(() => {
@@ -39,30 +42,35 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
     }
   }, [projectPath]);
 
+  const triggerDiscovery = () => {
+    if (!ws || !projectPath) return;
+
+    setIsScanning(true);
+    setScanFailed(false);
+    setLogText('');
+    setDiscoveredData(null);
+
+    const s = settingsRef.current;
+    const payload = JSON.stringify({
+      type: 'start_discovery',
+      projectPath,
+      agentCli: s?.agent_cli || 'agy',
+      model: s?.default_model,
+      thinkingEffort: s?.thinking_effort,
+    });
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
+    } else {
+      ws.addEventListener('open', () => ws.send(payload), { once: true });
+    }
+  };
+
   // Start discovery when opened
   useEffect(() => {
     if (!isOpen || !ws || !projectPath) return;
 
-    setIsScanning(true);
-    setLogs([]);
-    setDiscoveredData(null);
-
-    const start = () => {
-      ws.send(
-        JSON.stringify({
-          type: 'start_discovery',
-          projectPath,
-          agentCli: settings?.agent_cli || 'agy',
-          model: settings?.default_model,
-        })
-      );
-    };
-
-    if (ws.readyState === WebSocket.OPEN) {
-      start();
-    } else {
-      ws.addEventListener('open', start, { once: true });
-    }
+    triggerDiscovery();
 
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -70,7 +78,15 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
         if (msg.type === 'discovery_event') {
           const ev = msg.event;
           if (ev.content) {
-            setLogs((prev) => [...prev, ev.content]);
+            setLogText((prev) => {
+              if (ev.type === 'thought' || ev.type === 'status') {
+                return prev ? `${prev.trimEnd()}\n${ev.content}` : ev.content;
+              }
+              return prev + ev.content;
+            });
+            if (ev.type === 'error' || (typeof ev.content === 'string' && ev.content.toLowerCase().includes('error:'))) {
+              setScanFailed(true);
+            }
           }
         } else if (msg.type === 'discovery_done') {
           setIsScanning(false);
@@ -83,17 +99,19 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
           if (res.branch_convention) setBranchConvention(res.branch_convention);
         } else if (msg.type === 'error') {
           setIsScanning(false);
+          setScanFailed(true);
+          setLogText((prev) => `${prev}\nError: ${msg.error || 'Discovery failed'}\n`);
         }
       } catch {}
     };
 
     ws.addEventListener('message', handleMessage);
     return () => ws.removeEventListener('message', handleMessage);
-  }, [isOpen, ws, projectPath, settings]);
+  }, [isOpen, ws, projectPath]);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  }, [logText]);
 
   const handleSave = async () => {
     try {
@@ -149,6 +167,11 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-400" />
                   <span>AI Agent is inspecting files and scripts in real time...</span>
                 </>
+              ) : scanFailed ? (
+                <>
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <span>Discovery encountered an issue. Using fallback settings; you can re-scan or edit below.</span>
+                </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -156,21 +179,44 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                 </>
               )}
             </div>
-            <span className="font-mono text-cozy-muted text-[11px]">
-              Engine: <span className="text-sky-400 font-semibold">{settings?.agent_cli}</span>
-            </span>
+            <div className="flex items-center space-x-3">
+              {!isScanning && (
+                <button
+                  type="button"
+                  onClick={triggerDiscovery}
+                  className="flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-medium bg-cozy-bg hover:bg-cozy-border text-cozy-text border border-cozy-border transition-colors"
+                  title="Re-run auto discovery"
+                >
+                  <RefreshCw className="w-3 h-3 text-sky-400" />
+                  <span>Re-scan</span>
+                </button>
+              )}
+              <span className="font-mono text-cozy-muted text-[11px]">
+                Engine: <span className="text-sky-400 font-semibold">{settings?.agent_cli}</span>
+              </span>
+            </div>
           </div>
 
           {/* Live Agent Terminal Stream */}
-          <div className="rounded-xl border border-cozy-border bg-cozy-bg overflow-hidden flex flex-col h-40">
-            <div className="px-3 py-1.5 bg-cozy-subtle/60 border-b border-cozy-border flex items-center space-x-1.5 font-mono text-[11px] text-cozy-muted">
-              <Terminal className="w-3.5 h-3.5 text-sky-400" />
-              <span>Inspection Stream</span>
+          <div className="rounded-xl border border-cozy-border bg-cozy-bg overflow-hidden flex flex-col h-44">
+            <div className="px-3 py-1.5 bg-cozy-subtle/60 border-b border-cozy-border flex items-center justify-between font-mono text-[11px] text-cozy-muted">
+              <div className="flex items-center space-x-1.5">
+                <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                <span>Inspection Stream</span>
+              </div>
+              {isScanning && (
+                <span className="flex items-center space-x-1 text-sky-400">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>Scanning...</span>
+                </span>
+              )}
             </div>
-            <div className="flex-1 overflow-y-auto p-2.5 font-mono text-xs text-cozy-muted leading-relaxed whitespace-pre-wrap select-text">
-              {logs.map((line, idx) => (
-                <div key={idx}>{line}</div>
-              ))}
+            <div className="flex-1 overflow-y-auto p-2.5 font-mono text-xs text-cozy-text leading-relaxed whitespace-pre-wrap select-text">
+              {logText ? (
+                logText
+              ) : (
+                <span className="text-cozy-muted">Waiting for agent output...</span>
+              )}
               <div ref={logsEndRef} />
             </div>
           </div>

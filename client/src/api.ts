@@ -1,6 +1,43 @@
-import { Project, Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, DevServerState, GitStatus } from './types';
+import { Project, Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, DevServerState, GitStatus, FSResponse } from './types';
 
 const API_BASE = '/api';
+
+export async function getFileSystem(dirPath?: string): Promise<FSResponse> {
+  const url = dirPath ? `${API_BASE}/fs?path=${encodeURIComponent(dirPath)}` : `${API_BASE}/fs`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to read directory');
+  }
+  return data;
+}
+
+export async function createFolder(parentPath: string, name: string): Promise<{ path: string; name: string }> {
+  const res = await fetch(`${API_BASE}/fs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: parentPath, name }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to create folder');
+  }
+  return data;
+}
+
+export async function initGitRepository(dirPath: string): Promise<any> {
+  const res = await fetch(`${API_BASE}/projects/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: dirPath }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to initialize git repository');
+  }
+  return data;
+}
+
 
 export async function getSettings(): Promise<Settings> {
   const res = await fetch(`${API_BASE}/settings`);
@@ -63,6 +100,10 @@ export async function updateProject(id: string, data: Partial<Project>): Promise
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to update project');
+  }
   return res.json();
 }
 

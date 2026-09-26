@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
-import { getSettings, getClis, getProject, getTask, updateSettings } from './api';
+import { getSettings, getClis, getProject, getTask } from './api';
 import { Header } from './components/Header';
 import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
@@ -8,15 +9,23 @@ import { TaskPage } from './pages/TaskPage';
 import { SettingsPage } from './pages/SettingsPage';
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'project' | 'task' | 'settings'>('home');
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [clis, setClis] = useState<CliInfo[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
+
+  // Extract current project/task IDs from URL pathname
+  const projectTaskMatch = matchPath('/projects/:projectId/tasks/:taskId', location.pathname);
+  const projectMatch = matchPath('/projects/:projectId', location.pathname);
+  const taskMatch = matchPath('/tasks/:taskId', location.pathname);
+
+  const currentProjectId = projectTaskMatch?.params.projectId || projectMatch?.params.projectId || null;
+  const currentTaskId = projectTaskMatch?.params.taskId || taskMatch?.params.taskId || null;
 
   // Always automatically match and sync with current OS theme
   useEffect(() => {
@@ -80,14 +89,14 @@ export default function App() {
     };
   }, []);
 
-  // Update active project/task details for breadcrumbs
+  // Update active project/task details for breadcrumbs based on URL
   useEffect(() => {
     if (currentProjectId) {
       getProject(currentProjectId).then(setActiveProject).catch(() => {});
-    } else {
+    } else if (!currentTaskId) {
       setActiveProject(null);
     }
-  }, [currentProjectId]);
+  }, [currentProjectId, currentTaskId]);
 
   useEffect(() => {
     if (currentTaskId) {
@@ -102,23 +111,26 @@ export default function App() {
 
   const handleNavigate = (page: 'home' | 'project' | 'task' | 'settings', params?: any) => {
     if (page === 'home') {
-      setCurrentProjectId(null);
-      setCurrentTaskId(null);
+      navigate('/');
     } else if (page === 'project') {
-      if (params?.projectId) setCurrentProjectId(params.projectId);
-      setCurrentTaskId(null);
+      if (params?.projectId) navigate(`/projects/${params.projectId}`);
     } else if (page === 'task') {
-      if (params?.taskId) setCurrentTaskId(params.taskId);
+      if (params?.taskId) {
+        const pId = params?.projectId || currentProjectId || activeTask?.project_id;
+        if (pId) navigate(`/projects/${pId}/tasks/${params.taskId}`);
+        else navigate(`/tasks/${params.taskId}`);
+      }
+    } else if (page === 'settings') {
+      navigate('/settings');
     }
-    setCurrentPage(page);
   };
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-cozy-bg text-cozy-text font-sans">
       <Header
         currentPath={{
-          projectId: currentProjectId || undefined,
-          projectName: activeProject?.name,
+          projectId: currentProjectId || activeTask?.project_id || undefined,
+          projectName: activeProject?.name || activeTask?.project?.name,
           taskId: currentTaskId || undefined,
           taskName: activeTask?.name,
         }}
@@ -127,44 +139,72 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        {currentPage === 'home' && (
-          <HomePage
-            onSelectProject={(id) => handleNavigate('project', { projectId: id })}
-            settings={settings}
-            ws={ws}
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <HomePage
+                onSelectProject={(id) => navigate(`/projects/${id}`)}
+                settings={settings}
+                ws={ws}
+              />
+            }
           />
-        )}
 
-        {currentPage === 'project' && currentProjectId && (
-          <ProjectPage
-            projectId={currentProjectId}
-            onBack={() => handleNavigate('home')}
-            onSelectTask={(id) => handleNavigate('task', { taskId: id })}
+          <Route
+            path="/settings"
+            element={
+              <SettingsPage
+                settings={settings}
+                onUpdateSettings={(s) => setSettings(s)}
+                clis={clis}
+                onRefreshClis={() => getClis().then(setClis).catch(() => {})}
+                onBack={() => {
+                  if (window.history.length > 1) navigate(-1);
+                  else navigate('/');
+                }}
+              />
+            }
           />
-        )}
 
-        {currentPage === 'task' && currentTaskId && (
-          <TaskPage
-            taskId={currentTaskId}
-            settings={settings}
-            clis={clis}
-            ws={ws}
+          <Route
+            path="/projects/:projectId"
+            element={
+              <ProjectPage
+                onBack={() => navigate('/')}
+                onSelectTask={(taskId) => {
+                  if (currentProjectId) navigate(`/projects/${currentProjectId}/tasks/${taskId}`);
+                }}
+                settings={settings}
+                ws={ws}
+              />
+            }
           />
-        )}
 
-        {currentPage === 'settings' && settings && (
-          <SettingsPage
-            settings={settings}
-            onUpdateSettings={(s) => setSettings(s)}
-            clis={clis}
-            onRefreshClis={() => getClis().then(setClis).catch(() => {})}
-            onBack={() => {
-              if (currentTaskId) handleNavigate('task', { taskId: currentTaskId });
-              else if (currentProjectId) handleNavigate('project', { projectId: currentProjectId });
-              else handleNavigate('home');
-            }}
+          <Route
+            path="/projects/:projectId/tasks/:taskId"
+            element={
+              <TaskPage
+                settings={settings}
+                clis={clis}
+                ws={ws}
+              />
+            }
           />
-        )}
+
+          <Route
+            path="/tasks/:taskId"
+            element={
+              <TaskPage
+                settings={settings}
+                clis={clis}
+                ws={ws}
+              />
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
     </div>
   );

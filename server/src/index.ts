@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 
 import { db, getSetting, setSetting } from './db.js';
 import { GitService } from './gitService.js';
@@ -131,6 +132,170 @@ app.post('/api/projects/validate', (req: Request, res: Response) => {
   res.json(repoInfo);
 });
 
+// Initialize Git Repository
+app.post('/api/projects/init', (req: Request, res: Response) => {
+  const { path: dirPath } = req.body;
+  if (!dirPath) {
+    return res.status(400).json({ error: 'Path is required' });
+  }
+  const repoInfo = GitService.initRepo(dirPath);
+  if (!repoInfo.isRepo) {
+    return res.status(500).json({ error: repoInfo.error || 'Failed to initialize git repository' });
+  }
+  res.json(repoInfo);
+});
+
+// File System Browser API (in-page folder selector)
+app.get('/api/fs', async (req: Request, res: Response) => {
+  const requestedPath = (req.query.path as string) || '';
+  const currentPath = requestedPath ? path.resolve(requestedPath) : os.homedir();
+
+  try {
+    const stats = await fs.promises.stat(currentPath);
+    if (!stats.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+
+    // Check if the current folder itself is a git repository
+    let isRepo = false;
+    try {
+      await fs.promises.access(path.join(currentPath, '.git'), fs.constants.F_OK);
+      isRepo = true;
+    } catch {
+      // not a git repo
+    }
+
+    const items = await fs.promises.readdir(currentPath, { withFileTypes: true });
+    const directories = items.filter((item) => item.isDirectory());
+
+    const contents: Array<{ name: string; path: string; isRepo: boolean }> = [];
+    const BATCH_SIZE = 50;
+
+    for (let i = 0; i < directories.length; i += BATCH_SIZE) {
+      const batch = directories.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (item) => {
+          const itemPath = path.join(currentPath, item.name);
+          let itemIsRepo = false;
+          try {
+            await fs.promises.access(path.join(itemPath, '.git'), fs.constants.F_OK);
+            itemIsRepo = true;
+          } catch {
+            // not a git repo
+          }
+          return {
+            name: item.name,
+            path: itemPath,
+            isRepo: itemIsRepo,
+          };
+        })
+      );
+      contents.push(...batchResults);
+    }
+
+    // Sort: Visible folders first, Repos first within group, then alphabetical
+    contents.sort((a, b) => {
+      const aHidden = a.name.startsWith('.');
+      const bHidden = b.name.startsWith('.');
+
+      if (!aHidden && bHidden) return -1;
+      if (aHidden && !bHidden) return 1;
+
+      if (a.isRepo && !b.isRepo) return -1;
+      if (!a.isRepo && b.isRepo) return 1;
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    });
+
+    const parentDir = path.dirname(currentPath);
+    const parent = parentDir === currentPath ? null : parentDir;
+
+    // Detect available drives on Windows
+    let drives: string[] | undefined;
+    if (process.platform === 'win32') {
+      drives = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        .split('')
+        .map((d) => `${d}:\\`)
+        .filter((dPath) => {
+          try {
+            return fs.existsSync(dPath);
+          } catch {
+            return false;
+          }
+        });
+    }
+
+    // Quick shortcuts
+    const homedir = os.homedir();
+    const candidateShortcuts = [
+      { name: 'Home', path: homedir },
+      { name: 'Desktop', path: path.join(homedir, 'Desktop') },
+      { name: 'Downloads', path: path.join(homedir, 'Downloads') },
+      { name: 'Documents', path: path.join(homedir, 'Documents') },
+    ];
+    const shortcuts = candidateShortcuts.filter((s) => {
+      try {
+        return fs.existsSync(s.path);
+      } catch {
+        return false;
+      }
+    });
+
+    res.json({
+      path: currentPath,
+      isRepo,
+      folders: contents,
+      parent,
+      drives,
+      shortcuts,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/fs', async (req: Request, res: Response) => {
+  try {
+    const rawParentPath = typeof req.body?.path === 'string' ? req.body.path : '';
+    const rawFolderName = typeof req.body?.name === 'string' ? req.body.name : '';
+
+    const parentPath = rawParentPath.trim();
+    const folderName = rawFolderName.trim();
+
+    if (!parentPath) {
+      return res.status(400).json({ error: 'Path is required' });
+    }
+    if (!folderName) {
+      return res.status(400).json({ error: 'Folder name is required' });
+    }
+    if (folderName === '.' || folderName === '..') {
+      return res.status(400).json({ error: 'Invalid folder name' });
+    }
+    if (folderName.includes('/') || folderName.includes('\\') || path.basename(folderName) !== folderName) {
+      return res.status(400).json({ error: 'Folder name cannot include path separators' });
+    }
+
+    const parentStat = await fs.promises.stat(parentPath);
+    if (!parentStat.isDirectory()) {
+      return res.status(400).json({ error: 'Path is not a directory' });
+    }
+
+    const folderPath = path.join(parentPath, folderName);
+    if (fs.existsSync(folderPath)) {
+      return res.status(400).json({ error: 'Folder already exists' });
+    }
+
+    await fs.promises.mkdir(folderPath);
+
+    res.json({
+      path: folderPath,
+      name: folderName,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Projects
 app.get('/api/projects', (_req: Request, res: Response) => {
   const projects = db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all() as any[];
@@ -192,8 +357,28 @@ app.get('/api/projects/:id', (req: Request, res: Response) => {
 });
 
 app.put('/api/projects/:id', (req: Request, res: Response) => {
-  const { name, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention } = req.body;
+  const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  const {
+    name,
+    dev_cmd,
+    dev_port,
+    build_cmd,
+    test_cmd,
+    branch_convention,
+    default_agent_cli,
+    default_model,
+  } = req.body;
   const now = Date.now();
+
+  const parsedPort =
+    dev_port !== undefined && dev_port !== null && dev_port !== ''
+      ? parseInt(String(dev_port), 10)
+      : null;
+
   db.prepare(`
     UPDATE projects SET
       name = coalesce(?, name),
@@ -202,9 +387,22 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       build_cmd = coalesce(?, build_cmd),
       test_cmd = coalesce(?, test_cmd),
       branch_convention = coalesce(?, branch_convention),
+      default_agent_cli = coalesce(?, default_agent_cli),
+      default_model = coalesce(?, default_model),
       updated_at = ?
     WHERE id = ?
-  `).run(name, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention, now, req.params.id);
+  `).run(
+    name !== undefined ? name : null,
+    dev_cmd !== undefined ? dev_cmd : null,
+    parsedPort !== null && !isNaN(parsedPort) ? parsedPort : null,
+    build_cmd !== undefined ? build_cmd : null,
+    test_cmd !== undefined ? test_cmd : null,
+    branch_convention !== undefined ? branch_convention : null,
+    default_agent_cli !== undefined ? default_agent_cli : null,
+    default_model !== undefined ? default_model : null,
+    now,
+    req.params.id
+  );
 
   const updated = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   res.json(updated);
@@ -368,13 +566,55 @@ app.post('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
   res.json(session);
 });
 
+// Reset any stale running chat sessions to idle on server startup
+db.prepare("UPDATE chat_sessions SET status = 'idle' WHERE status = 'running'").run();
+
+interface ActiveChatSession {
+  proc: any;
+  sessionId: string;
+  assistantMsgId: string;
+  getContent: () => string;
+  abort: () => void;
+}
+
+const activeChatSessions = new Map<string, ActiveChatSession>();
+
+function broadcastWs(data: any) {
+  const payload = JSON.stringify(data);
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(payload);
+      } catch {}
+    }
+  }
+}
+
 app.delete('/api/chats/:id', (req: Request, res: Response) => {
-  db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(req.params.id);
+  const chatId = req.params.id as string;
+  if (activeChatSessions.has(chatId)) {
+    activeChatSessions.get(chatId)?.abort();
+  }
+  db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(chatId);
   res.json({ success: true });
 });
 
 app.get('/api/chats/:id/messages', (req: Request, res: Response) => {
-  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(req.params.id);
+  const chatId = req.params.id as string;
+  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
+
+  // If there is an active running session for this chat, sync the in-memory latest content
+  const activeSession = activeChatSessions.get(chatId);
+  if (activeSession && messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && (lastMsg.id === activeSession.assistantMsgId || lastMsg.role === 'assistant')) {
+      const liveText = activeSession.getContent();
+      if (liveText) {
+        lastMsg.content = liveText;
+      }
+    }
+  }
+
   res.json(messages);
 });
 
@@ -398,12 +638,14 @@ wss.on('connection', (ws: WebSocket) => {
 
       // 1. Discovery session
       if (msg.type === 'start_discovery') {
-        const { projectPath, agentCli, model } = msg;
+        const { projectPath, agentCli, model, thinkingEffort } = msg;
         const cli = agentCli || getEffectiveAgentCli();
+        const modelToUse = model || getSetting<string>('default_model', '');
+        const effortToUse = thinkingEffort || getSetting<string>('thinking_effort', 'medium');
         send({ type: 'status', text: `Scanning repository at ${projectPath}...` });
 
         try {
-          const result = await runDiscoveryAgent(projectPath, cli, model, (ev) => {
+          const result = await runDiscoveryAgent(projectPath, cli, modelToUse, effortToUse, (ev) => {
             send({ type: 'discovery_event', event: ev });
           });
           send({ type: 'discovery_done', result });
@@ -442,9 +684,10 @@ wss.on('connection', (ws: WebSocket) => {
         if (!task) return send({ type: 'error', error: 'Task not found' });
 
         const defaultCli = getEffectiveAgentCli();
-        const defaultModel = getSetting('default_model', '');
+        const defaultModel = getSetting<string>('default_model', '');
+        const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
-        activeProc = runRebaseAgent(task.worktree_path, task.base_branch, defaultCli, defaultModel, (ev) => {
+        activeProc = runRebaseAgent(task.worktree_path, task.base_branch, defaultCli, defaultModel, defaultEffort, (ev) => {
           send({ type: 'rebase_event', event: ev });
         });
       }
@@ -456,9 +699,10 @@ wss.on('connection', (ws: WebSocket) => {
         if (!task) return send({ type: 'error', error: 'Task not found' });
 
         const defaultCli = getEffectiveAgentCli();
-        const defaultModel = getSetting('default_model', '');
+        const defaultModel = getSetting<string>('default_model', '');
+        const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
-        activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, (ev) => {
+        activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, defaultEffort, (ev) => {
           send({ type: 'submit_event', event: ev });
         });
       }
@@ -471,15 +715,30 @@ wss.on('connection', (ws: WebSocket) => {
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(session.task_id) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
 
+        // If a previous agent run is active for this session, abort it first
+        if (activeChatSessions.has(sessionId)) {
+          activeChatSessions.get(sessionId)?.abort();
+        }
+
         // Save user message to database
-        const userMsgId = uuidv4();
+        const userMsgId = msg.messageId || uuidv4();
         const now = Date.now();
         db.prepare(`
           INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(userMsgId, sessionId, 'user', prompt, null, now);
 
-        send({ type: 'message_saved', message: { id: userMsgId, role: 'user', content: prompt, timestamp: now } });
+        broadcastWs({
+          type: 'message_saved',
+          sessionId,
+          message: {
+            id: userMsgId,
+            session_id: sessionId,
+            role: 'user',
+            content: prompt,
+            timestamp: now,
+          },
+        });
 
         const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
         const modelToUse = model || session.model;
@@ -490,7 +749,9 @@ wss.on('connection', (ws: WebSocket) => {
         if (cliToUse === 'agy') {
           args.push('-p', prompt);
           if (modelToUse) args.push('--model', modelToUse);
-          if (effortToUse && effortToUse !== 'none') args.push('--effort', effortToUse);
+          const agyEffort = (effortToUse && effortToUse !== 'none') ? effortToUse : 'medium';
+          args.push('--effort', agyEffort);
+          args.push('--output-format', 'stream-json');
           args.push('--dangerously-skip-permissions');
         } else if (cliToUse === 'claude') {
           args.push('-p', prompt);
@@ -509,39 +770,133 @@ wss.on('connection', (ws: WebSocket) => {
 
         let assistantContent = '';
         const assistantMsgId = uuidv4();
+        let lastDbSaveTime = 0;
+
+        // Pre-create the assistant message in DB immediately so reload always shows it
+        db.prepare(`
+          INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          assistantMsgId,
+          sessionId,
+          'assistant',
+          '',
+          JSON.stringify({ cli: cliToUse, model: modelToUse }),
+          now + 1
+        );
 
         db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('running', now, sessionId);
 
-        activeProc = spawnAgentCli(cliToUse, args, task.worktree_path, (ev: StreamEvent) => {
-          send({ type: 'chat_stream', event: ev, sessionId, messageId: assistantMsgId });
-          if (ev.content && (ev.type === 'chunk' || ev.type === 'thought')) {
-            assistantContent += ev.content;
+        let assistantThoughts = '';
+        let assistantResponse = '';
+
+        const compileAssistantContent = () => {
+          const t = assistantThoughts.trim();
+          const r = assistantResponse.trim();
+          if (t && r) {
+            return `<thought>\n${t}\n</thought>\n\n${r}`;
           }
+          if (t) {
+            return `<thought>\n${t}\n</thought>`;
+          }
+          return r;
+        };
+
+        const saveAssistantProgress = (force = false) => {
+          const currentNow = Date.now();
+          if (force || currentNow - lastDbSaveTime > 300) {
+            lastDbSaveTime = currentNow;
+            try {
+              db.prepare(`
+                UPDATE chat_messages SET content = ?, timestamp = ? WHERE id = ?
+              `).run(assistantContent, currentNow, assistantMsgId);
+            } catch {}
+          }
+        };
+
+        const proc = spawnAgentCli(cliToUse, args, task.worktree_path, (ev: StreamEvent) => {
+          if (ev.type === 'thought' && ev.content) {
+            assistantThoughts += ev.content;
+            assistantContent = compileAssistantContent();
+            saveAssistantProgress(false);
+          } else if (ev.type === 'chunk' && ev.content) {
+            if (ev.metadata?.isFinalResult) {
+              assistantResponse = ev.content;
+            } else {
+              assistantResponse += ev.content;
+            }
+            assistantContent = compileAssistantContent();
+            saveAssistantProgress(false);
+          }
+
+          broadcastWs({
+            type: 'chat_stream',
+            event: ev,
+            sessionId,
+            messageId: assistantMsgId,
+            fullContent: assistantContent,
+          });
+
           if (ev.type === 'done' || ev.type === 'error') {
             const finishedAt = Date.now();
-            db.prepare(`
-              INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
-              VALUES (?, ?, ?, ?, ?, ?)
-            `).run(assistantMsgId, sessionId, 'assistant', assistantContent || '(No response text)', JSON.stringify({ cli: cliToUse, model: modelToUse }), finishedAt);
+            if (!assistantResponse.trim() && ev.type === 'done') {
+              if (assistantThoughts.trim()) {
+                const actionCount = (assistantThoughts.match(/→/g) || []).length;
+                assistantResponse = `Completed ${actionCount > 0 ? `${actionCount} ` : ''}workspace actions and finished tasks.`;
+              } else {
+                assistantResponse = 'Task completed.';
+              }
+              assistantContent = compileAssistantContent();
+            }
+
+            saveAssistantProgress(true);
+            activeChatSessions.delete(sessionId);
 
             db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', finishedAt, sessionId);
 
-            send({
+            broadcastWs({
               type: 'chat_turn_complete',
               sessionId,
               message: {
                 id: assistantMsgId,
+                session_id: sessionId,
                 role: 'assistant',
-                content: assistantContent || '(Done)',
+                content: assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'),
                 timestamp: finishedAt,
               },
             });
           }
         });
+
+        const abortSession = () => {
+          try {
+            proc.kill('SIGINT');
+          } catch {}
+          saveAssistantProgress(true);
+          activeChatSessions.delete(sessionId);
+          db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', Date.now(), sessionId);
+          broadcastWs({ type: 'aborted', sessionId });
+        };
+
+        activeChatSessions.set(sessionId, {
+          proc,
+          sessionId,
+          assistantMsgId,
+          getContent: () => assistantContent,
+          abort: abortSession,
+        });
       }
 
       // 6. Abort current process
       else if (msg.type === 'abort') {
+        const targetSessionId = msg.sessionId;
+        if (targetSessionId && activeChatSessions.has(targetSessionId)) {
+          activeChatSessions.get(targetSessionId)?.abort();
+        } else if (activeChatSessions.size > 0) {
+          for (const session of activeChatSessions.values()) {
+            session.abort();
+          }
+        }
         if (activeProc) {
           try {
             activeProc.kill('SIGINT');
@@ -597,6 +952,24 @@ wss.on('connection', (ws: WebSocket) => {
   });
 });
 
+// ===================== CLIENT SPA SERVING & DEEP LINK FALLBACK =====================
+const candidateDistDirs = [
+  path.resolve(process.cwd(), 'client/dist'),
+  path.resolve(process.cwd(), '../client/dist'),
+];
+const clientDistDir = candidateDistDirs.find((dir) => fs.existsSync(dir));
+
+if (clientDistDir) {
+  app.use(express.static(clientDistDir));
+  app.get('*', (req: Request, res: Response, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistDir, 'index.html'));
+  });
+}
+
 server.listen(PORT, () => {
   console.log(`[termai-server] listening on http://localhost:${PORT}`);
 });
+

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Settings as SettingsIcon,
   Check,
@@ -61,14 +62,14 @@ const setCachedProviderPreference = (cli: string, model: string, effort: string)
 };
 
 interface SettingsPageProps {
-  settings: Settings;
+  settings: Settings | null;
   onUpdateSettings: (newSettings: Settings) => void;
   clis: CliInfo[];
   onRefreshClis?: () => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
-export const SettingsPage: React.FC<SettingsPageProps> = ({
+const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; onBack: () => void }> = ({
   settings,
   onUpdateSettings,
   clis,
@@ -792,3 +793,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
   </div>
 );
 };
+
+export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
+  const navigate = useNavigate();
+
+  const handleBack = () => {
+    if (props.onBack) {
+      props.onBack();
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/');
+    }
+  };
+
+  if (!props.settings) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-cozy-muted text-sm">
+        Loading settings...
+      </div>
+    );
+  }
+
+  return (
+    <SettingsPageContent
+      {...props}
+      settings={props.settings}
+      onBack={handleBack}
+    />
+  );
+};
+
