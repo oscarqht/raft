@@ -18,7 +18,7 @@ export const ScriptDock: React.FC = () => {
   if (docked.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm pointer-events-none">
+    <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-40 flex flex-col gap-2 max-w-sm pointer-events-none">
       {docked.map((item: ScriptExecutionItem) => {
         const isRunning = item.status === 'running';
         const isFailed = item.status === 'failed' || (item.exitCode !== null && item.exitCode !== 0);
@@ -28,7 +28,7 @@ export const ScriptDock: React.FC = () => {
         return (
           <div
             key={item.id}
-            className={`pointer-events-auto bg-cozy-surface/95 backdrop-blur-md border rounded-xl p-3 w-80 text-xs shadow-xl transition-all flex flex-col gap-2.5 ${
+            className={`pointer-events-auto bg-cozy-surface/95 backdrop-blur-md border rounded-xl p-3 w-full sm:w-80 text-xs shadow-xl transition-all flex flex-col gap-2.5 ${
               isRunning
                 ? 'border-sky-500/40 shadow-sky-500/10'
                 : isFailed

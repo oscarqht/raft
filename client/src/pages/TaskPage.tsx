@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Settings, CliInfo, ProjectCustomScript } from '../types';
-import { getTask } from '../api';
+import { getTask, getDevServerState } from '../api';
 import { getCachedTask, setCachedTask } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
@@ -13,7 +13,7 @@ import { ScriptDock } from '../components/ScriptDock';
 import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
 import { RunScriptModal } from '../components/RunScriptModal';
 import { ManageScriptsModal } from '../components/ManageScriptsModal';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Globe } from 'lucide-react';
 
 interface TaskPageProps {
   taskId?: string;
@@ -50,6 +50,30 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [isRunScriptOpen, setIsRunScriptOpen] = useState(false);
   const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
+  const [mobileTab, setMobileTab] = useState<'chat' | 'preview'>('chat');
+  const [isDevRunning, setIsDevRunning] = useState(false);
+
+  useEffect(() => {
+    if (task?.id) {
+      getDevServerState(task.id)
+        .then((s) => setIsDevRunning(s.status === 'running'))
+        .catch(() => {});
+    }
+  }, [task?.id]);
+
+  useEffect(() => {
+    if (!ws) return;
+    const handleWs = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'dev_server_state' && msg.state) {
+          setIsDevRunning(msg.state.status === 'running');
+        }
+      } catch {}
+    };
+    ws.addEventListener('message', handleWs);
+    return () => ws.removeEventListener('message', handleWs);
+  }, [ws]);
 
   useEffect(() => {
     if (task?.project?.custom_scripts) {
@@ -130,7 +154,46 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
       <div className="flex-1 flex flex-col h-[calc(100vh-3.5rem)] overflow-hidden relative">
+        {/* Mobile Sub-header Segmented Pill Control */}
+        <div className="md:hidden flex items-center justify-between px-3 py-1.5 bg-cozy-surface/90 border-b border-cozy-border shrink-0 select-none">
+          <div className="flex items-center p-0.5 bg-cozy-subtle rounded-xl border border-cozy-border/60 w-full">
+            <button
+              type="button"
+              onClick={() => setMobileTab('chat')}
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                mobileTab === 'chat'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'text-cozy-muted hover:text-cozy-text'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTab('preview')}
+              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg text-xs font-medium transition-all ${
+                mobileTab === 'preview'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'text-cozy-muted hover:text-cozy-text'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Preview</span>
+              <span
+                className={`w-2 h-2 rounded-full transition-all ${
+                  isDevRunning
+                    ? 'bg-emerald-400 animate-pulse'
+                    : 'bg-zinc-500/40'
+                }`}
+                title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
+              />
+            </button>
+          </div>
+        </div>
+
         <DraggableSplit
+          mobileActivePane={mobileTab === 'chat' ? 'left' : 'right'}
           left={
             <ChatPane
               task={task}

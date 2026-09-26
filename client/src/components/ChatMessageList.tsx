@@ -49,7 +49,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   }, [messages, liveStreamingChunk, isStreaming]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-4 min-w-0">
       {messages.length === 0 && !isStreaming && (
         <div className="h-full flex flex-col items-center justify-center text-center p-6 text-cozy-muted">
           <div className="w-12 h-12 rounded-2xl bg-cozy-subtle border border-cozy-border flex items-center justify-center mb-3">
@@ -74,12 +74,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start space-x-3">
+        <div className="flex items-start space-x-3 min-w-0 w-full">
           <div className="w-7 h-7 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center shrink-0 mt-0.5">
             <Bot className="w-4 h-4 text-sky-400 animate-pulse" />
           </div>
-          <div className="flex-1 space-y-2 max-w-[90%]">
-            <div className="bg-cozy-subtle border border-cozy-border/80 rounded-2xl px-4 py-3 text-sm text-cozy-text shadow-sm">
+          <div className="flex-1 space-y-2 max-w-[90%] min-w-0">
+            <div className="bg-cozy-subtle border border-cozy-border/80 rounded-2xl px-4 py-3 text-sm text-cozy-text shadow-sm break-words [overflow-wrap:anywhere]">
               <span className="flex items-center gap-2 text-cozy-muted text-xs animate-pulse">
                 <Cpu className="w-3.5 h-3.5 text-sky-400" />
                 Thinking and inspecting code...
@@ -160,7 +160,7 @@ const MessageItem: React.FC<{
       : '');
 
   return (
-    <div className={`flex items-start space-x-3 ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
+    <div className={`flex items-start space-x-3 min-w-0 w-full ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
       {/* Avatar */}
       <div
         className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 border ${
@@ -173,29 +173,29 @@ const MessageItem: React.FC<{
       </div>
 
       {/* Bubble Content */}
-      <div className={`space-y-1.5 max-w-[85%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`space-y-1.5 max-w-[92%] sm:max-w-[85%] min-w-0 flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {/* Collapsible Actions & Reasoning if present */}
         {thoughts && (
-          <div className="mb-1 w-full">
+          <div className="mb-1 w-full min-w-0">
             <button
               onClick={() => setShowThoughts(!showThoughts)}
-              className="flex items-center gap-2 text-xs text-cozy-muted hover:text-cozy-text transition-colors py-1 px-2.5 rounded-lg bg-cozy-subtle/80 border border-cozy-border/70 hover:border-cozy-border cursor-pointer"
+              className="flex items-center gap-2 text-xs text-cozy-muted hover:text-cozy-text transition-colors py-1 px-2.5 rounded-lg bg-cozy-subtle/80 border border-cozy-border/70 hover:border-cozy-border cursor-pointer max-w-full"
             >
               <Terminal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span className="font-medium text-cozy-text">Agent Actions & Reasoning</span>
+              <span className="font-medium text-cozy-text truncate">Agent Actions & Reasoning</span>
               {actionsCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-sky-500/10 text-sky-400 text-[10px] font-mono border border-sky-500/20">
+                <span className="px-1.5 py-0.2 rounded-full bg-sky-500/10 text-sky-400 text-[10px] font-mono border border-sky-500/20 shrink-0">
                   {actionsCount} {actionsCount === 1 ? 'step' : 'steps'}
                 </span>
               )}
               {showThoughts ? (
-                <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted" />
+                <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
               ) : (
-                <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted" />
+                <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
               )}
             </button>
             {showThoughts && (
-              <div className="group/thought relative mt-1.5 p-3 rounded-xl bg-cozy-bg/95 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-56 overflow-y-auto pr-9 shadow-inner leading-relaxed">
+              <div className="group/thought relative mt-1.5 p-3 rounded-xl bg-cozy-bg/95 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-56 overflow-y-auto pr-9 shadow-inner leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">
                 {thoughts}
                 <button
                   onClick={() => onCopy(`${msg.id}-thought`, thoughts)}
@@ -214,19 +214,19 @@ const MessageItem: React.FC<{
         )}
 
         <div
-          className={`group relative rounded-2xl px-4 py-3 text-sm shadow-sm transition-all pr-9 ${
+          className={`group relative rounded-2xl px-4 py-3 text-sm shadow-sm transition-all pr-9 min-w-0 ${
             isUser
-              ? 'bg-sky-600 text-white rounded-tr-none'
-              : 'bg-cozy-surface border border-cozy-border text-cozy-text rounded-tl-none w-full'
+              ? 'bg-sky-600 text-white rounded-tr-none break-words [overflow-wrap:anywhere]'
+              : 'bg-cozy-surface border border-cozy-border text-cozy-text rounded-tl-none w-full break-words [overflow-wrap:anywhere]'
           }`}
         >
           {isUser ? (
-            <div className="whitespace-pre-wrap font-sans leading-relaxed break-words">{displayContent}</div>
+            <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">{displayContent}</div>
           ) : displayContent ? (
-            <MarkdownView content={displayContent} className="text-cozy-text font-sans" />
+            <MarkdownView content={displayContent} className="text-cozy-text font-sans min-w-0" />
           ) : isStreaming ? (
             <div className="flex items-center gap-2 text-xs text-sky-400 font-mono py-1 animate-pulse">
-              <Cpu className="w-4 h-4 text-sky-400" />
+              <Cpu className="w-4 h-4 text-sky-400 shrink-0" />
               <span>
                 {actionsCount > 0
                   ? `Executing actions... (${actionsCount} completed)`

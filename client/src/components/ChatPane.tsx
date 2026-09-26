@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
-  Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers
+  Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill } from '../types';
 import { ChatMessageList } from './ChatMessageList';
@@ -69,6 +69,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Mobile actions dropdown menu state
+  const [showMobileActionsMenu, setShowMobileActionsMenu] = useState(false);
+  const mobileActionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMobileActionsMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mobileActionsRef.current && !mobileActionsRef.current.contains(e.target as Node)) {
+        setShowMobileActionsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMobileActionsMenu]);
 
   // Skills autocompletion state
   const [skills, setSkills] = useState<AgentSkill[]>([]);
@@ -569,11 +584,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const activeChat = chats.find((c) => c.id === activeChatId);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-cozy-bg border-r border-cozy-border min-w-0 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-cozy-bg md:border-r border-cozy-border min-w-0 overflow-hidden">
       {/* Top Header: Tabs + Quick Action Buttons */}
-      <div className="h-11 border-b border-cozy-border bg-cozy-surface/60 px-3 flex items-center justify-between shrink-0 select-none">
+      <div className="h-11 border-b border-cozy-border bg-cozy-surface/60 px-2 sm:px-3 flex items-center justify-between shrink-0 select-none gap-1 sm:gap-2">
         {/* Chat Tabs */}
-        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-2">
+        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-1 sm:mr-2 touch-pan-x">
           {chats.map((c) => {
             const isActive = c.id === activeChatId;
             const isEditing = editingChatId === c.id;
@@ -581,7 +596,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <div
                 key={c.id}
                 onClick={() => setActiveChatId(c.id)}
-                className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all border ${
+                className={`group flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all border shrink-0 ${
                   isActive
                     ? 'bg-cozy-subtle border-cozy-border text-cozy-text shadow-sm'
                     : 'bg-transparent border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/40'
@@ -602,7 +617,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 ) : (
                   <>
                     <span
-                      className="truncate max-w-[110px]"
+                      className="truncate max-w-[90px] sm:max-w-[110px]"
                       onDoubleClick={(e) => handleStartRename(c, e)}
                       title="Double-click to rename"
                     >
@@ -633,15 +648,15 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           })}
           <button
             onClick={handleCreateChat}
-            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors shrink-0"
             title="Open new chat agent tab"
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Action Buttons: Scripts, Sync/Rebase & Submit */}
-        <div className="flex items-center space-x-1.5 shrink-0">
+        {/* Desktop Action Buttons: Scripts, Sync/Rebase & Submit */}
+        <div className="hidden sm:flex items-center space-x-1.5 shrink-0">
           {onOpenScripts && (
             <button
               onClick={onOpenScripts}
@@ -670,6 +685,58 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <UploadCloud className="w-3.5 h-3.5" />
             <span>Submit</span>
           </button>
+        </div>
+
+        {/* Mobile Dropdown Action Menu */}
+        <div className="relative sm:hidden shrink-0" ref={mobileActionsRef}>
+          <button
+            type="button"
+            onClick={() => setShowMobileActionsMenu((prev) => !prev)}
+            className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border border-cozy-border/60 transition-colors"
+            title="Task actions"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+
+          {showMobileActionsMenu && (
+            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-cozy-surface/95 backdrop-blur-md border border-cozy-border shadow-xl py-1 z-30 flex flex-col text-xs">
+              {onOpenScripts && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileActionsMenu(false);
+                    onOpenScripts();
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Scripts</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileActionsMenu(false);
+                  onOpenRebase();
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-amber-400" />
+                <span>Rebase Branch</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileActionsMenu(false);
+                  onOpenSubmit();
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-sky-400 transition-colors font-medium border-t border-cozy-border/40"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                <span>Submit Changes</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -758,13 +825,13 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <button
               type="button"
               onClick={() => setShowConfig(true)}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border hover:border-cozy-border-hover text-cozy-muted hover:text-cozy-text transition-all group"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border hover:border-cozy-border-hover text-cozy-muted hover:text-cozy-text transition-all group max-w-full min-w-0"
               title="Click to configure agent, model, and reasoning effort"
             >
-              <Sliders className="w-3 h-3 text-sky-400/80" />
-              <span className="font-medium text-cozy-text">{tabCli || 'agy'}</span>
-              <span className="text-cozy-muted/50">·</span>
-              <span className="truncate max-w-[220px]">
+              <Sliders className="w-3 h-3 text-sky-400/80 shrink-0" />
+              <span className="font-medium text-cozy-text shrink-0">{tabCli || 'agy'}</span>
+              <span className="text-cozy-muted/50 shrink-0">·</span>
+              <span className="truncate max-w-[130px] sm:max-w-[220px]">
                 {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
               </span>
               {tabEffort && (

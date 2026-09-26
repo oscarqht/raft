@@ -7,6 +7,7 @@ interface DraggableSplitProps {
   minLeftWidth?: number;
   minRightWidth?: number;
   storageKey?: string;
+  mobileActivePane?: 'left' | 'right';
 }
 
 export const DraggableSplit: React.FC<DraggableSplitProps> = ({
@@ -16,8 +17,18 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   minLeftWidth = 320,
   minRightWidth = 320,
   storageKey = 'termai:split-ratio',
+  mobileActivePane = 'left',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const [ratio, setRatio] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -131,7 +142,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   return (
     <div ref={containerRef} className="flex-1 flex overflow-hidden relative w-full h-full select-none">
       {/* Full-screen invisible overlay during dragging to prevent iframe from capturing pointer events */}
-      {isDragging && (
+      {!isMobile && isDragging && (
         <div
           className="fixed inset-0 z-50 cursor-col-resize select-none pointer-events-auto"
           onPointerMove={(e) => updateRatio(e.clientX)}
@@ -142,7 +153,8 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       {/* Left Pane */}
       <div
         style={{
-          width: `calc(${ratio * 100}% - 3px)`,
+          width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 3px)`,
+          display: isMobile && mobileActivePane !== 'left' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
         className="h-full flex flex-col min-w-0 overflow-hidden"
@@ -151,29 +163,32 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       </div>
 
       {/* Draggable Divider */}
-      <div
-        onPointerDown={handlePointerDown}
-        className={`relative w-[6px] h-full cursor-col-resize hover:bg-sky-500/40 transition-colors flex items-center justify-center shrink-0 z-20 select-none group touch-none ${
-          isDragging ? 'bg-sky-500' : 'bg-transparent'
-        }`}
-        title="Drag to resize panels"
-      >
-        {/* Invisible wider hit area for easier grabbing */}
-        <div className="absolute inset-y-0 -left-1.5 -right-1.5 z-10 cursor-col-resize" />
-
+      {!isMobile && (
         <div
-          className={`w-[2px] rounded-full transition-all z-20 ${
-            isDragging
-              ? 'bg-sky-300 h-16'
-              : 'h-8 bg-cozy-border group-hover:bg-sky-400 group-hover:h-12'
+          onPointerDown={handlePointerDown}
+          className={`relative w-[6px] h-full cursor-col-resize hover:bg-sky-500/40 transition-colors flex items-center justify-center shrink-0 z-20 select-none group touch-none ${
+            isDragging ? 'bg-sky-500' : 'bg-transparent'
           }`}
-        />
-      </div>
+          title="Drag to resize panels"
+        >
+          {/* Invisible wider hit area for easier grabbing */}
+          <div className="absolute inset-y-0 -left-1.5 -right-1.5 z-10 cursor-col-resize" />
+
+          <div
+            className={`w-[2px] rounded-full transition-all z-20 ${
+              isDragging
+                ? 'bg-sky-300 h-16'
+                : 'h-8 bg-cozy-border group-hover:bg-sky-400 group-hover:h-12'
+            }`}
+          />
+        </div>
+      )}
 
       {/* Right Pane */}
       <div
         style={{
-          width: `calc(${(1 - ratio) * 100}% - 3px)`,
+          width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 3px)`,
+          display: isMobile && mobileActivePane !== 'right' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
         className="h-full flex flex-col min-w-0 overflow-hidden"

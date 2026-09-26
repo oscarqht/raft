@@ -97,13 +97,13 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
   return (
     <div className="flex-1 flex flex-col h-full bg-cozy-bg min-w-0 overflow-hidden relative">
       {/* Top Address & Controls Toolbar */}
-      <div className="h-11 border-b border-cozy-border bg-cozy-surface/60 px-3 flex items-center justify-between shrink-0 gap-2 select-none">
+      <div className="h-11 border-b border-cozy-border bg-cozy-surface/60 px-2 sm:px-3 flex items-center justify-between shrink-0 gap-1.5 sm:gap-2 select-none">
         {/* Server Start/Stop/Restart */}
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-1 shrink-0">
           {devState.status === 'running' ? (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-all"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-500/20 transition-all"
               title="Stop dev server"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
@@ -112,7 +112,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
           ) : (
             <button
               onClick={handleStart}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all"
               title="Start local dev server"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
@@ -123,7 +123,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
           <button
             onClick={handleRestart}
             disabled={devState.status !== 'running'}
-            className="p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text disabled:opacity-30 hover:bg-cozy-subtle transition-colors"
+            className="p-1 sm:p-1.5 rounded-lg text-cozy-muted hover:text-cozy-text disabled:opacity-30 hover:bg-cozy-subtle transition-colors"
             title="Restart server"
           >
             <RotateCw className="w-3.5 h-3.5" />
@@ -131,7 +131,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
         </div>
 
         {/* Status Dot & Port */}
-        <div className="flex items-center space-x-2 text-xs">
+        <div className="flex items-center space-x-1.5 text-xs shrink-0">
           <span
             className={`w-2 h-2 rounded-full ${
               devState.status === 'running'
@@ -147,21 +147,21 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
         </div>
 
         {/* URL Bar */}
-        <div className="flex-1 max-w-sm flex items-center bg-cozy-subtle border border-cozy-border rounded-lg px-2.5 py-1 text-xs">
-          <Globe className="w-3.5 h-3.5 text-cozy-muted mr-1.5 shrink-0" />
-          <span className="text-cozy-muted/60 select-none font-mono">http://localhost:{activePort}</span>
+        <div className="flex-1 max-w-sm flex items-center bg-cozy-subtle border border-cozy-border rounded-lg px-2 sm:px-2.5 py-1 text-xs min-w-0">
+          <Globe className="w-3.5 h-3.5 text-cozy-muted mr-1 sm:mr-1.5 shrink-0" />
+          <span className="text-cozy-muted/60 select-none font-mono hidden sm:inline">http://localhost:{activePort}</span>
           <input
             type="text"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
             placeholder="/"
-            className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5"
+            className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[40px]"
           />
         </div>
 
         {/* Action icons */}
-        <div className="flex items-center space-x-1 shrink-0">
+        <div className="flex items-center space-x-0.5 sm:space-x-1 shrink-0">
           <button
             onClick={handleReloadIframe}
             disabled={devState.status !== 'running'}
