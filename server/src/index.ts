@@ -27,6 +27,7 @@ import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
 import { resolveHost } from './tailscale.js';
+import multer from 'multer';
 
 const app = express();
 app.use(cors());
@@ -36,6 +37,58 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3100;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+
+const upload = multer({
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+    files: 10,
+  },
+  storage: multer.memoryStorage(),
+});
+
+export function ensureGitIgnoreRaft(worktreePath: string): void {
+  try {
+    const gitPath = path.join(worktreePath, '.git');
+    let excludeFilePath: string | null = null;
+    if (fs.existsSync(gitPath)) {
+      const stat = fs.statSync(gitPath);
+      if (stat.isDirectory()) {
+        excludeFilePath = path.join(gitPath, 'info', 'exclude');
+      } else if (stat.isFile()) {
+        const content = fs.readFileSync(gitPath, 'utf-8');
+        const match = content.match(/gitdir:\s*(.+)/i);
+        if (match && match[1]) {
+          const resolvedGitDir = path.resolve(worktreePath, match[1].trim());
+          excludeFilePath = path.join(resolvedGitDir, 'info', 'exclude');
+        }
+      }
+    }
+    if (excludeFilePath) {
+      const dir = path.dirname(excludeFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      let existing = '';
+      if (fs.existsSync(excludeFilePath)) {
+        existing = fs.readFileSync(excludeFilePath, 'utf-8');
+      }
+      if (!existing.includes('.raft')) {
+        const updated = existing ? `${existing.trim()}\n.raft\n.raft/\n` : '.raft\n.raft/\n';
+        fs.writeFileSync(excludeFilePath, updated, 'utf-8');
+      }
+    }
+  } catch (err) {
+    console.error('Failed to configure git exclude for .raft:', err);
+  }
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
 
 // ===================== REST APIs =====================
 
@@ -1116,6 +1169,159 @@ app.post('/api/tasks/:id/dev-server/restart', (req: Request, res: Response) => {
   res.json(state);
 });
 
+// Attachments
+app.post('/api/tasks/:taskId/attachments', (req: Request, res: Response) => {
+  upload.array('files', 10)(req, res, (uploadErr: any) => {
+    if (uploadErr instanceof multer.MulterError) {
+      if (uploadErr.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: 'File too large. Maximum file size is 50MB per file.' });
+      }
+      if (uploadErr.code === 'LIMIT_FILE_COUNT') {
+        return res.status(400).json({ error: 'Too many files. Maximum 10 files per message.' });
+      }
+      return res.status(400).json({ error: uploadErr.message });
+    } else if (uploadErr) {
+      return res.status(400).json({ error: uploadErr.message || 'File upload failed' });
+    }
+
+    try {
+      const taskId = req.params.taskId as string;
+      const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+      if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+      }
+
+      const worktreePath = task.worktree_path;
+      const attachmentsDir = path.join(worktreePath, '.raft', 'attachments');
+      if (!fs.existsSync(attachmentsDir)) {
+        fs.mkdirSync(attachmentsDir, { recursive: true });
+      }
+
+      ensureGitIgnoreRaft(worktreePath);
+
+      const results = [];
+      const now = Date.now();
+
+      for (const file of files) {
+        const attachmentId = `att-${Date.now()}-${uuidv4().slice(0, 8)}`;
+        const originalName = file.originalname || 'attachment';
+        const safeOriginalName = path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storedFilename = `${attachmentId}_${safeOriginalName}`;
+        const fullFilePath = path.join(attachmentsDir, storedFilename);
+
+        fs.writeFileSync(fullFilePath, file.buffer);
+
+        const mimeType = file.mimetype || 'application/octet-stream';
+        const size = file.size;
+        const relativePath = `.raft/attachments/${storedFilename}`;
+
+        db.prepare(`
+          INSERT INTO attachments (id, task_id, name, size, mime_type, file_path, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(attachmentId, taskId, originalName, size, mimeType, relativePath, now);
+
+        results.push({
+          id: attachmentId,
+          name: originalName,
+          size,
+          type: mimeType,
+          path: relativePath,
+          url: `/api/tasks/${taskId}/attachments/${attachmentId}`,
+        });
+      }
+
+      res.json(results);
+    } catch (err: any) {
+      console.error('Error handling attachment upload:', err);
+      res.status(500).json({ error: err.message || 'Failed to upload attachments' });
+    }
+  });
+});
+
+app.get('/api/tasks/:taskId/attachments/:attachmentId', (req: Request, res: Response) => {
+  try {
+    const { taskId, attachmentId } = req.params;
+    const attachment = db.prepare('SELECT * FROM attachments WHERE id = ? AND task_id = ?').get(attachmentId, taskId) as any;
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const fullFilePath = path.resolve(task.worktree_path, attachment.file_path);
+    if (!fs.existsSync(fullFilePath)) {
+      return res.status(404).json({ error: 'Attachment file not found on disk' });
+    }
+
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const disposition = isDownload ? 'attachment' : 'inline';
+
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(attachment.name)}"`);
+
+    const fileStream = fs.createReadStream(fullFilePath);
+    fileStream.pipe(res);
+  } catch (err: any) {
+    console.error('Error serving attachment:', err);
+    res.status(500).json({ error: 'Failed to serve attachment' });
+  }
+});
+
+app.get('/api/tasks/:taskId/attachments/:attachmentId/content', (req: Request, res: Response) => {
+  try {
+    const { taskId, attachmentId } = req.params;
+    const attachment = db.prepare('SELECT * FROM attachments WHERE id = ? AND task_id = ?').get(attachmentId, taskId) as any;
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const fullFilePath = path.resolve(task.worktree_path, attachment.file_path);
+    if (!fs.existsSync(fullFilePath)) {
+      return res.status(404).json({ error: 'Attachment file not found on disk' });
+    }
+
+    const stat = fs.statSync(fullFilePath);
+    const MAX_TEXT_BYTES = 512 * 1024; // 512 KB
+    let isTruncated = false;
+    let content = '';
+
+    if (stat.size > MAX_TEXT_BYTES) {
+      const fd = fs.openSync(fullFilePath, 'r');
+      const buffer = Buffer.alloc(MAX_TEXT_BYTES);
+      fs.readSync(fd, buffer, 0, MAX_TEXT_BYTES, 0);
+      fs.closeSync(fd);
+      content = buffer.toString('utf-8');
+      isTruncated = true;
+    } else {
+      content = fs.readFileSync(fullFilePath, 'utf-8');
+    }
+
+    res.json({
+      id: attachment.id,
+      name: attachment.name,
+      size: attachment.size,
+      type: attachment.mime_type,
+      content,
+      isTruncated,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to read attachment content' });
+  }
+});
+
 // Chat sessions & messages
 app.get('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
   const chats = db.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at ASC').all(req.params.taskId);
@@ -1214,6 +1420,17 @@ app.delete('/api/chats/:id', (req: Request, res: Response) => {
 app.get('/api/chats/:id/messages', (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
+
+  for (const msg of messages) {
+    if (msg.metadata) {
+      try {
+        const parsed = JSON.parse(msg.metadata);
+        if (parsed && Array.isArray(parsed.attachments)) {
+          msg.attachments = parsed.attachments;
+        }
+      } catch {}
+    }
+  }
 
   // If there is an active running session for this chat, sync the in-memory latest content
   const activeSession = activeChatSessions.get(chatId);
@@ -1366,7 +1583,7 @@ wss.on('connection', (ws: WebSocket) => {
 
       // 5. Chat message prompt
       else if (msg.type === 'send_chat_message') {
-        const { sessionId, prompt, agentCli, model, thinkingEffort } = msg;
+        const { sessionId, prompt, agentCli, model, thinkingEffort, attachments } = msg;
         const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(sessionId) as any;
         if (!session) return send({ type: 'error', error: 'Chat session not found' });
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(session.task_id) as any;
@@ -1380,10 +1597,14 @@ wss.on('connection', (ws: WebSocket) => {
         // Save user message to database
         const userMsgId = msg.messageId || uuidv4();
         const now = Date.now();
+        const userMetadata = (Array.isArray(attachments) && attachments.length > 0)
+          ? JSON.stringify({ attachments })
+          : null;
+
         db.prepare(`
           INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
           VALUES (?, ?, ?, ?, ?, ?)
-        `).run(userMsgId, sessionId, 'user', prompt, null, now);
+        `).run(userMsgId, sessionId, 'user', prompt, userMetadata, now);
 
         broadcastWs({
           type: 'message_saved',
@@ -1393,6 +1614,8 @@ wss.on('connection', (ws: WebSocket) => {
             session_id: sessionId,
             role: 'user',
             content: prompt,
+            metadata: userMetadata,
+            attachments: Array.isArray(attachments) ? attachments : [],
             timestamp: now,
           },
         });
@@ -1409,8 +1632,18 @@ wss.on('connection', (ws: WebSocket) => {
         );
         const cliSessionIdToResume = canResumeCliSession ? session.cli_session_id : null;
 
-        let effectivePrompt = resolveSkillPrompt(cliToUse, prompt, task.worktree_path);
-        let promptForAgy = prompt;
+        // Build effective prompt for AI agent including attachment workspace paths
+        let effectiveAgentPrompt = prompt;
+        if (Array.isArray(attachments) && attachments.length > 0) {
+          const attachmentLines = attachments.map((att: any) => {
+            const sizeStr = formatBytes(att.size || 0);
+            return `- ${att.path} (${att.name}, ${att.type || 'file'}, ${sizeStr})`;
+          });
+          effectiveAgentPrompt = `${prompt}\n\n[Attached files in workspace:\n${attachmentLines.join('\n')}\nYou can inspect, read, or process these files directly in the repository workspace.]`;
+        }
+
+        let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, task.worktree_path);
+        let promptForAgy = effectiveAgentPrompt;
 
         // If not resuming a native CLI session, provide conversational history fallback
         if (!canResumeCliSession) {
@@ -1421,7 +1654,7 @@ wss.on('connection', (ws: WebSocket) => {
           `).all(sessionId, userMsgId) as Array<{ role: string; content: string }>;
 
           if (prevMessages.length > 0) {
-            promptForAgy = buildConversationContextFallback(prevMessages, prompt);
+            promptForAgy = buildConversationContextFallback(prevMessages, effectiveAgentPrompt);
             effectivePrompt = buildConversationContextFallback(prevMessages, effectivePrompt);
           }
         }
@@ -1682,8 +1915,12 @@ if (clientDistDir) {
   });
 }
 
-server.listen(PORT, HOST, () => {
-  const networkType = isTailscale ? 'Tailscale network' : 'local interface';
-  console.log(`[raft-server] listening on http://${HOST}:${PORT} (${networkType}, source: ${hostSource})`);
-});
+export { app, server };
+
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, HOST, () => {
+    const networkType = isTailscale ? 'Tailscale network' : 'local interface';
+    console.log(`[raft-server] listening on http://${HOST}:${PORT} (${networkType}, source: ${hostSource})`);
+  });
+}
 
