@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Terminal, Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil } from 'lucide-react';
 import { Settings } from '../types';
+import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 
 interface HeaderProps {
   currentPath?: {
@@ -41,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="h-14 border-b border-cozy-border bg-cozy-surface/80 backdrop-blur px-3 sm:px-4 flex items-center justify-between shrink-0 select-none gap-2">
+    <header className="relative z-40 h-14 border-b border-cozy-border bg-cozy-surface/80 backdrop-blur px-3 sm:px-4 flex items-center justify-between shrink-0 select-none gap-2">
       {/* Left: Brand & Breadcrumbs */}
       <div className="flex items-center space-x-1.5 sm:space-x-3 text-sm min-w-0">
         <Link
@@ -49,11 +50,11 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => onNavigate?.('home')}
           className="flex items-center space-x-2 text-sky-400 font-semibold hover:text-sky-300 transition-colors shrink-0"
         >
-          <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-            <Terminal className="w-4 h-4 text-sky-400" />
+          <div className="w-8 h-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-lg select-none">
+            🦦
           </div>
           <span className="text-base tracking-tight text-cozy-text flex items-center gap-1.5 font-medium">
-            termai
+            Raft
             <Sparkles className="w-3.5 h-3.5 text-amber-400 inline" />
           </span>
         </Link>
@@ -95,8 +96,14 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Right: Agent Status & Controls */}
+      {/* Right: Task Switcher, Agent Status & Controls */}
       <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
+        <TaskQuickSwitcher
+          currentTaskId={currentPath?.taskId}
+          currentTaskName={currentPath?.taskName}
+          onNavigate={handleNav}
+        />
+
         {settings && (
           <Link
             to="/settings"

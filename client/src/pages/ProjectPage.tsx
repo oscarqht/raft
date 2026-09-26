@@ -384,7 +384,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
               Start New Coding Task
             </h3>
             <p className="text-xs text-cozy-muted mb-4">
-              Termai will create a new git worktree and branch out from your chosen base branch.
+              Raft will create a new git worktree and branch out from your chosen base branch.
             </p>
 
             <div className="space-y-4">

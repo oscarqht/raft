@@ -1,8 +1,8 @@
-# Termai 🍵
+# Raft 🦦
 
 > A cozy, distraction-free AI coding workspace for local Git repositories with isolated worktrees, multi-agent tab chatting, and live dev preview.
 
-![Termai Banner](https://img.shields.io/badge/Termai-Cozy%20AI%20Coding-38bdf8?style=for-the-badge)
+![Raft Banner](https://img.shields.io/badge/Raft-Cozy%20AI%20Coding-38bdf8?style=for-the-badge)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge)
 ![Vite](https://img.shields.io/badge/Frontend-Vite%20%2B%20React-646cff?style=for-the-badge)
 ![Node.js](https://img.shields.io/badge/Backend-Node.js%20%2B%20Express-339933?style=for-the-badge)
@@ -12,7 +12,7 @@
 
 ## ✨ Features
 
-- **🍵 Cozy, Non-Overwhelming UX**: Clean visual aesthetic with soft borders, warm dark & light themes, and smooth draggable split panels.
+- **🦦 Cozy, Non-Overwhelming UX**: Clean visual aesthetic with soft borders, warm dark & light themes, and smooth draggable split panels.
 - **🤖 Multi-Agent CLI Support**: First-class support for **`agy`** (Google Antigravity), **`claude`** (Claude Code), and **`codex`** (OpenAI Codex CLI).
 - **🌿 Git Worktree Task Isolation**: Every task gets its own clean branch and isolated git worktree under `<projectRoot>/.worktrees/<task-branch>`. Multiple tasks can run in parallel without file collisions or git checkout conflicts.
 - **🔍 AI Project Auto-Discovery**: When you add a local Git repository, an autonomous AI agent inspects your repository in real time to detect dev server commands (`npm run dev`), target ports, build commands, test suites, and branch conventions.
@@ -20,14 +20,14 @@
 - **🔄 Smart Base Sync & Rebase Agent**: Pull the latest changes from `origin/<base-branch>` and rebase your task branch with an autonomous AI agent that detects and resolves merge conflicts cleanly.
 - **⚡ Integrated Dev Server Preview & Console**: Start, stop, or restart your local Vite/Webpack/Next dev server directly from the workspace. Features auto-port detection, embedded iframe preview with address bar, external browser link, and a collapsible real-time console log drawer.
 - **🚀 One-Click Changes Submission**: Review git diffs and modified files, generate concise commit messages with AI, and let the agent commit and push directly to remote origin.
-- **💾 Full Server-Side Persistence**: All projects, tasks, chat histories, messages, and settings are saved in SQLite (`~/.termai/termai.db`) for instant re-hydration across server restarts or page refreshes.
+- **💾 Full Server-Side Persistence**: All projects, tasks, chat histories, messages, and settings are saved in SQLite (`~/.raft/raft.db`) for instant re-hydration across server restarts or page refreshes.
 
 ---
 
 ## 🛠️ Architecture
 
 ```
-termai/
+raft/
 ├── client/                     # Vite + React 18 + TailwindCSS Frontend
 │   ├── src/
 │   │   ├── components/         # Cozy UI components
@@ -50,7 +50,7 @@ termai/
 │
 ├── server/                     # Node.js + Express + WebSocket + SQLite Backend
 │   ├── src/
-│   │   ├── db.ts               # SQLite database in ~/.termai/termai.db
+│   │   ├── db.ts               # SQLite database in ~/.raft/raft.db
 │   │   ├── gitService.ts       # Git worktree lifecycle & diff analysis
 │   │   ├── agentRunner.ts      # Multi-CLI agent executor (agy, claude, codex)
 │   │   ├── devServerManager.ts # Background dev server process manager
@@ -71,8 +71,8 @@ termai/
 
 ### 2. Installation
 ```bash
-# Clone or navigate to termai
-cd termai
+# Clone or navigate to raft
+cd raft
 
 # Install dependencies for root and all workspaces
 npm install
@@ -102,7 +102,7 @@ npm start
    - Watch the AI agent auto-discover your dev server command, port, build command, and branch conventions.
 3. **Start a Task**:
    - Inside your project, click **Start New Task**, pick a base branch (e.g. `main`), and name your task (e.g. `auth-flow`).
-   - Termai creates an isolated git worktree at `.worktrees/auth-flow` and checks out the new branch.
+   - Raft creates an isolated git worktree at `.worktrees/auth-flow` and checks out the new branch.
 4. **Chat & Code**:
    - Chat with the AI agent to explore files, write code, run commands, and execute tests.
    - Open multiple chat tabs concurrently if you want different agents to work on different components simultaneously.

@@ -108,7 +108,7 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
               <span className="font-medium text-cozy-text">How it works:</span>
             </div>
             <p className="leading-relaxed">
-              Termai fetches latest commits from <code className="text-amber-400 font-mono">origin/{task.base_branch}</code>, synchronizes your local base branch, and performs a clean git rebase with autostash. If merge conflicts arise, an autonomous AI agent is launched to inspect and resolve them cleanly.
+              Raft fetches latest commits from <code className="text-amber-400 font-mono">origin/{task.base_branch}</code>, synchronizes your local base branch, and performs a clean git rebase with autostash. If merge conflicts arise, an autonomous AI agent is launched to inspect and resolve them cleanly.
             </p>
           </div>
 

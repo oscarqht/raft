@@ -7,7 +7,7 @@ import { runCommitMessageAgent } from './agentRunner.js';
 import { GitService } from './gitService.js';
 
 test('runCommitMessageAgent returns sensible commit message for empty / no-change repository', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-test-repo-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-test-repo-'));
   try {
     GitService.initRepo(tmpDir);
 
@@ -31,7 +31,7 @@ test('runCommitMessageAgent returns sensible commit message for empty / no-chang
 });
 
 test('runCommitMessageAgent formats multi-line message when details are present', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-test-repo-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-test-repo-'));
   try {
     GitService.initRepo(tmpDir);
     // Add multiple files to simulate a large change

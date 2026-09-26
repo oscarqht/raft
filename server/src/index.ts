@@ -110,7 +110,7 @@ app.get('/api/clis/install/stream', (req: Request, res: Response) => {
       res.end();
     });
   } catch (err: any) {
-    sendEvent({ type: 'output', chunk: `\n[termai error] ${err.message}\n` });
+    sendEvent({ type: 'output', chunk: `\n[raft error] ${err.message}\n` });
     sendEvent({ type: 'done', code: 1, success: false });
     res.end();
   }
@@ -619,6 +619,33 @@ app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
     res.json(task);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/tasks', (_req: Request, res: Response) => {
+  try {
+    const tasks = db.prepare(`
+      SELECT t.*,
+             MAX(t.updated_at, COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.task_id = t.id), t.updated_at)) AS effective_updated_at
+      FROM tasks t
+      ORDER BY effective_updated_at DESC
+    `).all() as any[];
+
+    const projects = db.prepare('SELECT * FROM projects').all() as any[];
+    const projectMap = new Map(projects.map((p) => [p.id, formatProject(p)]));
+
+    const result = tasks.map((t) => {
+      const { effective_updated_at, ...taskFields } = t;
+      return {
+        ...taskFields,
+        updated_at: effective_updated_at || taskFields.updated_at,
+        project: projectMap.get(t.project_id) || undefined,
+      };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list tasks' });
   }
 });
 
@@ -1307,6 +1334,6 @@ if (clientDistDir) {
 }
 
 server.listen(PORT, () => {
-  console.log(`[termai-server] listening on http://localhost:${PORT}`);
+  console.log(`[raft-server] listening on http://localhost:${PORT}`);
 });
 

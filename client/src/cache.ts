@@ -1,6 +1,7 @@
 import { Task, ChatSession, ChatMessage } from './types';
 
-const PREFIX = 'termai:';
+const PREFIX = 'raft:';
+const LEGACY_PREFIX = 'termai:';
 const MAX_MESSAGES_PER_SESSION = 80;
 const MAX_CACHED_SESSIONS = 25;
 const MAX_CACHED_TASKS = 25;
@@ -13,7 +14,7 @@ interface CacheIndex {
 
 function getIndex(): CacheIndex {
   try {
-    const raw = localStorage.getItem(`${PREFIX}index`);
+    const raw = localStorage.getItem(`${PREFIX}index`) || localStorage.getItem(`${LEGACY_PREFIX}index`);
     if (raw) return JSON.parse(raw);
   } catch {}
   return { taskIds: [], sessionIds: [] };
@@ -61,7 +62,7 @@ function touchSessionId(sessionId: string) {
 export function getCachedTask(taskId: string): Task | null {
   if (!taskId) return null;
   try {
-    const raw = localStorage.getItem(`${PREFIX}task:${taskId}`);
+    const raw = localStorage.getItem(`${PREFIX}task:${taskId}`) || localStorage.getItem(`${LEGACY_PREFIX}task:${taskId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -83,7 +84,7 @@ export function setCachedTask(task: Task): void {
 export function getCachedChats(taskId: string): ChatSession[] | null {
   if (!taskId) return null;
   try {
-    const raw = localStorage.getItem(`${PREFIX}chats:${taskId}`);
+    const raw = localStorage.getItem(`${PREFIX}chats:${taskId}`) || localStorage.getItem(`${LEGACY_PREFIX}chats:${taskId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
@@ -104,7 +105,7 @@ export function setCachedChats(taskId: string, chats: ChatSession[]): void {
 export function getCachedActiveChatId(taskId: string): string | null {
   if (!taskId) return null;
   try {
-    return localStorage.getItem(`${PREFIX}active_chat:${taskId}`) || null;
+    return localStorage.getItem(`${PREFIX}active_chat:${taskId}`) || localStorage.getItem(`${LEGACY_PREFIX}active_chat:${taskId}`) || null;
   } catch {
     return null;
   }
@@ -121,7 +122,7 @@ export function setCachedActiveChatId(taskId: string, chatId: string): void {
 export function getCachedMessages(sessionId: string): ChatMessage[] | null {
   if (!sessionId) return null;
   try {
-    const raw = localStorage.getItem(`${PREFIX}messages:${sessionId}`);
+    const raw = localStorage.getItem(`${PREFIX}messages:${sessionId}`) || localStorage.getItem(`${LEGACY_PREFIX}messages:${sessionId}`);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;

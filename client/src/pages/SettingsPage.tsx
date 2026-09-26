@@ -26,7 +26,7 @@ import { updateSettings, getModels, getClis, installCliStream } from '../api';
 // LocalStorage helpers for caching CLI models and reasoning efforts
 const getCachedModels = (cli: string): ModelOption[] => {
   try {
-    const raw = localStorage.getItem(`termai_models_${(cli || '').toLowerCase()}`);
+    const raw = localStorage.getItem(`raft_models_${(cli || '').toLowerCase()}`) || localStorage.getItem(`termai_models_${(cli || '').toLowerCase()}`);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -40,14 +40,14 @@ const getCachedModels = (cli: string): ModelOption[] => {
 const setCachedModels = (cli: string, modelsList: ModelOption[]) => {
   try {
     if (modelsList && modelsList.length > 0) {
-      localStorage.setItem(`termai_models_${(cli || '').toLowerCase()}`, JSON.stringify(modelsList));
+      localStorage.setItem(`raft_models_${(cli || '').toLowerCase()}`, JSON.stringify(modelsList));
     }
   } catch {}
 };
 
 const getCachedProviderPreference = (cli: string): { model?: string; effort?: string } => {
   try {
-    const raw = localStorage.getItem(`termai_pref_${(cli || '').toLowerCase()}`);
+    const raw = localStorage.getItem(`raft_pref_${(cli || '').toLowerCase()}`) || localStorage.getItem(`termai_pref_${(cli || '').toLowerCase()}`);
     if (raw) {
       return JSON.parse(raw);
     }
@@ -57,7 +57,7 @@ const getCachedProviderPreference = (cli: string): { model?: string; effort?: st
 
 const setCachedProviderPreference = (cli: string, model: string, effort: string) => {
   try {
-    localStorage.setItem(`termai_pref_${(cli || '').toLowerCase()}`, JSON.stringify({ model, effort }));
+    localStorage.setItem(`raft_pref_${(cli || '').toLowerCase()}`, JSON.stringify({ model, effort }));
   } catch {}
 };
 
@@ -283,7 +283,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
       cancelInstallRef.current = null;
     }
     setIsInstallingCli(false);
-    setInstallLogs((prev) => prev + '\n[termai] Installation cancelled by user.\n');
+    setInstallLogs((prev) => prev + '\n[raft] Installation cancelled by user.\n');
   };
 
   const handleCopyOsCommand = async (cmd: string, osType: 'win' | 'mac') => {

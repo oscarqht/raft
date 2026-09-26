@@ -8,7 +8,7 @@ import { runSubmitAgent, detectGitUsername, StreamEvent } from './agentRunner.js
 import { GitService } from './gitService.js';
 
 test('detectGitUsername extracts username from github remote URL', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-detect-user-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-detect-user-'));
   try {
     GitService.initRepo(tmpDir);
     execSync('git remote add origin https://github.com/oscarqht/arcable.git', { cwd: tmpDir });
@@ -22,8 +22,8 @@ test('detectGitUsername extracts username from github remote URL', () => {
 });
 
 test('runSubmitAgent stages, commits, and pushes to origin with live events', async () => {
-  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-remote-'));
-  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-local-'));
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote-'));
+  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-local-'));
 
   try {
     // 1. Setup a bare remote repo
@@ -85,8 +85,8 @@ test('runSubmitAgent stages, commits, and pushes to origin with live events', as
 });
 
 test('GitService.getGitStatus detects unpushed commits and runSubmitAgent pushes them with 0 file changes', async () => {
-  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-remote2-'));
-  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-local2-'));
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote2-'));
+  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-local2-'));
 
   try {
     // 1. Remote repo

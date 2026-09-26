@@ -6,7 +6,7 @@ import os from 'node:os';
 import { GitService } from './gitService.js';
 
 test('GitService.initRepo creates a valid git repository', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-fs-test-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-fs-test-'));
   try {
     const targetPath = path.join(tempDir, 'sample-repo');
     const result = GitService.initRepo(targetPath);
@@ -18,7 +18,7 @@ test('GitService.initRepo creates a valid git repository', () => {
 });
 
 test('GitService.getRepoInfo detects git repo and non-repo properly', () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'termai-fs-test2-'));
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-fs-test2-'));
   try {
     const nonRepo = path.join(tempDir, 'not-a-repo');
     fs.mkdirSync(nonRepo);

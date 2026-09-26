@@ -1,5 +1,5 @@
 {
-  "name": "termai",
+  "name": "raft",
   "version": "0.1.0",
   "description": "A cozy, distraction-free AI coding workspace with git worktree isolation",
   "private": true,

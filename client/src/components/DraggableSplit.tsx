@@ -16,7 +16,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   initialRatio = 0.5,
   minLeftWidth = 320,
   minRightWidth = 320,
-  storageKey = 'termai:split-ratio',
+  storageKey = 'raft:split-ratio',
   mobileActivePane = 'left',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,7 +31,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   }, []);
   const [ratio, setRatio] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = localStorage.getItem(storageKey) || (storageKey === 'raft:split-ratio' ? localStorage.getItem('termai:split-ratio') : null);
       if (saved) {
         const parsed = parseFloat(saved);
         if (!isNaN(parsed) && parsed > 0 && parsed < 1) {

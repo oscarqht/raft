@@ -3,12 +3,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const TERMAI_DIR = path.join(os.homedir(), '.termai');
-if (!fs.existsSync(TERMAI_DIR)) {
-  fs.mkdirSync(TERMAI_DIR, { recursive: true });
+const RAFT_DIR = path.join(os.homedir(), '.raft');
+if (!fs.existsSync(RAFT_DIR)) {
+  fs.mkdirSync(RAFT_DIR, { recursive: true });
 }
 
-const DB_PATH = path.join(TERMAI_DIR, 'termai.db');
+const DB_PATH = path.join(RAFT_DIR, 'raft.db');
+
+// Seamless migration from legacy .termai if applicable
+const LEGACY_DIR = path.join(os.homedir(), '.termai');
+const LEGACY_DB = path.join(LEGACY_DIR, 'termai.db');
+if (!fs.existsSync(DB_PATH) && fs.existsSync(LEGACY_DB)) {
+  try {
+    fs.copyFileSync(LEGACY_DB, DB_PATH);
+  } catch (err) {
+    console.error('Failed to migrate legacy termai database:', err);
+  }
+}
+
 export const db: DatabaseType = new Database(DB_PATH);
 
 

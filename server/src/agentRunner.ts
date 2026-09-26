@@ -252,9 +252,9 @@ export function installCliProcess(
   }
 
   const rawCmd = isWin ? cmds.windows : cmds.mac;
-  onData(`[termai] Starting installation of ${cliName.toUpperCase()} CLI...\r\n`);
-  onData(`[termai] Operating System: ${isWin ? 'Windows' : 'macOS / Linux'}\r\n`);
-  onData(`[termai] Command: ${rawCmd}\r\n\r\n`);
+  onData(`[raft] Starting installation of ${cliName.toUpperCase()} CLI...\r\n`);
+  onData(`[raft] Operating System: ${isWin ? 'Windows' : 'macOS / Linux'}\r\n`);
+  onData(`[raft] Command: ${rawCmd}\r\n\r\n`);
 
   let spawnBin: string;
   let spawnArgs: string[];
@@ -283,12 +283,12 @@ export function installCliProcess(
 
   const promise = new Promise<{ code: number | null }>((resolve) => {
     proc.on('close', (code) => {
-      onData(`\r\n[termai] Process exited with status code ${code}\r\n`);
+      onData(`\r\n[raft] Process exited with status code ${code}\r\n`);
       modelsCache.clear();
       resolve({ code });
     });
     proc.on('error', (err) => {
-      onData(`\r\n[termai] Execution error: ${err.message}\r\n`);
+      onData(`\r\n[raft] Execution error: ${err.message}\r\n`);
       resolve({ code: 1 });
     });
   });
@@ -1473,7 +1473,7 @@ export function runSubmitAgent(
       const status = GitService.getGitStatus(worktreePath);
       if (status.staged.length > 0) {
         emit({ type: 'thought', content: `→ Run: git commit\n` });
-        const tempMsgPath = path.join(os.tmpdir(), `termai-commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.txt`);
+        const tempMsgPath = path.join(os.tmpdir(), `raft-commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.txt`);
         fs.writeFileSync(tempMsgPath, commitMessage, 'utf-8');
 
         try {

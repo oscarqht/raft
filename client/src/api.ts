@@ -159,6 +159,14 @@ export async function createTask(projectId: string, name: string, baseBranch: st
   return res.json();
 }
 
+export async function getTasks(): Promise<Task[]> {
+  const res = await fetch(`${API_BASE}/tasks`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch tasks');
+  }
+  return res.json();
+}
+
 export async function getTask(id: string): Promise<Task> {
   const res = await fetch(`${API_BASE}/tasks/${id}`);
   return res.json();
