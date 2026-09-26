@@ -1,0 +1,5 @@
+{
+  "name": "raft-server-bundle",
+  "version": "0.1.0",
+  "type": "module"
+}

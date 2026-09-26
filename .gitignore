@@ -5,3 +5,15 @@ dist/
 .worktrees/
 .termai/
 .raft/
+
+# Tauri & Desktop build outputs
+src-tauri/target/
+src-tauri/bin/
+src-tauri/gen/
+src-tauri/*.key
+src-tauri/*.key.pub
+resources/server/node_modules/
+resources/server/client/
+resources/server/index.mjs
+latest.json
+changelog.txt

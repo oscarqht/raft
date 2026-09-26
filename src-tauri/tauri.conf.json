@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Raft",
+  "version": "0.1.0",
+  "identifier": "com.oscarqht.raft",
+  "build": {
+    "frontendDist": "../client/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "resources": [
+      "../resources/server"
+    ],
+    "externalBin": [
+      "bin/node"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15",
+      "infoPlist": "./Info.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/oscarqht/termai/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVCRkVGQ0U5RDkyRUZDMDAKUldRQS9DN1o2ZnorV3lpQzBIckRKWWZpc1gzb2RRU0ZoUUtqSDZRU0NmYUppVEdubzBZSjRCK0QK"
+    }
+  }
+}

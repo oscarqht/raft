@@ -14,9 +14,13 @@
     "dev:client": "npm run dev --workspace=client",
     "build": "npm run build --workspace=server && npm run build --workspace=client",
     "test": "npm run test --workspace=server",
-    "start": "npm run start --workspace=server"
+    "start": "npm run start --workspace=server",
+    "app:dev": "node scripts/prepare-server.mjs && tauri dev",
+    "app:build": "node scripts/prepare-server.mjs && tauri build",
+    "tauri": "tauri"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
     "concurrently": "^9.1.2"
   }
 }

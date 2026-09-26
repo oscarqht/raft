@@ -1,0 +1,170 @@
+name: Release Desktop App
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Tag & Version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version_step.outputs.tag }}
+      version: ${{ steps.version_step.outputs.version }}
+      should_release: ${{ steps.version_step.outputs.should_release }}
+      changelog: ${{ steps.changelog_step.outputs.changelog }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Resolve or bump tag
+        id: version_step
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "Building for pushed tag: ${{ github.ref_name }}"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Push to main detected. Bumping minor version..."
+            node scripts/bump-version.js
+          fi
+
+      - name: Generate Changelog
+        id: changelog_step
+        if: steps.version_step.outputs.should_release == 'true'
+        run: |
+          node scripts/generate-changelog.js "${{ steps.version_step.outputs.tag }}" --out changelog.txt
+
+      - name: Create draft release
+        if: steps.version_step.outputs.should_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version_step.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Pre-creating draft release for $TAG with generated changelog..."
+            gh release create "$TAG" \
+              --draft \
+              --title "Raft $TAG" \
+              -F changelog.txt
+          else
+            echo "Release $TAG already exists, updating notes..."
+            gh release edit "$TAG" -F changelog.txt
+          fi
+
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            arch: aarch64
+            targets: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+          - platform: windows-latest
+            arch: x64
+            targets: ''
+            args: ''
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Server & Sidecar Runtime
+        run: node scripts/prepare-server.mjs
+
+      - name: Build and Package with Tauri Action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        with:
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: 'Raft ${{ needs.prepare.outputs.tag }}'
+          releaseBody: ${{ needs.prepare.outputs.changelog || 'See assets below to install Raft.' }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          retryAttempts: 3
+          args: ${{ matrix.args }}
+
+  publish:
+    name: Publish Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate & Upload Unified Updater Manifest (latest.json)
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/generate-updater-json.js "${{ needs.prepare.outputs.tag }}"
+
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Publishing draft release ${{ needs.prepare.outputs.tag }}..."
+          gh release edit "${{ needs.prepare.outputs.tag }}" --draft=false
