@@ -12,6 +12,9 @@ import {
   ProjectCustomScript,
   ScriptExecutionItem,
   AgentSkill,
+  GitAccount,
+  RemoteRepoItem,
+  VerifyGitAccountResult,
 } from './types';
 
 const API_BASE = '/api';
@@ -406,4 +409,127 @@ export async function dismissScriptExecution(executionId: string): Promise<{ suc
     method: 'POST',
   });
   return res.json();
+}
+
+// ===================== Git Accounts APIs =====================
+
+export async function getGitAccounts(): Promise<GitAccount[]> {
+  const res = await fetch(`${API_BASE}/git-accounts`);
+  return res.json();
+}
+
+export async function verifyGitAccount(params: {
+  provider: 'github' | 'gitlab';
+  token: string;
+  host?: string;
+}): Promise<VerifyGitAccountResult> {
+  const res = await fetch(`${API_BASE}/git-accounts/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Verification failed');
+  }
+  return data;
+}
+
+export async function addGitAccount(params: {
+  provider: 'github' | 'gitlab';
+  name: string;
+  username: string;
+  avatar_url?: string | null;
+  token: string;
+  host?: string;
+}): Promise<GitAccount> {
+  const res = await fetch(`${API_BASE}/git-accounts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to link account');
+  }
+  return data;
+}
+
+export async function deleteGitAccount(id: string): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/git-accounts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to remove account');
+  }
+  return true;
+}
+
+export async function getGitAccountRepos(id: string): Promise<RemoteRepoItem[]> {
+  const res = await fetch(`${API_BASE}/git-accounts/${encodeURIComponent(id)}/repos`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch repositories');
+  }
+  return data;
+}
+
+// ===================== Clone & Create Project APIs =====================
+
+export function cloneProjectStream(
+  params: { url: string; parentPath: string; folderName: string; accountId?: string },
+  onLog: (chunk: string) => void,
+  onDone: (result: { success: boolean; projectPath?: string; error?: string; repoInfo?: any }) => void,
+  onError?: (err: any) => void
+): () => void {
+  const query = new URLSearchParams({
+    url: params.url,
+    parentPath: params.parentPath,
+    folderName: params.folderName,
+  });
+  if (params.accountId) {
+    query.set('accountId', params.accountId);
+  }
+
+  const eventSource = new EventSource(`${API_BASE}/projects/clone/stream?${query.toString()}`);
+
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'output' && data.chunk) {
+        onLog(data.chunk);
+      } else if (data.type === 'done') {
+        onDone(data);
+        eventSource.close();
+      }
+    } catch {}
+  };
+
+  eventSource.onerror = (err) => {
+    if (onError) onError(err);
+    eventSource.close();
+  };
+
+  return () => {
+    eventSource.close();
+  };
+}
+
+export async function createNewProject(params: {
+  parentPath: string;
+  name: string;
+  defaultBranch?: string;
+  initReadme?: boolean;
+}): Promise<{ project: Project; repoInfo: any }> {
+  const res = await fetch(`${API_BASE}/projects/create-new`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to create new project');
+  }
+  return data;
 }

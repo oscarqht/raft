@@ -318,4 +318,77 @@ export class GitService {
       }
     }
   }
+
+  static createNewRepo(parentPath: string, folderName: string, defaultBranch = 'main', initReadme = true): RepoInfo {
+    const resolvedParent = path.resolve(parentPath);
+    if (!fs.existsSync(resolvedParent)) {
+      fs.mkdirSync(resolvedParent, { recursive: true });
+    }
+    const targetPath = path.join(resolvedParent, folderName);
+    if (fs.existsSync(targetPath)) {
+      throw new Error(`Directory already exists: ${targetPath}`);
+    }
+    fs.mkdirSync(targetPath, { recursive: true });
+
+    // Initialize repository with specified default branch
+    try {
+      execSync(`git init -b "${defaultBranch}"`, {
+        cwd: targetPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch {
+      execSync('git init', {
+        cwd: targetPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      try {
+        execSync(`git checkout -b "${defaultBranch}"`, {
+          cwd: targetPath,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+      } catch {}
+    }
+
+    if (initReadme) {
+      // Ensure git user config exists locally if not configured globally
+      try {
+        execSync('git config user.name', { cwd: targetPath, stdio: 'pipe' });
+      } catch {
+        execSync('git config user.name "Raft"', { cwd: targetPath, stdio: 'ignore' });
+        execSync('git config user.email "raft@local"', { cwd: targetPath, stdio: 'ignore' });
+      }
+
+      const readmeContent = `# ${folderName}\n\nCreated with Raft.\n`;
+      fs.writeFileSync(path.join(targetPath, 'README.md'), readmeContent, 'utf-8');
+
+      execSync('git add README.md', {
+        cwd: targetPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      execSync('git commit -m "Initial commit"', {
+        cwd: targetPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+    }
+
+    return GitService.getRepoInfo(targetPath);
+  }
+
+  static configureRepoCredentials(repoPath: string, remoteUrl: string, token: string, username = 'git'): void {
+    try {
+      const parsed = new URL(remoteUrl);
+      const authBasic = Buffer.from(`${username}:${token}`).toString('base64');
+      execSync(`git config --local http.${parsed.origin}.extraheader "AUTHORIZATION: basic ${authBasic}"`, {
+        cwd: repoPath,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+    } catch (err) {
+      console.warn('Failed to configure local repo credentials:', err);
+    }
+  }
 }

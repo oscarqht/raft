@@ -19,9 +19,25 @@ import {
   Square,
   Play,
   X,
+  Github,
+  GitBranch,
+  Key,
+  Trash2,
+  Plus,
+  Globe,
+  ShieldCheck,
 } from 'lucide-react';
-import { Settings, CliInfo, ModelOption } from '../types';
-import { updateSettings, getModels, getClis, installCliStream } from '../api';
+import { Settings, CliInfo, ModelOption, GitAccount } from '../types';
+import {
+  updateSettings,
+  getModels,
+  getClis,
+  installCliStream,
+  getGitAccounts,
+  verifyGitAccount,
+  addGitAccount,
+  deleteGitAccount,
+} from '../api';
 
 // LocalStorage helpers for caching CLI models and reasoning efforts
 const getCachedModels = (cli: string): ModelOption[] => {
@@ -94,6 +110,84 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
   const [installError, setInstallError] = useState<string | null>(null);
   const terminalEndRef = React.useRef<HTMLDivElement>(null);
   const cancelInstallRef = React.useRef<(() => void) | null>(null);
+
+  // Git Accounts state
+  const [gitAccounts, setGitAccounts] = useState<GitAccount[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
+  const [accountProvider, setAccountProvider] = useState<'github' | 'gitlab'>('github');
+  const [accountHost, setAccountHost] = useState('');
+  const [accountToken, setAccountToken] = useState('');
+  const [isVerifyingAccount, setIsVerifyingAccount] = useState(false);
+  const [accountVerifyError, setAccountVerifyError] = useState<string | null>(null);
+  const [accountSuccessMsg, setAccountSuccessMsg] = useState<string | null>(null);
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+
+  const loadGitAccounts = async () => {
+    try {
+      setIsLoadingAccounts(true);
+      const accounts = await getGitAccounts();
+      setGitAccounts(accounts);
+    } catch (err) {
+      console.error('Failed to load git accounts:', err);
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  };
+
+  useEffect(() => {
+    loadGitAccounts();
+  }, []);
+
+  const handleVerifyAndLinkAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accountToken.trim()) return;
+
+    try {
+      setIsVerifyingAccount(true);
+      setAccountVerifyError(null);
+      const verified = await verifyGitAccount({
+        provider: accountProvider,
+        token: accountToken.trim(),
+        host: accountHost.trim() || undefined,
+      });
+
+      const providerLabel = verified.provider === 'github' ? 'GitHub' : 'GitLab';
+      await addGitAccount({
+        provider: verified.provider,
+        name: `${providerLabel} (${verified.username})`,
+        username: verified.username,
+        avatar_url: verified.avatarUrl,
+        token: accountToken.trim(),
+        host: verified.host,
+      });
+
+      setAccountSuccessMsg(`Connected as @${verified.username}`);
+      setAccountToken('');
+      setAccountHost('');
+      await loadGitAccounts();
+      setTimeout(() => {
+        setIsAddAccountOpen(false);
+        setAccountSuccessMsg(null);
+      }, 1200);
+    } catch (err: any) {
+      setAccountVerifyError(err.message || 'Verification failed. Please check your token and host.');
+    } finally {
+      setIsVerifyingAccount(false);
+    }
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    try {
+      setDeletingAccountId(id);
+      await deleteGitAccount(id);
+      setGitAccounts((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      console.error('Failed to delete git account:', err);
+    } finally {
+      setDeletingAccountId(null);
+    }
+  };
 
   // Auto-scroll terminal on new log lines
   useEffect(() => {
@@ -796,6 +890,249 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
             </div>
           </>
         )}
+
+        {/* 4. Linked Git Accounts */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Github className="w-4 h-4 text-rose-500" />
+                Linked Git Accounts
+              </h2>
+              <p className="text-xs text-cozy-muted mt-1">
+                Connect your GitHub or GitLab accounts via Personal Access Token (PAT) to clone remote repositories and push commits seamlessly.
+              </p>
+            </div>
+
+            {!isAddAccountOpen && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddAccountOpen(true);
+                  setAccountVerifyError(null);
+                  setAccountSuccessMsg(null);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Link Account</span>
+              </button>
+            )}
+          </div>
+
+          {/* List of Connected Accounts */}
+          {isLoadingAccounts ? (
+            <div className="p-6 rounded-2xl bg-cozy-subtle/30 border border-cozy-border flex items-center justify-center gap-2 text-xs text-cozy-muted">
+              <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
+              <span>Loading linked accounts...</span>
+            </div>
+          ) : gitAccounts.length === 0 && !isAddAccountOpen ? (
+            <div className="p-6 rounded-2xl bg-cozy-subtle/20 border border-dashed border-cozy-border text-center space-y-2">
+              <div className="w-9 h-9 mx-auto rounded-full bg-cozy-subtle flex items-center justify-center text-cozy-muted">
+                <GitBranch className="w-4 h-4" />
+              </div>
+              <p className="text-xs text-cozy-muted">
+                No Git accounts linked yet. Link a GitHub or GitLab account to easily clone your repositories.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {gitAccounts.map((account) => (
+                <div
+                  key={account.id}
+                  className="p-4 rounded-2xl bg-cozy-surface border border-cozy-border flex items-center justify-between gap-3 shadow-soft-sm"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {account.avatar_url ? (
+                      <img
+                        src={account.avatar_url}
+                        alt={account.username}
+                        className="w-9 h-9 rounded-full object-cover border border-cozy-border shrink-0"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-rose-500/10 border border-rose-400/20 flex items-center justify-center text-rose-500 font-bold shrink-0">
+                        {account.provider === 'github' ? <Github className="w-4 h-4" /> : <GitBranch className="w-4 h-4" />}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-cozy-text truncate">{account.name || account.username}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-cozy-subtle text-cozy-muted border border-cozy-border shrink-0">
+                          {account.provider}
+                        </span>
+                      </div>
+                      <p className="text-xs text-cozy-muted truncate">
+                        @{account.username} • {account.host.replace(/^https?:\/\//, '')}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAccount(account.id)}
+                    disabled={deletingAccountId === account.id}
+                    className="p-2 rounded-xl text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 border border-transparent hover:border-rose-400/20 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                    title="Disconnect account"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add Account Form */}
+          {isAddAccountOpen && (
+            <form onSubmit={handleVerifyAndLinkAccount} className="p-5 rounded-2xl bg-cozy-subtle/40 border border-cozy-border space-y-4 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-cozy-text uppercase tracking-wider flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-rose-500" />
+                  Connect Personal Access Token
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddAccountOpen(false)}
+                  className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Provider Selection */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountProvider('github');
+                    setAccountHost('');
+                  }}
+                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                    accountProvider === 'github'
+                      ? 'bg-rose-500/15 border-rose-400 text-rose-600 dark:text-rose-300 shadow-soft-sm'
+                      : 'bg-cozy-surface border-cozy-border text-cozy-muted hover:text-cozy-text'
+                  }`}
+                >
+                  <Github className="w-4 h-4" />
+                  <span>GitHub</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountProvider('gitlab');
+                    setAccountHost('');
+                  }}
+                  className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                    accountProvider === 'gitlab'
+                      ? 'bg-rose-500/15 border-rose-400 text-rose-600 dark:text-rose-300 shadow-soft-sm'
+                      : 'bg-cozy-surface border-cozy-border text-cozy-muted hover:text-cozy-text'
+                  }`}
+                >
+                  <GitBranch className="w-4 h-4" />
+                  <span>GitLab</span>
+                </button>
+              </div>
+
+              {/* Host URL (optional for self-hosted) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-cozy-muted">
+                  <span className="font-medium">Host URL (Optional for Self-Hosted)</span>
+                  <span className="text-[10px] text-cozy-muted/80">Default: {accountProvider === 'github' ? 'https://github.com' : 'https://gitlab.com'}</span>
+                </div>
+                <div className="relative">
+                  <Globe className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-cozy-muted" />
+                  <input
+                    type="url"
+                    value={accountHost}
+                    onChange={(e) => setAccountHost(e.target.value)}
+                    placeholder={accountProvider === 'github' ? 'https://github.com' : 'https://gitlab.com'}
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text"
+                  />
+                </div>
+              </div>
+
+              {/* Personal Access Token Input */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-cozy-muted">
+                    Personal Access Token (PAT)
+                  </label>
+                  <a
+                    href={
+                      accountProvider === 'github'
+                        ? 'https://github.com/settings/tokens/new?scopes=repo,read:user'
+                        : 'https://gitlab.com/-/user_settings/personal_access_tokens'
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-rose-500 hover:underline flex items-center gap-1"
+                  >
+                    <span>Generate token</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="relative">
+                  <Key className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-cozy-muted" />
+                  <input
+                    type="password"
+                    value={accountToken}
+                    onChange={(e) => setAccountToken(e.target.value)}
+                    placeholder={accountProvider === 'github' ? 'ghp_... or github_pat_...' : 'glpat-...'}
+                    required
+                    className="w-full pl-9 pr-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text"
+                  />
+                </div>
+                <p className="text-[11px] text-cozy-muted">
+                  {accountProvider === 'github'
+                    ? 'Requires "repo" (to access private repositories) and "read:user" scopes.'
+                    : 'Requires "read_api" or "api" scope.'}
+                </p>
+              </div>
+
+              {/* Error and Success states */}
+              {accountVerifyError && (
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{accountVerifyError}</span>
+                </div>
+              )}
+
+              {accountSuccessMsg && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-400/30 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{accountSuccessMsg}</span>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsAddAccountOpen(false)}
+                  className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-cozy-muted hover:text-cozy-text bg-cozy-surface border border-cozy-border transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isVerifyingAccount || !accountToken.trim()}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
+                >
+                  {isVerifyingAccount ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      <span>Verify & Link</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
 
       </div>
     </div>

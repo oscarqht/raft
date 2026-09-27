@@ -172,3 +172,33 @@ export interface AgentSkill {
   filePath?: string;
 }
 
+export interface GitAccount {
+  id: string;
+  provider: 'github' | 'gitlab';
+  name: string;
+  username: string;
+  avatar_url?: string | null;
+  host: string;
+  created_at: number;
+}
+
+export interface RemoteRepoItem {
+  name: string;
+  fullName: string;
+  cloneUrl: string;
+  sshUrl?: string;
+  isPrivate: boolean;
+  description?: string;
+  updatedAt?: string;
+}
+
+export interface VerifyGitAccountResult {
+  valid: boolean;
+  username: string;
+  name: string;
+  avatarUrl?: string | null;
+  provider: 'github' | 'gitlab';
+  host: string;
+  error?: string;
+}
+

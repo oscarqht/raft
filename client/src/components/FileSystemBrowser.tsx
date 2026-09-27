@@ -25,6 +25,8 @@ interface FileSystemBrowserProps {
   initialPath?: string;
   title?: string;
   selectionMode?: 'repository' | 'folder';
+  embedded?: boolean;
+  onPathChange?: (path: string, meta?: { isRepo?: boolean; parent?: string | null }) => void;
 }
 
 export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
@@ -34,6 +36,8 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
   initialPath,
   title = 'Add Local Git Repository',
   selectionMode = 'repository',
+  embedded = false,
+  onPathChange,
 }) => {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [data, setData] = useState<FSResponse | null>(null);
@@ -67,6 +71,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
       setIsEditingPath(false);
       setShowNewFolderInput(false);
       setNewFolderName('');
+      onPathChange?.(res.path, { isRepo: res.isRepo, parent: res.parent });
     } catch (e: any) {
       setError(e.message || 'Failed to open directory');
     } finally {
@@ -194,11 +199,11 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-3xl h-[82vh] rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden relative">
-        {/* Header */}
-        <div className="p-4 md:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50 flex flex-col gap-3 shrink-0">
+  const content = (
+    <div className={`flex flex-col overflow-hidden relative ${embedded ? 'w-full h-full' : 'w-full max-w-3xl h-[82vh] rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl'}`}>
+      {/* Header */}
+      <div className={`${embedded ? 'p-3 md:p-4' : 'p-4 md:p-5'} border-b border-cozy-border/50 bg-cozy-subtle/50 flex flex-col gap-3 shrink-0`}>
+        {!embedded && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
@@ -214,14 +219,15 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
 
             <button
               onClick={() => onOpenChange(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all cursor-pointer"
               title="Close (Esc)"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+        )}
 
-          {/* Quick shortcuts & Windows drives bar */}
+        {/* Quick shortcuts & Windows drives bar */}
           <div className="flex items-center gap-1.5 flex-wrap text-xs">
             {data?.drives && data.drives.length > 0 && (
               <div className="flex items-center gap-1 mr-2 border-r border-cozy-border pr-2">
@@ -579,6 +585,15 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
           </div>
         )}
       </div>
+    );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+      {content}
     </div>
   );
 };
