@@ -125,8 +125,22 @@ pub fn setup_tray(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
 
+    let host_part = server_url
+        .strip_prefix("http://")
+        .or_else(|| server_url.strip_prefix("https://"))
+        .unwrap_or(&server_url)
+        .split(':')
+        .next()
+        .unwrap_or("");
+    let is_tailscale = crate::server::is_tailscale_ip_str(host_part);
+    let copy_label = if is_tailscale {
+        "Copy Tailscale URL"
+    } else {
+        "Copy Local URL"
+    };
+
     let open_item = MenuItem::with_id(app, "open_browser", "Open Raft in Browser", true, None::<&str>)?;
-    let copy_item = MenuItem::with_id(app, "copy_url", "Copy Local URL", true, None::<&str>)?;
+    let copy_item = MenuItem::with_id(app, "copy_url", copy_label, true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
     #[cfg(target_os = "macos")]

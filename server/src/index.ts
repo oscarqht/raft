@@ -25,12 +25,14 @@ import {
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
+import { resolveHost } from './tailscale.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3100;
+const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
@@ -1333,7 +1335,8 @@ if (clientDistDir) {
   });
 }
 
-server.listen(PORT, () => {
-  console.log(`[raft-server] listening on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  const networkType = isTailscale ? 'Tailscale network' : 'local interface';
+  console.log(`[raft-server] listening on http://${HOST}:${PORT} (${networkType}, source: ${hostSource})`);
 });
 
