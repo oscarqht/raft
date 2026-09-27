@@ -379,27 +379,27 @@ const MessageItem: React.FC<{
       return {
         label: `Inspected ${filesCount} ${filesCount === 1 ? 'file' : 'files'} & executed ${cmdCount} ${cmdCount === 1 ? 'command' : 'commands'}`,
         count: actionCount,
-        icon: <Sparkles className="w-3.5 h-3.5 text-teal-500" />,
+        icon: <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />,
       };
     }
     if (filesCount > 0) {
       return {
         label: `Checked ${filesCount} ${filesCount === 1 ? 'file' : 'files'}`,
         count: actionCount,
-        icon: <FileCode className="w-3.5 h-3.5 text-sky-400" />,
+        icon: <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />,
       };
     }
     if (cmdCount > 0) {
       return {
         label: `Executed ${cmdCount} terminal ${cmdCount === 1 ? 'command' : 'commands'}`,
         count: actionCount,
-        icon: <Play className="w-3.5 h-3.5 text-amber-400" />,
+        icon: <Play className="w-3.5 h-3.5 text-amber-400 shrink-0" />,
       };
     }
     return {
       label: `Explored ${actionCount} ${actionCount === 1 ? 'action' : 'actions'}`,
       count: actionCount,
-      icon: <Sparkles className="w-3.5 h-3.5 text-teal-500" />,
+      icon: <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />,
     };
   }, [thoughts]);
 
@@ -443,10 +443,11 @@ const MessageItem: React.FC<{
       >
         {/* Friendly Natural Summary Pill for Thoughts & Actions */}
         {thoughts && summaryBadge && !spendCapInfo.isSpendCap && (
-          <div className="mb-1 w-full min-w-0 flex justify-end min-[920px]:justify-start">
+          <div className="mb-1 w-full min-w-0 flex flex-col items-end min-[920px]:items-start">
             <button
+              type="button"
               onClick={() => setShowThoughts(!showThoughts)}
-              className="flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full"
+              className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
             >
               {summaryBadge.icon}
               <span className="text-cozy-text truncate">{summaryBadge.label}</span>
@@ -460,11 +461,12 @@ const MessageItem: React.FC<{
               )}
             </button>
             {showThoughts && (
-              <div className="group/thought relative mt-2 p-4 sm:p-5 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-60 overflow-y-auto pr-10 shadow-soft-inner leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 animate-in fade-in duration-150">
+              <div className="group/thought relative mt-2 w-full p-4 sm:p-5 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-60 overflow-y-auto pr-10 shadow-soft-inner leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 animate-in fade-in duration-150">
                 {thoughts}
                 <button
+                  type="button"
                   onClick={() => handleCopyText('thought', thoughts!)}
-                  className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-cozy-subtle/90 hover:bg-cozy-surface text-cozy-muted opacity-0 group-hover/thought:opacity-100 transition-opacity hover:text-teal-500 shadow-soft-sm"
+                  className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-cozy-subtle/90 hover:bg-cozy-surface text-cozy-muted opacity-0 group-hover/thought:opacity-100 transition-opacity hover:text-teal-500 shadow-soft-sm cursor-pointer"
                   title={copiedTarget === 'thought' ? 'Copied!' : 'Copy actions log'}
                 >
                   {copiedTarget === 'thought' ? (
