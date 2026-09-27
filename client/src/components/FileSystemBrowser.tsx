@@ -26,6 +26,7 @@ interface FileSystemBrowserProps {
   title?: string;
   selectionMode?: 'repository' | 'folder';
   embedded?: boolean;
+  onPathChange?: (path: string, meta?: { isRepo?: boolean; parent?: string | null }) => void;
 }
 
 export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
@@ -36,6 +37,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
   title = 'Add Local Git Repository',
   selectionMode = 'repository',
   embedded = false,
+  onPathChange,
 }) => {
   const [currentPath, setCurrentPath] = useState<string>('');
   const [data, setData] = useState<FSResponse | null>(null);
@@ -69,6 +71,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
       setIsEditingPath(false);
       setShowNewFolderInput(false);
       setNewFolderName('');
+      onPathChange?.(res.path, { isRepo: res.isRepo, parent: res.parent });
     } catch (e: any) {
       setError(e.message || 'Failed to open directory');
     } finally {

@@ -38,6 +38,35 @@ interface AddProjectModalProps {
   initialTab?: 'existing' | 'clone' | 'create';
 }
 
+const STORAGE_KEY_LAST_PATH = 'raft:last_selected_folder';
+const LEGACY_STORAGE_KEY_LAST_PATH = 'termai:last_selected_folder';
+
+function getStoredFolder(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY_LAST_PATH) || localStorage.getItem(LEGACY_STORAGE_KEY_LAST_PATH) || '';
+  } catch {
+    return '';
+  }
+}
+
+function getDirectoryPath(filePath: string): string {
+  if (!filePath) return '';
+  const clean = filePath.trim().replace(/[/\\]+$/, '');
+  if (/^[a-zA-Z]:$/.test(clean)) {
+    return `${clean}\\`;
+  }
+  const lastSlash = Math.max(clean.lastIndexOf('/'), clean.lastIndexOf('\\'));
+  if (lastSlash === -1) return clean;
+  // If drive root e.g. C:\ or C:/
+  if (lastSlash === 2 && clean[1] === ':') {
+    return clean.slice(0, 3);
+  }
+  if (lastSlash === 0) {
+    return '/';
+  }
+  return clean.slice(0, lastSlash);
+}
+
 export const AddProjectModal: React.FC<AddProjectModalProps> = ({
   isOpen,
   onClose,
@@ -48,9 +77,30 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'existing' | 'clone' | 'create'>(initialTab);
 
-  // Common parent directory
-  const [parentPath, setParentPath] = useState<string>('');
+  // Common parent directory shared across all tabs and remembered
+  const [parentPath, setParentPath] = useState<string>(() => getStoredFolder());
   const [isBrowseParentOpen, setIsBrowseParentOpen] = useState(false);
+
+  const updateParentPath = (newPath: string) => {
+    setParentPath(newPath);
+    if (newPath && newPath.trim()) {
+      try {
+        localStorage.setItem(STORAGE_KEY_LAST_PATH, newPath.trim());
+      } catch {}
+    }
+  };
+
+  const handleOpenExisting = (path: string, meta: SelectionMeta) => {
+    if (meta?.isRepo) {
+      const parentDir = getDirectoryPath(path);
+      if (parentDir) {
+        updateParentPath(parentDir);
+      }
+    } else if (path) {
+      updateParentPath(path);
+    }
+    onOpenExisting(path, meta);
+  };
 
   // Git Accounts & Repositories for Clone tab
   const [gitAccounts, setGitAccounts] = useState<GitAccount[]>([]);
@@ -73,7 +123,6 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
   // Create New tab fields
   const [newProjectName, setNewProjectName] = useState('');
   const [newDefaultBranch, setNewDefaultBranch] = useState('main');
-  const [newInitReadme, setNewInitReadme] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -87,13 +136,18 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
     setCloneLogs('');
     setCreateError(null);
 
-    getFileSystem()
-      .then((fsData) => {
-        if (fsData?.path && !parentPath) {
-          setParentPath(fsData.path);
-        }
-      })
-      .catch(() => {});
+    const saved = getStoredFolder();
+    if (saved && !parentPath) {
+      setParentPath(saved);
+    } else if (!saved && !parentPath) {
+      getFileSystem()
+        .then((fsData) => {
+          if (fsData?.path) {
+            updateParentPath(fsData.path);
+          }
+        })
+        .catch(() => {});
+    }
 
     getGitAccounts()
       .then((accounts) => {
@@ -216,7 +270,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
         parentPath: parentPath.trim(),
         name: newProjectName.trim(),
         defaultBranch: newDefaultBranch.trim() || 'main',
-        initReadme: newInitReadme,
+        initReadme: true,
       });
 
       if (result.project) {
@@ -317,7 +371,15 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 open={true}
                 onOpenChange={() => {}}
                 selectionMode="repository"
-                onSelect={onOpenExisting}
+                initialPath={parentPath}
+                onPathChange={(path, meta) => {
+                  if (meta?.isRepo && meta.parent) {
+                    updateParentPath(meta.parent);
+                  } else if (path) {
+                    updateParentPath(path);
+                  }
+                }}
+                onSelect={handleOpenExisting}
               />
             </div>
           )}
@@ -497,7 +559,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       <input
                         type="text"
                         value={parentPath}
-                        onChange={(e) => setParentPath(e.target.value)}
+                        onChange={(e) => updateParentPath(e.target.value)}
                         placeholder="/Users/username/Projects"
                         required
                         disabled={isCloning}
@@ -642,7 +704,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     <input
                       type="text"
                       value={parentPath}
-                      onChange={(e) => setParentPath(e.target.value)}
+                      onChange={(e) => updateParentPath(e.target.value)}
                       placeholder="/Users/username/Projects"
                       required
                       disabled={isCreating}
@@ -674,23 +736,6 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                   />
                 </div>
 
-                {/* Initial Readme Checkbox */}
-                <div className="p-3.5 rounded-2xl bg-cozy-surface border border-cozy-border shadow-soft-sm flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="initReadme"
-                    checked={newInitReadme}
-                    onChange={(e) => setNewInitReadme(e.target.checked)}
-                    disabled={isCreating}
-                    className="mt-0.5 rounded border-cozy-border text-rose-500 focus:ring-rose-400 cursor-pointer"
-                  />
-                  <label htmlFor="initReadme" className="text-xs text-cozy-text cursor-pointer select-none">
-                    <strong className="block font-bold">Initialize with README.md and initial commit</strong>
-                    <span className="text-cozy-muted text-[11px]">
-                      Recommended. Ensures Git worktrees and task branches work immediately without needing manual commits.
-                    </span>
-                  </label>
-                </div>
 
                 {/* Path preview */}
                 {parentPath && newProjectName && (
@@ -754,7 +799,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
           title="Choose Destination Parent Folder"
           selectionMode="folder"
           onSelect={(selected) => {
-            setParentPath(selected);
+            updateParentPath(selected);
             setIsBrowseParentOpen(false);
           }}
         />

@@ -701,13 +701,13 @@ app.get('/api/projects/clone/stream', async (req: Request, res: Response) => {
 
 // Create New Local Git Repository
 app.post('/api/projects/create-new', (req: Request, res: Response) => {
-  const { parentPath, name, defaultBranch, initReadme } = req.body;
+  const { parentPath, name, defaultBranch } = req.body;
   if (!parentPath || !name) {
     return res.status(400).json({ error: 'parentPath and name are required' });
   }
 
   try {
-    const repoInfo = GitService.createNewRepo(parentPath, name, defaultBranch || 'main', initReadme !== false);
+    const repoInfo = GitService.createNewRepo(parentPath, name, defaultBranch || 'main', true);
     if (!repoInfo.isRepo) {
       return res.status(500).json({ error: repoInfo.error || 'Failed to create git repository' });
     }
