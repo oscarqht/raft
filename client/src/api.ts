@@ -15,6 +15,7 @@ import {
   GitAccount,
   RemoteRepoItem,
   VerifyGitAccountResult,
+  FileAttachment,
 } from './types';
 
 const API_BASE = '/api';
@@ -238,6 +239,22 @@ export async function restartDevServer(taskId: string): Promise<DevServerState> 
   return res.json();
 }
 
+export async function captureDevServerScreenshot(
+  taskId: string,
+  params?: { path?: string; width?: number; height?: number }
+): Promise<{ dataUrl: string; width: number; height: number }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/screenshot`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params || {}),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to capture server-side screenshot');
+  }
+  return res.json();
+}
+
 export async function getTaskChats(taskId: string): Promise<ChatSession[]> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/chats`);
   return res.json();
@@ -409,6 +426,36 @@ export async function dismissScriptExecution(executionId: string): Promise<{ suc
     method: 'POST',
   });
   return res.json();
+}
+
+// ===================== Attachments APIs =====================
+
+export async function uploadTaskAttachments(taskId: string, files: File[]): Promise<FileAttachment[]> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append('files', file);
+  }
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to upload attachments');
+  }
+  return data;
+}
+
+export async function getAttachmentContent(
+  taskId: string,
+  attachmentId: string
+): Promise<{ content: string; isTruncated: boolean; name: string; size: number; type: string }> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/attachments/${attachmentId}/content`);
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch attachment content');
+  }
+  return data;
 }
 
 // ===================== Git Accounts APIs =====================

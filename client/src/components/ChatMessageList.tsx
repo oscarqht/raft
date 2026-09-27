@@ -1,20 +1,32 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles, FileCode, Play } from 'lucide-react';
-import { ChatMessage } from '../types';
+import { Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles, FileCode, Play, ZoomIn, Download, Eye } from 'lucide-react';
+import { ChatMessage, FileAttachment } from '../types';
 import { MarkdownView } from './MarkdownView';
+import {
+  isImageAttachment,
+  isCodeOrTextAttachment,
+  getFileIcon,
+  formatFileSize,
+  ImageLightboxModal,
+  FilePreviewModal,
+} from './AttachmentModals';
 
 interface ChatMessageListProps {
   messages: ChatMessage[];
   liveStreamingChunk?: string;
   isStreaming?: boolean;
+  taskId?: string;
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   messages,
   liveStreamingChunk,
   isStreaming,
+  taskId,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
 
   const handleCopy = (id: string, text: string) => {
@@ -69,6 +81,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
           copiedId={copiedId}
           onCopy={handleCopy}
+          onPreviewImage={(att) => setPreviewImage(att)}
+          onPreviewFile={(att) => setPreviewFile(att)}
         />
       ))}
 
@@ -90,6 +104,18 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       )}
 
       <div ref={listEndRef} />
+
+      {/* Attachment Preview Modals */}
+      <ImageLightboxModal
+        attachment={previewImage}
+        onClose={() => setPreviewImage(null)}
+      />
+
+      <FilePreviewModal
+        taskId={taskId || ''}
+        attachment={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 };
@@ -99,9 +125,30 @@ const MessageItem: React.FC<{
   isStreaming?: boolean;
   copiedId: string | null;
   onCopy: (id: string, text: string) => void;
-}> = ({ msg, isStreaming, copiedId, onCopy }) => {
+  onPreviewImage: (att: FileAttachment) => void;
+  onPreviewFile: (att: FileAttachment) => void;
+}> = ({ msg, isStreaming, copiedId, onCopy, onPreviewImage, onPreviewFile }) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
+
+  // Parse attachments from msg.attachments or metadata
+  const attachments: FileAttachment[] = useMemo(() => {
+    if (Array.isArray(msg.attachments) && msg.attachments.length > 0) {
+      return msg.attachments;
+    }
+    if (msg.metadata) {
+      try {
+        const parsed = JSON.parse(msg.metadata);
+        if (parsed && Array.isArray(parsed.attachments)) {
+          return parsed.attachments;
+        }
+      } catch {}
+    }
+    return [];
+  }, [msg.attachments, msg.metadata]);
+
+  const imageAttachments = useMemo(() => attachments.filter(isImageAttachment), [attachments]);
+  const otherAttachments = useMemo(() => attachments.filter((att) => !isImageAttachment(att)), [attachments]);
 
   // Extract thoughts/actions vs clean response content
   let thoughts: string | null = null;
@@ -268,6 +315,123 @@ const MessageItem: React.FC<{
             <div className="flex items-center gap-2 mt-3 pt-2 border-t border-cozy-border/30 text-xs text-rose-400/90 font-medium animate-pulse">
               <Sparkles className="w-3.5 h-3.5" />
               <span>Generating response...</span>
+            </div>
+          )}
+
+          {/* File & Image Attachments Preview */}
+          {attachments.length > 0 && (
+            <div className={`space-y-2.5 ${displayContent ? 'mt-3 pt-3 border-t ' + (isUser ? 'border-white/20' : 'border-cozy-border/60') : ''}`}>
+              {/* Image Previews */}
+              {imageAttachments.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {imageAttachments.map((att) => (
+                    <div
+                      key={att.id || att.path}
+                      onClick={() => onPreviewImage(att)}
+                      className={`group/img relative overflow-hidden rounded-xl border cursor-pointer transition-all hover:scale-[1.02] shadow-soft-sm max-h-48 flex flex-col ${
+                        isUser
+                          ? 'border-white/30 bg-black/25 hover:border-white/60'
+                          : 'border-cozy-border bg-cozy-subtle/70 hover:border-rose-400/50'
+                      }`}
+                      title={`Click to preview ${att.name}`}
+                    >
+                      <div className="w-full h-32 overflow-hidden bg-black/10 flex items-center justify-center">
+                        <img
+                          src={att.url}
+                          alt={att.name}
+                          className="w-full h-full object-cover transition-transform duration-200 group-hover/img:scale-105"
+                          loading="lazy"
+                        />
+                      </div>
+                      <div
+                        className={`px-2.5 py-1.5 text-[11px] truncate flex items-center justify-between gap-1.5 ${
+                          isUser ? 'bg-black/30 text-white/95' : 'bg-cozy-subtle/90 text-cozy-text'
+                        }`}
+                      >
+                        <span className="truncate font-medium">{att.name}</span>
+                        <span className="opacity-70 text-[10px] shrink-0 font-mono">
+                          {formatFileSize(att.size)}
+                        </span>
+                      </div>
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="p-2 rounded-full bg-black/60 text-white shadow-md">
+                          <ZoomIn className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Code & Document File Cards */}
+              {otherAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {otherAttachments.map((att) => {
+                    const isCodeOrText = isCodeOrTextAttachment(att);
+                    return (
+                      <div
+                        key={att.id || att.path}
+                        onClick={() => {
+                          if (isCodeOrText) {
+                            onPreviewFile(att);
+                          }
+                        }}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border transition-all text-xs select-none ${
+                          isCodeOrText ? 'cursor-pointer' : ''
+                        } ${
+                          isUser
+                            ? 'bg-white/15 hover:bg-white/25 border-white/25 text-white shadow-soft-sm'
+                            : 'bg-cozy-subtle/90 hover:bg-cozy-surface border-cozy-border/80 text-cozy-text shadow-soft-sm'
+                        }`}
+                        title={isCodeOrText ? `Preview ${att.name}` : att.name}
+                      >
+                        <div
+                          className={`p-1.5 rounded-lg shrink-0 ${
+                            isUser ? 'bg-white/20 text-white' : 'bg-cozy-surface border border-cozy-border text-rose-500 shadow-soft-sm'
+                          }`}
+                        >
+                          {getFileIcon(att, 'w-4 h-4')}
+                        </div>
+                        <div className="flex flex-col min-w-0 pr-1 text-left">
+                          <span className="font-semibold truncate max-w-[140px] sm:max-w-[200px] leading-tight">
+                            {att.name}
+                          </span>
+                          <span className={`text-[10px] font-mono leading-tight ${isUser ? 'text-white/75' : 'text-cozy-muted'}`}>
+                            {formatFileSize(att.size)}
+                          </span>
+                        </div>
+
+                        <div className="ml-auto flex items-center gap-1 shrink-0">
+                          {isCodeOrText ? (
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${
+                                isUser
+                                  ? 'bg-white/20 text-white hover:bg-white/30'
+                                  : 'bg-rose-500/10 text-rose-500 hover:bg-rose-500/20'
+                              }`}
+                            >
+                              <Eye className="w-3 h-3" />
+                              Preview
+                            </span>
+                          ) : (
+                            <a
+                              href={`${att.url}?download=1`}
+                              download={att.name}
+                              onClick={(e) => e.stopPropagation()}
+                              className={`p-1 rounded-lg transition-colors ${
+                                isUser ? 'hover:bg-white/20 text-white' : 'hover:bg-cozy-border/60 text-cozy-muted hover:text-cozy-text'
+                              }`}
+                              title="Download file"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

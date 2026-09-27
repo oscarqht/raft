@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
-  Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical
+  Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
+  Paperclip, Loader2, AlertCircle
 } from 'lucide-react';
-import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill } from '../types';
+import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment } from '../types';
 import { ChatMessageList } from './ChatMessageList';
-import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels, getSkills } from '../api';
+import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels, getSkills, uploadTaskAttachments } from '../api';
+import {
+  formatFileSize,
+  getFileIcon,
+  isImageAttachment,
+} from './AttachmentModals';
 import {
   getCachedChats,
   setCachedChats,
@@ -72,6 +78,13 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   // Mobile actions dropdown menu state
   const [showMobileActionsMenu, setShowMobileActionsMenu] = useState(false);
+
+  // Attachments state
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mobileActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,6 +97,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMobileActionsMenu]);
+
+  // Listen for externally added pending attachments (e.g. from Preview Annotation)
+  useEffect(() => {
+    const handleExternalAttachments = (e: Event) => {
+      const customEvent = e as CustomEvent<FileAttachment[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail) && customEvent.detail.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...customEvent.detail]);
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 80);
+      }
+    };
+    window.addEventListener('add-pending-attachments', handleExternalAttachments);
+    return () => window.removeEventListener('add-pending-attachments', handleExternalAttachments);
+  }, []);
 
   // Skills autocompletion state
   const [skills, setSkills] = useState<AgentSkill[]>([]);
@@ -497,20 +525,90 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   };
 
+  const handleUploadFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    if (pendingAttachments.length + fileArray.length > 10) {
+      setUploadError('Maximum 10 attachments per message.');
+      return;
+    }
+
+    for (const file of fileArray) {
+      if (file.size > 50 * 1024 * 1024) {
+        setUploadError(`File "${file.name}" exceeds the 50MB limit.`);
+        return;
+      }
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const uploaded = await uploadTaskAttachments(task.id, fileArray);
+      setPendingAttachments((prev) => [...prev, ...uploaded]);
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to upload attachment(s)');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      handleUploadFiles(e.clipboardData.files);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleUploadFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleRemoveAttachment = (id: string) => {
+    setPendingAttachments((prev) => prev.filter((att) => att.id !== id));
+  };
+
   const handleSendMessage = () => {
-    if (!inputPrompt.trim() || !activeChatId || !ws || isStreaming) return;
-    const prompt = inputPrompt.trim();
+    const hasText = Boolean(inputPrompt.trim());
+    const hasAttachments = pendingAttachments.length > 0;
+    if ((!hasText && !hasAttachments) || !activeChatId || !ws || isStreaming || isUploading) return;
+    const prompt = inputPrompt.trim() || 'Please inspect the attached file(s).';
     const newMsgId =
       typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const now = Date.now();
 
+    const currentAttachments = [...pendingAttachments];
+
     const optimisticUserMessage: ChatMessage = {
       id: newMsgId,
       session_id: activeChatId,
       role: 'user',
       content: prompt,
+      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
       timestamp: now,
     };
 
@@ -526,6 +624,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setMessages(updatedMessages);
     setCachedMessages(activeChatId, updatedMessages);
     setInputPrompt('');
+    setPendingAttachments([]);
+    setUploadError(null);
     setIsStreaming(true);
     setStreamingChunk('');
 
@@ -535,6 +635,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         sessionId: activeChatId,
         messageId: newMsgId,
         prompt,
+        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
         agentCli: tabCli,
         model: tabModel,
         thinkingEffort: tabEffort,
@@ -745,10 +846,26 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         messages={messages}
         liveStreamingChunk={streamingChunk}
         isStreaming={isStreaming}
+        taskId={task.id}
       />
       <div ref={messagesEndRef} />
       {/* Input Area */}
-      <div className="p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-surface/50 backdrop-blur-md">
+      <div
+        className="relative p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-surface/50 backdrop-blur-md"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drag and Drop Overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-rose-500/15 backdrop-blur-md border-2 border-dashed border-rose-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
+            <div className="p-3.5 rounded-2xl bg-cozy-surface shadow-xl text-rose-500 mb-2 border border-rose-400/30">
+              <UploadCloud className="w-8 h-8 animate-bounce text-rose-500" />
+            </div>
+            <p className="text-sm font-semibold text-cozy-text">Drop files to attach to this message</p>
+            <p className="text-xs text-cozy-muted mt-1">Images, code, documents up to 50MB (max 10 files)</p>
+          </div>
+        )}
         {/* Agent / Model / Effort Selector (collapsible above editor) */}
         {showConfig ? (
           <div className="mb-3 p-3.5 rounded-2xl bg-cozy-subtle/90 border border-cozy-border/80 shadow-soft-sm transition-all space-y-2.5">
@@ -843,7 +960,100 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             </button>
           </div>
         )}
+
+        {/* Upload Error Banner */}
+        {uploadError && (
+          <div className="mb-2.5 p-2 px-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-500 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{uploadError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setUploadError(null)}
+              className="p-1 hover:bg-rose-500/20 rounded-md transition-colors"
+              title="Dismiss error"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Pending Attachments List */}
+        {(pendingAttachments.length > 0 || isUploading) && (
+          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin">
+            {pendingAttachments.map((att) => {
+              const isImg = isImageAttachment(att);
+              return (
+                <div
+                  key={att.id}
+                  className="group relative flex items-center gap-2 pl-2 pr-1.5 py-1.5 rounded-xl bg-cozy-subtle border border-cozy-border/80 shadow-soft-sm text-xs text-cozy-text shrink-0 max-w-[220px]"
+                >
+                  {isImg ? (
+                    <img
+                      src={att.url}
+                      alt={att.name}
+                      className="w-7 h-7 object-cover rounded-lg border border-cozy-border shrink-0 bg-black/10"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-lg bg-cozy-surface border border-cozy-border flex items-center justify-center text-rose-500 shrink-0">
+                      {getFileIcon(att, 'w-3.5 h-3.5')}
+                    </div>
+                  )}
+                  <div className="flex flex-col min-w-0 pr-1">
+                    <span className="font-medium truncate text-[11px] leading-tight">
+                      {att.name}
+                    </span>
+                    <span className="text-[10px] text-cozy-muted font-mono leading-tight">
+                      {formatFileSize(att.size)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAttachment(att.id)}
+                    className="p-1 rounded-md text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-colors shrink-0 ml-auto"
+                    title="Remove attachment"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+
+            {isUploading && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-500 text-xs shrink-0 animate-pulse font-medium">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Uploading...</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="relative flex items-end rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-rose-400/60 focus-within:ring-2 focus-within:ring-rose-400/20 shadow-soft-sm transition-all p-2.5">
+          {/* Hidden File Picker Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleUploadFiles(e.target.files);
+              }
+            }}
+          />
+
+          {/* Paperclip Button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isStreaming || isUploading}
+            className="p-2 mb-0.5 rounded-xl text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
+            title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
+
           {/* Skills Autocompletion Popup */}
           {showSkillsPopup && (
             <div
@@ -953,6 +1163,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               checkSlashTrigger(target.value, target.selectionStart);
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`}
             rows={2}
             className="flex-1 bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1 leading-relaxed"
@@ -970,7 +1181,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             ) : (
               <button
                 onClick={handleSendMessage}
-                disabled={!inputPrompt.trim()}
+                disabled={(!inputPrompt.trim() && pendingAttachments.length === 0) || isUploading}
                 className="p-2.5 rounded-full bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-35 disabled:hover:bg-rose-500 transition-all shadow-glow-peach"
                 title="Send message"
               >

@@ -67,12 +67,22 @@ export interface ChatSession {
   updated_at: number;
 }
 
+export interface FileAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  path: string;
+  url: string;
+}
+
 export interface ChatMessage {
   id: string;
   session_id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   metadata?: string | null;
+  attachments?: FileAttachment[];
   timestamp: number;
 }
 

@@ -205,7 +205,16 @@ export const TaskPage: React.FC<TaskPageProps> = ({
               onOpenScripts={() => setIsRunScriptOpen(true)}
             />
           }
-          right={<PreviewPane task={task} ws={ws} />}
+          right={
+            <PreviewPane
+              task={task}
+              ws={ws}
+              onAttachToChat={(attachments) => {
+                window.dispatchEvent(new CustomEvent('add-pending-attachments', { detail: attachments }));
+                setMobileTab('chat');
+              }}
+            />
+          }
         />
 
         {/* Floating Bottom-Right Script Dock */}

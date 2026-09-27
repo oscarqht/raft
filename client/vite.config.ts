@@ -57,7 +57,7 @@ const host = resolveHost();
 export default defineConfig({
   plugins: [react()],
   server: {
-    host,
+    host: true,
     port: 5180,
     proxy: {
       '/api': {
