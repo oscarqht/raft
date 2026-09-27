@@ -111,6 +111,8 @@ export function getCrossPlatformEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
     PATH: newPath,
+    PYTHONUNBUFFERED: '1',
+    FORCE_COLOR: '0',
   };
 }
 
@@ -990,6 +992,7 @@ export function spawnAgentCli(
 
   let lineBuffer = '';
   let hasStreamedDeltas = false;
+  let lastReportedConversationId: string | null = null;
 
   proc.stdout?.on('data', (data: Buffer) => {
     lineBuffer += data.toString('utf-8');
@@ -1022,7 +1025,8 @@ export function spawnAgentCli(
             parsed.result?.conversation_id ||
             parsed.result?.session_id;
 
-          if (detectedConversationId) {
+          if (detectedConversationId && detectedConversationId !== lastReportedConversationId) {
+            lastReportedConversationId = detectedConversationId;
             onEvent({
               type: 'status',
               content: '',
