@@ -134,19 +134,19 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-cozy-text">Submit Changes</h3>
               <p className="text-xs text-cozy-muted mt-0.5">
-                Commit & push <span className="font-mono text-rose-500 font-semibold">{task.branch}</span> to remote origin
+                Commit & push <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{task.branch}</span> to remote origin
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -158,7 +158,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           <div>
             <div className="flex items-center justify-between text-xs text-cozy-muted mb-2">
               <span className="font-medium text-cozy-text flex items-center gap-1.5">
-                <FileCode className="w-3.5 h-3.5 text-rose-400" />
+                <FileCode className="w-3.5 h-3.5 text-teal-500" />
                 Changed Files ({totalChanges})
               </span>
             </div>
@@ -273,7 +273,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
                         hasUserEditedRef.current = true;
                         setCommitDetails('');
                       }}
-                      className="text-[10px] text-cozy-muted hover:text-rose-400 transition-colors"
+                      className="text-[10px] text-cozy-muted hover:text-teal-500 transition-colors"
                     >
                       Clear details
                     </button>
@@ -312,7 +312,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
 
           {isSuccess !== null && (
             <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-              isSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'
+              isSuccess ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border border-red-500/20 text-red-500'
             }`}>
               {isSuccess ? (
                 <>
@@ -343,7 +343,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             onClick={handleSubmit}
             disabled={isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim())}
             title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-peach cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-ocean cursor-pointer"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>

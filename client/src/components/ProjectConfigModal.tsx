@@ -275,8 +275,8 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
-              <Sliders className="w-4 h-4 text-rose-500" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
+              <Sliders className="w-4 h-4 text-teal-500" />
             </div>
             <div className="min-w-0">
               <h3 className="text-base font-bold text-cozy-text flex items-center gap-2">
@@ -292,7 +292,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -302,17 +302,17 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
           {/* Error Banner */}
           {errorMessage && (
-            <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-2.5 text-xs text-rose-400 animate-in fade-in">
+            <div className="p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center gap-2.5 text-xs text-red-500 animate-in fade-in">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
           {/* AI Auto-Discovery Card */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-500/10 via-amber-500/5 to-transparent border border-rose-400/20 text-xs shadow-soft-sm">
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-cyan-500/5 to-transparent border border-teal-400/20 text-xs shadow-soft-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center shrink-0 text-rose-500">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-500">
                   <Sparkles className="w-4 h-4" />
                 </div>
                 <div>
@@ -328,7 +328,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   <button
                     type="button"
                     disabled
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500/50 text-white cursor-wait"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500/50 text-white cursor-wait"
                   >
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                     <span>Scanning...</span>
@@ -337,7 +337,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   <button
                     type="button"
                     onClick={triggerDiscovery}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
                     <span>{scanCompleted || scanFailed ? 'Re-scan with AI' : 'Run AI Discovery'}</span>
@@ -750,7 +750,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                           onClick={() => {
                             setCustomScripts((prev) => prev.filter((item) => item.id !== s.id));
                           }}
-                          className="p-1 text-cozy-muted hover:text-rose-400 rounded hover:bg-rose-500/10"
+                          className="p-1 text-cozy-muted hover:text-red-500 rounded hover:bg-red-500/10"
                           title="Delete"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -772,7 +772,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                 <Check className="w-3.5 h-3.5" /> Settings saved successfully!
               </span>
             ) : isScanning ? (
-              <span className="text-rose-500 flex items-center gap-1.5 font-medium">
+              <span className="text-teal-600 dark:text-teal-400 flex items-center gap-1.5 font-medium">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Running discovery agent...
               </span>
             ) : (
@@ -793,7 +793,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
               type="button"
               onClick={handleSave}
               disabled={isSaving || !name.trim()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white transition-all shadow-glow-peach cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white transition-all shadow-glow-ocean cursor-pointer"
             >
               {saveSuccess ? (
                 <>

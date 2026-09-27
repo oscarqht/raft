@@ -125,7 +125,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
               <Terminal className="w-5 h-5" />
             </div>
             <div>
@@ -135,7 +135,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
           </div>
           <button
             type="button"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
             onClick={onClose}
           >
             <X className="w-4 h-4" />
@@ -150,7 +150,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
           </p>
 
           {error && (
-            <div className="flex items-center gap-2 p-3.5 text-xs bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl shadow-soft-sm">
+            <div className="flex items-center gap-2 p-3.5 text-xs bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl shadow-soft-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -158,7 +158,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
 
           {/* Form when adding or editing */}
           {editingId ? (
-            <div className="p-4 sm:p-5 bg-cozy-subtle/70 border border-rose-400/30 rounded-2xl space-y-3.5 shadow-soft-sm">
+            <div className="p-4 sm:p-5 bg-cozy-subtle/70 border border-teal-400/30 rounded-2xl space-y-3.5 shadow-soft-sm">
               <div className="text-xs font-semibold text-cozy-text">
                 {editingId === 'new' ? 'Add New Script' : 'Edit Script'}
               </div>
@@ -171,7 +171,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
                   placeholder="e.g. App Dev Server"
-                  className="w-full px-4 py-2.5 text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full px-4 py-2.5 text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-teal-400 shadow-soft-sm"
                   autoFocus
                 />
               </div>
@@ -184,7 +184,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
                   value={commandInput}
                   onChange={(e) => setCommandInput(e.target.value)}
                   placeholder="e.g. npm run app:dev"
-                  className="w-full px-4 py-2.5 text-xs font-mono bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full px-4 py-2.5 text-xs font-mono bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-teal-400 shadow-soft-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -204,7 +204,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
                 </button>
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-semibold text-white bg-rose-500 hover:bg-rose-600 transition-all shadow-glow-peach disabled:opacity-50 cursor-pointer"
+                  className="flex items-center gap-1.5 px-5 py-2 rounded-full text-xs font-semibold text-white bg-teal-500 hover:bg-teal-600 transition-all shadow-glow-ocean disabled:opacity-50 cursor-pointer"
                   onClick={handleSaveItem}
                   disabled={isSaving}
                 >
@@ -217,7 +217,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
             <div className="flex justify-end">
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold text-white bg-rose-500 hover:bg-rose-600 shadow-glow-peach transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold text-white bg-teal-500 hover:bg-teal-600 shadow-glow-ocean transition-all cursor-pointer"
                 onClick={handleStartAdd}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -236,7 +236,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
               items.map((script) => (
                 <div
                   key={script.id}
-                  className="flex items-center justify-between p-3.5 bg-cozy-subtle/40 border border-cozy-border/70 rounded-2xl group hover:border-rose-400/30 hover:shadow-soft-sm transition-all"
+                  className="flex items-center justify-between p-3.5 bg-cozy-subtle/40 border border-cozy-border/70 rounded-2xl group hover:border-teal-400/30 hover:shadow-soft-sm transition-all"
                 >
                   <div className="min-w-0 flex-1 pr-3">
                     <div className="font-semibold text-xs text-cozy-text truncate">
@@ -258,7 +258,7 @@ export const ManageScriptsModal: React.FC<ManageScriptsModalProps> = ({
                     </button>
                     <button
                       type="button"
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
                       onClick={() => handleDeleteItem(script.id)}
                       title="Delete script"
                       disabled={isSaving || editingId !== null}

@@ -50,12 +50,12 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => onNavigate?.('home')}
           className="flex items-center space-x-2.5 text-cozy-text font-semibold hover:opacity-90 transition-all shrink-0 group"
         >
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center overflow-hidden shrink-0 shadow-soft-sm group-hover:scale-105 transition-transform">
+          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-soft-sm group-hover:scale-105 transition-transform">
             <img src="/logo.png" alt="Raft logo" className="w-6 h-6 object-contain drop-shadow-sm" />
           </div>
           <span className="text-lg tracking-tight font-semibold text-cozy-text flex items-center gap-1.5">
             Raft
-            <Sparkles className="w-4 h-4 text-rose-400 fill-rose-400/20 inline animate-pulse" />
+            <Sparkles className="w-4 h-4 text-teal-400 fill-teal-400/20 inline animate-pulse" />
           </span>
         </Link>
 
@@ -65,9 +65,9 @@ export const Header: React.FC<HeaderProps> = ({
             <Link
               to={`/projects/${currentPath.projectId}`}
               onClick={() => onNavigate?.('project', { projectId: currentPath.projectId })}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-rose-400/30 text-cozy-text hover:text-rose-500 transition-all max-w-[120px] sm:max-w-[200px] truncate shadow-soft-sm text-xs font-medium"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-all max-w-[120px] sm:max-w-[200px] truncate shadow-soft-sm text-xs font-medium"
             >
-              <FolderGit2 className="w-3.5 h-3.5 text-rose-400 shrink-0 hidden sm:inline" />
+              <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0 hidden sm:inline" />
               <span className="truncate">{currentPath.projectName}</span>
             </Link>
           </div>
@@ -80,16 +80,16 @@ export const Header: React.FC<HeaderProps> = ({
               type="button"
               onClick={onEditTask}
               disabled={!onEditTask}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-rose-400/30 transition-all text-left shadow-soft-sm text-xs font-medium ${
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium ${
                 onEditTask ? 'group cursor-pointer' : 'cursor-default'
               }`}
               title={onEditTask ? 'Click to edit task details' : undefined}
             >
-              <span className="text-cozy-text font-medium max-w-[100px] sm:max-w-[220px] truncate group-hover:text-rose-500">
+              <span className="text-cozy-text font-medium max-w-[100px] sm:max-w-[220px] truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
                 {currentPath.taskName}
               </span>
               {onEditTask && (
-                <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-rose-400 transition-opacity shrink-0 hidden sm:inline" />
+                <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-teal-400 transition-opacity shrink-0 hidden sm:inline" />
               )}
             </button>
           </div>
@@ -108,11 +108,11 @@ export const Header: React.FC<HeaderProps> = ({
           <Link
             to="/settings"
             onClick={() => onNavigate?.('settings')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-rose-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
             title="Active AI Agent CLI"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-glow-mint"></span>
-            <span className="font-semibold text-rose-500">{settings.agent_cli}</span>
+            <span className="w-2 h-2 rounded-full bg-teal-400 shadow-glow-ocean"></span>
+            <span className="font-semibold text-teal-600 dark:text-teal-400">{settings.agent_cli}</span>
             <span className="text-cozy-border/80 hidden sm:inline">•</span>
             <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
           </Link>
@@ -121,7 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
         <Link
           to="/settings"
           onClick={() => onNavigate?.('settings')}
-          className="w-9 h-9 rounded-full bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/70 hover:border-rose-400/30 shadow-soft-sm flex items-center justify-center text-cozy-muted hover:text-rose-500 transition-all"
+          className="w-9 h-9 rounded-full bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/70 hover:border-teal-400/30 shadow-soft-sm flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all"
           title="Settings"
         >
           <SettingsIcon className="w-4 h-4" />

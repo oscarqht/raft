@@ -313,7 +313,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
               <button
                 onClick={onClose}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all cursor-pointer"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all cursor-pointer"
                 title="Close (Esc)"
               >
                 <X className="w-4 h-4" />
@@ -327,7 +327,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 onClick={() => setActiveTab('existing')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'existing'
-                    ? 'bg-rose-500 text-white shadow-soft-sm'
+                    ? 'bg-teal-500 text-white shadow-soft-sm'
                     : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
                 }`}
               >
@@ -340,7 +340,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 onClick={() => setActiveTab('clone')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'clone'
-                    ? 'bg-rose-500 text-white shadow-soft-sm'
+                    ? 'bg-teal-500 text-white shadow-soft-sm'
                     : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
                 }`}
               >
@@ -353,7 +353,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 onClick={() => setActiveTab('create')}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'create'
-                    ? 'bg-rose-500 text-white shadow-soft-sm'
+                    ? 'bg-teal-500 text-white shadow-soft-sm'
                     : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
                 }`}
               >
@@ -390,7 +390,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
               {/* Account Selection Bar */}
               <div className="p-4 rounded-2xl bg-cozy-surface border border-cozy-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-soft-sm">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-400/20 flex items-center justify-center text-rose-500 shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-teal-500/10 border border-teal-400/20 flex items-center justify-center text-teal-500 shrink-0">
                     {selectedAccount?.provider === 'gitlab' ? (
                       <GitBranch className="w-4 h-4" />
                     ) : (
@@ -412,7 +412,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       setSelectedAccountId(e.target.value);
                       if (!e.target.value) setCloneMode('url');
                     }}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cozy-subtle border border-cozy-border text-cozy-text focus:outline-none focus:border-rose-400 cursor-pointer"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cozy-subtle border border-cozy-border text-cozy-text focus:outline-none focus:border-teal-400 cursor-pointer"
                   >
                     <option value="">No linked account (Public Git)</option>
                     {gitAccounts.map((acc) => (
@@ -432,7 +432,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     onClick={() => setCloneMode('account')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       cloneMode === 'account'
-                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-400/30'
+                        ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-400/30'
                         : 'text-cozy-muted hover:text-cozy-text'
                     }`}
                   >
@@ -443,7 +443,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     onClick={() => setCloneMode('url')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       cloneMode === 'url'
-                        ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-400/30'
+                        ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-400/30'
                         : 'text-cozy-muted hover:text-cozy-text'
                     }`}
                   >
@@ -462,14 +462,14 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       value={repoSearch}
                       onChange={(e) => setRepoSearch(e.target.value)}
                       placeholder="Search remote repositories..."
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text"
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text"
                     />
                   </div>
 
                   <div className="border border-cozy-border rounded-2xl bg-cozy-surface overflow-hidden max-h-48 overflow-y-auto divide-y divide-cozy-border/50">
                     {isLoadingRepos ? (
                       <div className="p-6 text-center text-xs text-cozy-muted flex items-center justify-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                        <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
                         <span>Loading repositories from {selectedAccount?.provider}...</span>
                       </div>
                     ) : filteredRepos.length === 0 ? (
@@ -485,7 +485,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                             onClick={() => handleSelectRemoteRepo(repo)}
                             className={`p-3 flex items-center justify-between gap-3 cursor-pointer transition-all ${
                               isSelected
-                                ? 'bg-rose-500/10 text-cozy-text font-medium'
+                                ? 'bg-teal-500/10 text-cozy-text font-medium'
                                 : 'hover:bg-cozy-subtle/60 text-cozy-text'
                             }`}
                           >
@@ -515,7 +515,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                               type="button"
                               className={`px-2.5 py-1 rounded-lg text-xs font-semibold shrink-0 transition-all ${
                                 isSelected
-                                  ? 'bg-rose-500 text-white'
+                                  ? 'bg-teal-500 text-white'
                                   : 'bg-cozy-subtle text-cozy-muted hover:text-cozy-text'
                               }`}
                             >
@@ -534,7 +534,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 {/* Git URL Field */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-cozy-text">
-                    Git Repository URL <span className="text-rose-500">*</span>
+                    Git Repository URL <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -543,7 +543,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     placeholder="https://github.com/owner/repository.git"
                     required
                     disabled={isCloning}
-                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60"
+                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60"
                   />
                 </div>
 
@@ -552,7 +552,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-cozy-text">
-                        Destination Parent Folder <span className="text-rose-500">*</span>
+                        Destination Parent Folder <span className="text-red-500">*</span>
                       </label>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -563,7 +563,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                         placeholder="/Users/username/Projects"
                         required
                         disabled={isCloning}
-                        className="flex-1 px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60 truncate"
+                        className="flex-1 px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60 truncate"
                       />
                       <button
                         type="button"
@@ -578,7 +578,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-cozy-text">
-                      Folder Name <span className="text-rose-500">*</span>
+                      Folder Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -587,7 +587,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       placeholder="repo-folder"
                       required
                       disabled={isCloning}
-                      className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60"
+                      className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60"
                     />
                   </div>
                 </div>
@@ -595,7 +595,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 {/* Path preview */}
                 {parentPath && cloneFolderName && (
                   <div className="p-2.5 rounded-xl bg-cozy-subtle/50 border border-cozy-border/60 text-xs text-cozy-muted flex items-center gap-2">
-                    <Folder className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <Folder className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                     <span className="text-[11px] font-mono truncate">
                       Will clone to: <strong className="text-cozy-text">{parentPath}/{cloneFolderName}</strong>
                     </span>
@@ -607,7 +607,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-center justify-between text-xs text-cozy-muted">
                       <span className="flex items-center gap-1.5 font-bold">
-                        <Terminal className="w-3.5 h-3.5 text-rose-500" />
+                        <Terminal className="w-3.5 h-3.5 text-teal-500" />
                         Clone Progress
                       </span>
                       {isCloning && (
@@ -628,7 +628,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
                 {/* Error Banner */}
                 {cloneError && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span className="truncate">{cloneError}</span>
                   </div>
@@ -656,7 +656,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                   <button
                     type="submit"
                     disabled={isCloning || !cloneUrl.trim() || !cloneFolderName.trim()}
-                    className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all disabled:opacity-50 shadow-glow-peach cursor-pointer"
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all disabled:opacity-50 shadow-glow-ocean cursor-pointer"
                   >
                     {isCloning ? (
                       <>
@@ -682,7 +682,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 {/* Project Name */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-cozy-text">
-                    Project Name <span className="text-rose-500">*</span>
+                    Project Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -691,14 +691,14 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     placeholder="my-new-application"
                     required
                     disabled={isCreating}
-                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60"
+                    className="w-full px-3.5 py-2.5 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60"
                   />
                 </div>
 
                 {/* Destination Parent Directory */}
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-cozy-text">
-                    Destination Parent Directory <span className="text-rose-500">*</span>
+                    Destination Parent Directory <span className="text-red-500">*</span>
                   </label>
                   <div className="flex items-center gap-1.5">
                     <input
@@ -708,7 +708,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       placeholder="/Users/username/Projects"
                       required
                       disabled={isCreating}
-                      className="flex-1 px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60 truncate"
+                      className="flex-1 px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60 truncate"
                     />
                     <button
                       type="button"
@@ -732,7 +732,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                     onChange={(e) => setNewDefaultBranch(e.target.value)}
                     placeholder="main"
                     disabled={isCreating}
-                    className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text disabled:opacity-60"
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text disabled:opacity-60"
                   />
                 </div>
 
@@ -740,7 +740,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                 {/* Path preview */}
                 {parentPath && newProjectName && (
                   <div className="p-2.5 rounded-xl bg-cozy-subtle/50 border border-cozy-border/60 text-xs text-cozy-muted flex items-center gap-2">
-                    <Folder className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                    <Folder className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                     <span className="text-[11px] font-mono truncate">
                       Will create repository in: <strong className="text-cozy-text">{parentPath}/{newProjectName}</strong>
                     </span>
@@ -749,7 +749,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
 
                 {/* Error Banner */}
                 {createError && (
-                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span className="truncate">{createError}</span>
                   </div>
@@ -769,7 +769,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                   <button
                     type="submit"
                     disabled={isCreating || !newProjectName.trim()}
-                    className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all disabled:opacity-50 shadow-glow-peach cursor-pointer"
+                    className="flex items-center gap-2 px-5 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all disabled:opacity-50 shadow-glow-ocean cursor-pointer"
                   >
                     {isCreating ? (
                       <>

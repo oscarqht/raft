@@ -732,7 +732,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
       <div className="preview-annotation-bar relative shrink-0 h-12 z-50 flex items-center justify-between px-4 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 shadow-sm pointer-events-auto">
         {/* Left: Title & Dimensions */}
         <div className="flex items-center space-x-2.5">
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200/60 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-teal-50 dark:bg-teal-950/50 border border-teal-200/60 dark:border-teal-900/50 text-teal-600 dark:text-teal-400 text-xs font-semibold">
             <Camera className="w-3.5 h-3.5" />
             <span>Annotate Preview</span>
           </div>
@@ -808,7 +808,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             onClick={handleAttachToChat}
             disabled={isAttaching}
             title="Attach to Chat (⌘↵)"
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-medium text-xs shadow-sm shadow-rose-500/25 transition-all disabled:opacity-60 cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white font-medium text-xs shadow-sm shadow-teal-500/25 transition-all disabled:opacity-60 cursor-pointer"
           >
             {isAttaching ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -816,7 +816,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
               <Paperclip className="w-3.5 h-3.5" />
             )}
             <span>{isAttaching ? 'Attaching...' : 'Attach to Chat'}</span>
-            <span className="hidden sm:inline-block ml-0.5 text-[10px] text-rose-200">⌘↵</span>
+            <span className="hidden sm:inline-block ml-0.5 text-[10px] text-teal-200">⌘↵</span>
           </button>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />

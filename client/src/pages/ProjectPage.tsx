@@ -144,10 +144,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   if (error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <p className="text-rose-400 text-sm mb-4">{error}</p>
+        <p className="text-red-500 text-sm mb-4">{error}</p>
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Projects</span>
@@ -170,7 +170,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       <div className="mb-6 flex items-center justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-rose-400/40 text-xs font-medium text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-teal-400/40 text-xs font-medium text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Back to Projects</span>
@@ -178,7 +178,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
         <button
           onClick={() => setIsNewTaskOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Start New Task</span>
@@ -189,7 +189,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 mb-8 shadow-soft">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
           <div className="flex items-center space-x-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm shrink-0">
               <FolderGit2 className="w-6 h-6" />
             </div>
             <div className="min-w-0">
@@ -203,10 +203,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => handleOpenConfigModal('discover')}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-400/30 transition-all shadow-soft-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500/10 hover:bg-teal-500/20 text-teal-600 dark:text-teal-400 border border-teal-400/30 transition-all shadow-soft-sm cursor-pointer"
               title="Let AI agent inspect repository and update configuration"
             >
-              <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+              <Sparkles className="w-3.5 h-3.5 text-teal-500" />
               <span>AI Re-discover</span>
             </button>
             <button
@@ -223,19 +223,19 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 pt-5 border-t border-cozy-border/50 text-xs">
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Base Branch"
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-cozy-muted text-[11px] block font-medium">Base Branch</span>
               <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
-            <span className="font-mono text-rose-500 font-semibold">{project.branch_convention || 'main'}</span>
+            <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{project.branch_convention || 'main'}</span>
           </div>
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Dev Command"
           >
             <div className="flex items-center justify-between mb-1">
@@ -249,7 +249,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Port"
           >
             <div className="flex items-center justify-between mb-1">
@@ -261,7 +261,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 cursor-pointer transition-all group relative shadow-soft-sm"
             title="Click to edit Build Command"
           >
             <div className="flex items-center justify-between mb-1">
@@ -275,7 +275,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
           <div
             onClick={() => handleOpenConfigModal('manual')}
-            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-rose-400/40 cursor-pointer transition-all group relative col-span-2 sm:col-span-1 shadow-soft-sm"
+            className="p-3.5 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 cursor-pointer transition-all group relative col-span-2 sm:col-span-1 shadow-soft-sm"
             title="Click to edit Test Command"
           >
             <div className="flex items-center justify-between mb-1">
@@ -302,8 +302,8 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       {/* Tasks Grid */}
       {tasks.length === 0 ? (
         <div className="p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-rose-500/10 via-amber-500/10 to-sky-500/10 border border-rose-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">
-            <GitBranch className="w-6 h-6 text-rose-400" />
+          <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center mb-3.5 shadow-soft-sm">
+            <GitBranch className="w-6 h-6 text-teal-500" />
           </div>
           <h3 className="text-base font-semibold text-cozy-text mb-1">No tasks created yet</h3>
           <p className="text-xs text-cozy-muted max-w-sm mb-5 leading-relaxed">
@@ -311,7 +311,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           </p>
           <button
             onClick={() => setIsNewTaskOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Create First Task</span>
@@ -323,18 +323,18 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
             <div
               key={t.id}
               onClick={() => onSelectTask(t.id, t)}
-              className="group p-5 rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-rose-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
+              className="group p-5 rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex items-center justify-between"
             >
               <div className="flex items-center space-x-3.5 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/10 to-amber-500/10 border border-rose-400/25 flex items-center justify-center shrink-0 shadow-soft-sm">
-                  <GitBranch className="w-4 h-4 text-rose-500" />
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 to-cyan-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 shadow-soft-sm">
+                  <GitBranch className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center space-x-2.5">
-                    <h4 className="text-sm font-semibold text-cozy-text truncate group-hover:text-rose-500 transition-colors">
+                    <h4 className="text-sm font-semibold text-cozy-text truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
                       {t.name}
                     </h4>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-rose-500/10 text-rose-500 border border-rose-400/20 font-medium">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-400/20 font-medium">
                       {t.branch}
                     </span>
                   </div>
@@ -352,7 +352,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
                 <button
                   onClick={(e) => handleOpenEditTask(t, e)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-cozy-subtle transition-all"
                   title="Edit task name and base branch"
                 >
                   <Pencil className="w-4 h-4" />
@@ -360,13 +360,13 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
                 <button
                   onClick={(e) => handleDeleteTask(t.id, e)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-500/10 transition-all"
                   title="Delete task and worktree"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
 
-                <div className="w-8 h-8 rounded-full bg-cozy-subtle flex items-center justify-center text-cozy-muted group-hover:text-rose-500 group-hover:bg-rose-500/10 transition-all">
+                <div className="w-8 h-8 rounded-full bg-cozy-subtle flex items-center justify-center text-cozy-muted group-hover:text-teal-600 dark:group-hover:text-teal-400 group-hover:bg-teal-500/10 transition-all">
                   <ArrowRight className="w-4 h-4" />
                 </div>
               </div>
@@ -380,7 +380,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl p-6 sm:p-7">
             <h3 className="text-base font-bold text-cozy-text mb-1 flex items-center gap-2">
-              <GitBranch className="w-5 h-5 text-rose-500" />
+              <GitBranch className="w-5 h-5 text-teal-600 dark:text-teal-400" />
               Start New Coding Task
             </h3>
             <p className="text-xs text-cozy-muted mb-5 leading-relaxed">
@@ -393,7 +393,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                 <select
                   value={baseBranch}
                   onChange={(e) => setBaseBranch(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400"
                 >
                   {availableBranches.map((b) => (
                     <option key={b} value={b}>
@@ -410,7 +410,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                   value={taskName}
                   onChange={(e) => setTaskName(e.target.value)}
                   placeholder="e.g. auth-flow, fix-search-bar"
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-4 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-rose-400"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-4 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-teal-400"
                   autoFocus
                 />
               </div>
@@ -426,7 +426,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
               <button
                 onClick={handleCreateTask}
                 disabled={isCreating || !taskName.trim()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white transition-all shadow-glow-peach cursor-pointer"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white transition-all shadow-glow-ocean cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>{isCreating ? 'Creating Worktree...' : 'Launch Task'}</span>

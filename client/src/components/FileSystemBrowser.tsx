@@ -206,7 +206,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
         {!embedded && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
                 <FolderGit2 className="w-5 h-5" />
               </div>
               <div>
@@ -219,7 +219,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
 
             <button
               onClick={() => onOpenChange(false)}
-              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all cursor-pointer"
               title="Close (Esc)"
             >
               <X className="w-4 h-4" />
@@ -356,12 +356,12 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
           )}
 
           {error && (
-            <div className="m-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+            <div className="m-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span className="flex-1">{error}</span>
               <button
                 onClick={() => loadPath(data?.parent || undefined)}
-                className="underline hover:text-rose-300 ml-2"
+                className="underline hover:text-red-400 ml-2"
               >
                 Go Back
               </button>
@@ -514,11 +514,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
             <button
               onClick={() => handleSelectPath(currentPath, !!data?.isRepo)}
               disabled={isLoading || !currentPath}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all shadow-glow-peach cursor-pointer ${
-                data?.isRepo
-                  ? 'bg-rose-500 hover:bg-rose-600 text-white'
-                  : 'bg-rose-500 hover:bg-rose-600 text-white'
-              }`}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
             >
               <Check className="w-3.5 h-3.5" />
               <span>
@@ -566,7 +562,7 @@ export const FileSystemBrowser: React.FC<FileSystemBrowserProps> = ({
                 <button
                   onClick={handleConfirmInitGit}
                   disabled={isInitializingGit}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white transition-all shadow-glow-peach cursor-pointer"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-white transition-all shadow-glow-ocean cursor-pointer"
                 >
                   {isInitializingGit ? (
                     <>

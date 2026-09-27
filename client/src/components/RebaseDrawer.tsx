@@ -89,13 +89,13 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
             <div>
               <h3 className="text-base font-bold text-cozy-text">Sync & Rebase Branch</h3>
               <p className="text-xs text-cozy-muted mt-0.5">
-                Rebase <span className="font-mono text-rose-500 font-semibold">{task.branch}</span> on <span className="font-mono text-cozy-muted font-semibold">{task.base_branch}</span>
+                Rebase <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{task.branch}</span> on <span className="font-mono text-cozy-muted font-semibold">{task.base_branch}</span>
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -126,7 +126,7 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
               {isRunning && (
                 <button
                   onClick={handleAbortRebase}
-                  className="px-3.5 py-2 rounded-full text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 border border-rose-400/30 transition-all"
+                  className="px-3.5 py-2 rounded-full text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 transition-all"
                 >
                   Cancel
                 </button>
@@ -140,7 +140,7 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
                     <CheckCircle2 className="w-4 h-4" /> Cleanly Rebased
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-rose-500 font-semibold">
+                  <span className="flex items-center gap-1 text-red-500 font-semibold">
                     <AlertTriangle className="w-4 h-4" /> Rebase Failed
                   </span>
                 )}
@@ -149,7 +149,13 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
           </div>
 
           {statusText && (
-            <div className="text-xs font-mono text-rose-500 bg-rose-500/10 border border-rose-400/20 px-3.5 py-2.5 rounded-2xl shadow-soft-sm">
+            <div className={`text-xs font-mono px-3.5 py-2.5 rounded-2xl shadow-soft-sm ${
+              isSuccess === false
+                ? 'text-red-500 bg-red-500/10 border border-red-500/20'
+                : isSuccess === true
+                ? 'text-emerald-500 bg-emerald-500/10 border border-emerald-400/20'
+                : 'text-teal-600 dark:text-teal-400 bg-teal-500/10 border border-teal-400/20'
+            }`}>
               {statusText}
             </div>
           )}

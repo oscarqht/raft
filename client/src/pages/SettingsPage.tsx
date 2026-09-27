@@ -448,7 +448,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
 
       <div>
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm shrink-0">
             <SettingsIcon className="w-5 h-5" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-cozy-text">
@@ -466,7 +466,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
           <div className="flex items-start justify-between">
             <div>
               <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-rose-500" />
+                <Cpu className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 Default AI Agent CLI
               </h2>
               <p className="text-xs text-cozy-muted mt-1">
@@ -481,7 +481,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
               title="Rescan system PATH to check CLI availability"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-rose-500 ${isCheckingCli ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 text-teal-500 ${isCheckingCli ? 'animate-spin' : ''}`} />
               <span>{isCheckingCli ? 'Checking...' : 'Check PATH'}</span>
             </button>
           </div>
@@ -495,25 +495,25 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   onClick={() => handleSelectCli(c.name)}
                   className={`p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between min-h-[84px] ${
                     isSelected
-                      ? 'bg-rose-500/10 border-rose-400 text-cozy-text shadow-glow-peach/15'
-                      : 'bg-cozy-surface border-cozy-border/80 text-cozy-muted hover:border-rose-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
+                      ? 'bg-teal-500/10 border-teal-400 text-cozy-text shadow-glow-ocean/15'
+                      : 'bg-cozy-surface border-cozy-border/80 text-cozy-muted hover:border-teal-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-bold text-sm capitalize text-cozy-text truncate">{c.name}</span>
                       {isSelected && (
-                        <Check className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                        <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                       )}
                     </div>
                     <span
                       className={`text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold shrink-0 ${
                         c.available
                           ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
-                          : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-400/30'
+                          : 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-400/30'
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-500' : 'bg-red-500'}`} />
                       {c.available ? (c.version ? 'Ready' : 'Ready') : 'Not Installed'}
                     </span>
                   </div>
@@ -536,7 +536,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
               <div className="space-y-1 flex-1">
                 <h3 className="text-sm font-semibold text-cozy-text flex items-center gap-2">
                   <span>{selectedCliInfo?.installGuide?.title || `${agentCli.toUpperCase()} CLI`} is not installed</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20">
                     Required for Agent Tasks
                   </span>
                 </h3>
@@ -559,7 +559,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                 <button
                   type="button"
                   onClick={() => handleSelectCli(fallbackReadyCli.name)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm shrink-0"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm shrink-0"
                 >
                   <span>Switch to {fallbackReadyCli.name}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -571,9 +571,9 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
             <div className="p-4 rounded-xl bg-cozy-surface border border-cozy-border space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-sky-400" />
+                  <Terminal className="w-4 h-4 text-teal-500" />
                   <span className="text-xs font-semibold text-cozy-text">Automated Installation</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20 font-medium">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 font-medium">
                     1-Click
                   </span>
                 </div>
@@ -581,7 +581,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   <button
                     type="button"
                     onClick={() => handleStartInstall(agentCli)}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white shadow-sm transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-sm transition-all"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>Run Install Script</span>
@@ -591,7 +591,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   <button
                     type="button"
                     onClick={handleCancelInstall}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:bg-rose-500/30 transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 transition-all"
                   >
                     <Square className="w-3.5 h-3.5 fill-current" />
                     <span>Cancel Process</span>
@@ -605,7 +605,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   <div className="flex items-center justify-between px-3 py-2 bg-zinc-900 border-b border-zinc-800 text-zinc-400 text-[10px]">
                     <div className="flex items-center gap-2">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 inline-block" />
                         <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 inline-block" />
                       </div>
@@ -613,7 +613,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     </div>
                     <div className="flex items-center gap-2">
                       {isInstallingCli && (
-                        <span className="flex items-center gap-1 text-sky-400">
+                        <span className="flex items-center gap-1 text-teal-400">
                           <RefreshCw className="w-3 h-3 animate-spin" />
                           <span>Streaming...</span>
                         </span>
@@ -625,7 +625,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         </span>
                       )}
                       {installSuccess === false && (
-                        <span className="flex items-center gap-1 text-rose-400 font-medium">
+                        <span className="flex items-center gap-1 text-red-400 font-medium">
                           <AlertTriangle className="w-3 h-3" />
                           <span>Installation Failed</span>
                         </span>
@@ -758,7 +758,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     Default Model
                   </h2>
                   <p className="text-xs text-cozy-muted mt-1">
-                    Dynamically discovered options for <span className="font-semibold text-rose-500 uppercase">{agentCli}</span> CLI.
+                    Dynamically discovered options for <span className="font-semibold text-teal-600 dark:text-teal-400 uppercase">{agentCli}</span> CLI.
                   </p>
                 </div>
 
@@ -769,7 +769,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
                   title="Query agent CLI to discover latest available models and reasoning options"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 text-rose-500 ${isDiscovering ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 text-teal-500 ${isDiscovering ? 'animate-spin' : ''}`} />
                   <span>{isDiscovering ? 'Discovering...' : 'Discover from CLI'}</span>
                 </button>
               </div>
@@ -777,7 +777,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
               {models.length === 0 ? (
                 isDiscovering ? (
                   <div className="p-8 rounded-2xl bg-cozy-subtle/30 border border-cozy-border/70 flex flex-col items-center justify-center gap-3 text-center animate-in fade-in duration-200">
-                    <RefreshCw className="w-5 h-5 text-rose-500 animate-spin" />
+                    <RefreshCw className="w-5 h-5 text-teal-500 animate-spin" />
                     <div className="space-y-0.5">
                       <div className="text-xs font-bold text-cozy-text">
                         Discovering models for {agentCli.toUpperCase()}...
@@ -803,8 +803,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         onClick={() => handleSelectModel(m)}
                         className={`p-4 rounded-2xl border cursor-pointer flex items-center justify-between transition-all ${
                           isSelected
-                            ? 'bg-rose-500/10 border-rose-400/40 text-cozy-text shadow-glow-peach/10 ring-1 ring-rose-400/30'
-                            : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-rose-400/25 hover:shadow-soft-sm'
+                            ? 'bg-teal-500/10 border-teal-400/40 text-cozy-text shadow-glow-ocean/10 ring-1 ring-teal-400/30'
+                            : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-teal-400/25 hover:shadow-soft-sm'
                         }`}
                       >
                         <div className="space-y-1">
@@ -824,7 +824,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                             </div>
                           )}
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-rose-500 shrink-0 ml-3" />}
+                        {isSelected && <Check className="w-4 h-4 text-teal-500 shrink-0 ml-3" />}
                       </div>
                     );
                   })}
@@ -867,8 +867,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         onClick={() => handleSelectEffort(effort.id)}
                         className={`py-3 px-3.5 rounded-2xl text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[60px] ${
                           isSelected
-                            ? 'bg-rose-500 text-white border-rose-500 shadow-glow-peach font-bold'
-                            : 'bg-cozy-surface text-cozy-muted border-cozy-border/80 hover:text-cozy-text hover:border-rose-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
+                            ? 'bg-teal-500 text-white border-teal-500 shadow-glow-ocean font-bold'
+                            : 'bg-cozy-surface text-cozy-muted border-cozy-border/80 hover:text-cozy-text hover:border-teal-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
                         }`}
                         title={effort.description}
                       >
@@ -876,7 +876,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         {effort.description && (
                           <span
                             className={`text-[10px] truncate max-w-full font-normal ${
-                              isSelected ? 'text-rose-100' : 'text-cozy-muted'
+                              isSelected ? 'text-teal-100' : 'text-cozy-muted'
                             }`}
                           >
                             {effort.description}
@@ -896,7 +896,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
-                <Github className="w-4 h-4 text-rose-500" />
+                <Github className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                 Linked Git Accounts
               </h2>
               <p className="text-xs text-cozy-muted mt-1">
@@ -912,7 +912,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   setAccountVerifyError(null);
                   setAccountSuccessMsg(null);
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Link Account</span>
@@ -923,7 +923,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
           {/* List of Connected Accounts */}
           {isLoadingAccounts ? (
             <div className="p-6 rounded-2xl bg-cozy-subtle/30 border border-cozy-border flex items-center justify-center gap-2 text-xs text-cozy-muted">
-              <RefreshCw className="w-4 h-4 animate-spin text-rose-500" />
+              <RefreshCw className="w-4 h-4 animate-spin text-teal-500" />
               <span>Loading linked accounts...</span>
             </div>
           ) : gitAccounts.length === 0 && !isAddAccountOpen ? (
@@ -950,7 +950,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                         className="w-9 h-9 rounded-full object-cover border border-cozy-border shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-full bg-rose-500/10 border border-rose-400/20 flex items-center justify-center text-rose-500 font-bold shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-teal-500/10 border border-teal-400/20 flex items-center justify-center text-teal-600 dark:text-teal-400 font-bold shrink-0">
                         {account.provider === 'github' ? <Github className="w-4 h-4" /> : <GitBranch className="w-4 h-4" />}
                       </div>
                     )}
@@ -971,7 +971,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     type="button"
                     onClick={() => handleDeleteAccount(account.id)}
                     disabled={deletingAccountId === account.id}
-                    className="p-2 rounded-xl text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 border border-transparent hover:border-rose-400/20 transition-all cursor-pointer shrink-0 disabled:opacity-50"
+                    className="p-2 rounded-xl text-cozy-muted hover:text-red-500 hover:bg-red-500/10 border border-transparent hover:border-red-400/20 transition-all cursor-pointer shrink-0 disabled:opacity-50"
                     title="Disconnect account"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -986,7 +986,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
             <form onSubmit={handleVerifyAndLinkAccount} className="p-5 rounded-2xl bg-cozy-subtle/40 border border-cozy-border space-y-4 animate-in fade-in">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-cozy-text uppercase tracking-wider flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5 text-rose-500" />
+                  <Key className="w-3.5 h-3.5 text-teal-500" />
                   Connect Personal Access Token
                 </span>
                 <button
@@ -1008,7 +1008,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   }}
                   className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                     accountProvider === 'github'
-                      ? 'bg-rose-500/15 border-rose-400 text-rose-600 dark:text-rose-300 shadow-soft-sm'
+                      ? 'bg-teal-500/15 border-teal-400 text-teal-600 dark:text-teal-300 shadow-soft-sm'
                       : 'bg-cozy-surface border-cozy-border text-cozy-muted hover:text-cozy-text'
                   }`}
                 >
@@ -1023,7 +1023,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                   }}
                   className={`p-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                     accountProvider === 'gitlab'
-                      ? 'bg-rose-500/15 border-rose-400 text-rose-600 dark:text-rose-300 shadow-soft-sm'
+                      ? 'bg-teal-500/15 border-teal-400 text-teal-600 dark:text-teal-300 shadow-soft-sm'
                       : 'bg-cozy-surface border-cozy-border text-cozy-muted hover:text-cozy-text'
                   }`}
                 >
@@ -1045,7 +1045,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     value={accountHost}
                     onChange={(e) => setAccountHost(e.target.value)}
                     placeholder={accountProvider === 'github' ? 'https://github.com' : 'https://gitlab.com'}
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text"
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text"
                   />
                 </div>
               </div>
@@ -1064,7 +1064,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     }
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[11px] text-rose-500 hover:underline flex items-center gap-1"
+                    className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1"
                   >
                     <span>Generate token</span>
                     <ExternalLink className="w-3 h-3" />
@@ -1078,7 +1078,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                     onChange={(e) => setAccountToken(e.target.value)}
                     placeholder={accountProvider === 'github' ? 'ghp_... or github_pat_...' : 'glpat-...'}
                     required
-                    className="w-full pl-9 pr-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-rose-400 text-cozy-text"
+                    className="w-full pl-9 pr-3 py-2 text-xs font-mono rounded-xl bg-cozy-surface border border-cozy-border focus:outline-none focus:border-teal-400 text-cozy-text"
                   />
                 </div>
                 <p className="text-[11px] text-cozy-muted">
@@ -1090,7 +1090,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
 
               {/* Error and Success states */}
               {accountVerifyError && (
-                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-600 dark:text-rose-400 text-xs flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-600 dark:text-red-400 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span className="truncate">{accountVerifyError}</span>
                 </div>
@@ -1115,7 +1115,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
                 <button
                   type="submit"
                   disabled={isVerifyingAccount || !accountToken.trim()}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
                 >
                   {isVerifyingAccount ? (
                     <>

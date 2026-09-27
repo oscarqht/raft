@@ -699,7 +699,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 onClick={() => setActiveChatId(c.id)}
                 className={`group flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all border shrink-0 ${
                   isActive
-                    ? 'bg-rose-500/10 border-rose-400/40 text-rose-500 shadow-soft-sm font-semibold'
+                    ? 'bg-teal-500/10 border-teal-400/40 text-teal-600 dark:text-teal-400 shadow-soft-sm font-semibold'
                     : 'bg-cozy-subtle/50 border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/80'
                 }`}
               >
@@ -712,7 +712,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     onBlur={() => handleSaveRename(c.id)}
                     onKeyDown={(e) => handleRenameKeyDown(c.id, e)}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-cozy-surface text-cozy-text border border-rose-400 rounded-full px-2 py-0.5 text-xs outline-none w-24"
+                    className="bg-cozy-surface text-cozy-text border border-teal-400 rounded-full px-2 py-0.5 text-xs outline-none w-24"
                     autoFocus
                   />
                 ) : (
@@ -727,7 +727,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleStartRename(c, e)}
-                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-opacity"
+                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-teal-500 transition-opacity"
                       title="Rename chat"
                     >
                       <Pencil className="w-3 h-3" />
@@ -736,7 +736,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleDeleteChat(c.id, e)}
-                        className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-opacity"
+                        className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-red-500 transition-opacity"
                         title="Close chat"
                       >
                         <X className="w-3 h-3" />
@@ -749,7 +749,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           })}
           <button
             onClick={handleCreateChat}
-            className="w-7 h-7 rounded-full text-cozy-muted hover:text-rose-500 bg-cozy-subtle/60 hover:bg-cozy-subtle border border-cozy-border/50 flex items-center justify-center transition-all shrink-0"
+            className="w-7 h-7 rounded-full text-cozy-muted hover:text-teal-500 bg-cozy-subtle/60 hover:bg-cozy-subtle border border-cozy-border/50 flex items-center justify-center transition-all shrink-0"
             title="Open new chat agent tab"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -761,10 +761,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           {onOpenScripts && (
             <button
               onClick={onOpenScripts}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-text hover:border-rose-400/40 hover:text-rose-500 transition-all shadow-soft-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-text hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-400 transition-all shadow-soft-sm"
               title="Run project scripts or custom terminal commands"
             >
-              <Terminal className="w-3.5 h-3.5 text-rose-400" />
+              <Terminal className="w-3.5 h-3.5 text-teal-500" />
               <span>Scripts</span>
             </button>
           )}
@@ -780,7 +780,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
           <button
             onClick={onOpenSubmit}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
             title="Submit changes: commit and push"
           >
             <UploadCloud className="w-3.5 h-3.5" />
@@ -858,9 +858,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       >
         {/* Drag and Drop Overlay */}
         {isDragOver && (
-          <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-rose-500/15 backdrop-blur-md border-2 border-dashed border-rose-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
-            <div className="p-3.5 rounded-2xl bg-cozy-surface shadow-xl text-rose-500 mb-2 border border-rose-400/30">
-              <UploadCloud className="w-8 h-8 animate-bounce text-rose-500" />
+          <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-teal-500/15 backdrop-blur-md border-2 border-dashed border-teal-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
+            <div className="p-3.5 rounded-2xl bg-cozy-surface shadow-xl text-teal-500 mb-2 border border-teal-400/30">
+              <UploadCloud className="w-8 h-8 animate-bounce text-teal-500" />
             </div>
             <p className="text-sm font-semibold text-cozy-text">Drop files to attach to this message</p>
             <p className="text-xs text-cozy-muted mt-1">Images, code, documents up to 50MB (max 10 files)</p>
@@ -871,7 +871,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           <div className="mb-3 p-3.5 rounded-2xl bg-cozy-subtle/90 border border-cozy-border/80 shadow-soft-sm transition-all space-y-2.5">
             <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
               <span className="flex items-center gap-2 text-cozy-text font-semibold">
-                <Sliders className="w-3.5 h-3.5 text-rose-500" />
+                <Sliders className="w-3.5 h-3.5 text-teal-500" />
                 Agent & Model Configuration
               </span>
               <button
@@ -891,7 +891,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 <select
                   value={tabCli}
                   onChange={(e) => handleCliChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400"
+                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400"
                 >
                   {clis.map((c) => (
                     <option key={c.name} value={c.name}>
@@ -906,7 +906,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 <select
                   value={tabModel}
                   onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400 truncate"
+                  className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate"
                 >
                   {availableModels.map((m) => (
                     <option key={m.id} value={m.id}>
@@ -921,7 +921,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 <select
                   value={tabEffort}
                   onChange={(e) => handleEffortChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-rose-400 capitalize"
+                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
                 >
                   {(() => {
                     const current = availableModels.find((m) => m.id === tabModel);
@@ -941,11 +941,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <button
               type="button"
               onClick={() => setShowConfig(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-rose-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all group max-w-full min-w-0"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all group max-w-full min-w-0"
               title="Click to configure agent, model, and reasoning effort"
             >
-              <Sliders className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-              <span className="font-semibold text-rose-500 shrink-0">{tabCli || 'agy'}</span>
+              <Sliders className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+              <span className="font-semibold text-teal-600 dark:text-teal-400 shrink-0">{tabCli || 'agy'}</span>
               <span className="text-cozy-muted/50 shrink-0">·</span>
               <span className="truncate max-w-[130px] sm:max-w-[220px]">
                 {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
@@ -956,14 +956,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   <span className="text-cozy-muted capitalize">{tabEffort}</span>
                 </>
               )}
-              <ChevronDown className="w-3.5 h-3.5 text-cozy-muted group-hover:text-rose-500 ml-0.5 transition-transform" />
+              <ChevronDown className="w-3.5 h-3.5 text-cozy-muted group-hover:text-teal-500 ml-0.5 transition-transform" />
             </button>
           </div>
         )}
 
         {/* Upload Error Banner */}
         {uploadError && (
-          <div className="mb-2.5 p-2 px-3 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-500 text-xs flex items-center justify-between">
+          <div className="mb-2.5 p-2 px-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-500 text-xs flex items-center justify-between">
             <div className="flex items-center gap-1.5 min-w-0">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{uploadError}</span>
@@ -971,7 +971,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <button
               type="button"
               onClick={() => setUploadError(null)}
-              className="p-1 hover:bg-rose-500/20 rounded-md transition-colors"
+              className="p-1 hover:bg-red-500/20 rounded-md transition-colors"
               title="Dismiss error"
             >
               <X className="w-3.5 h-3.5" />
@@ -996,7 +996,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       className="w-7 h-7 object-cover rounded-lg border border-cozy-border shrink-0 bg-black/10"
                     />
                   ) : (
-                    <div className="w-7 h-7 rounded-lg bg-cozy-surface border border-cozy-border flex items-center justify-center text-rose-500 shrink-0">
+                    <div className="w-7 h-7 rounded-lg bg-cozy-surface border border-cozy-border flex items-center justify-center text-teal-500 shrink-0">
                       {getFileIcon(att, 'w-3.5 h-3.5')}
                     </div>
                   )}
@@ -1011,7 +1011,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRemoveAttachment(att.id)}
-                    className="p-1 rounded-md text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-colors shrink-0 ml-auto"
+                    className="p-1 rounded-md text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0 ml-auto"
                     title="Remove attachment"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -1021,7 +1021,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             })}
 
             {isUploading && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-400/30 text-rose-500 text-xs shrink-0 animate-pulse font-medium">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-400/30 text-teal-600 dark:text-teal-400 text-xs shrink-0 animate-pulse font-medium">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Uploading...</span>
               </div>
@@ -1029,7 +1029,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </div>
         )}
 
-        <div className="relative flex items-end rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-rose-400/60 focus-within:ring-2 focus-within:ring-rose-400/20 shadow-soft-sm transition-all p-2.5">
+        <div className="relative flex items-end rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-teal-400/60 focus-within:ring-2 focus-within:ring-teal-400/20 shadow-soft-sm transition-all p-2.5">
           {/* Hidden File Picker Input */}
           <input
             ref={fileInputRef}
@@ -1048,7 +1048,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming || isUploading}
-            className="p-2 mb-0.5 rounded-xl text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
+            className="p-2 mb-0.5 rounded-xl text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
             title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
           >
             <Paperclip className="w-4 h-4" />
@@ -1058,12 +1058,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           {showSkillsPopup && (
             <div
               ref={skillsPopupRef}
-              className="absolute bottom-full left-0 right-0 mb-2.5 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] overflow-hidden z-30 transition-all"
+              className="absolute bottom-full left-0 right-0 mb-2.5 rounded-2xl popup-surface bg-white dark:bg-[#0c1322] overflow-hidden z-30 transition-all border border-cozy-border/60"
             >
               <div className="px-3.5 py-2.5 bg-cozy-subtle/70 border-b border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted">
                 <div className="flex items-center space-x-2 font-medium text-cozy-text">
-                  <Sparkles className="w-4 h-4 text-rose-400" />
-                  <span>Skills & Commands for <span className="text-rose-500 font-semibold uppercase font-mono">{tabCli || 'agy'}</span></span>
+                  <Sparkles className="w-4 h-4 text-teal-500" />
+                  <span>Skills & Commands for <span className="text-teal-600 dark:text-teal-400 font-semibold uppercase font-mono">{tabCli || 'agy'}</span></span>
                 </div>
                 <div className="text-[11px] text-cozy-muted">
                   {filteredSkills.length} available
@@ -1087,16 +1087,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                         case 'plan':
                           return <ListTodo className="w-3.5 h-3.5 text-blue-400" />;
                         case 'grill-me':
-                          return <HelpCircle className="w-3.5 h-3.5 text-rose-400" />;
+                          return <HelpCircle className="w-3.5 h-3.5 text-teal-400" />;
                         case 'learn':
                           return <BookOpen className="w-3.5 h-3.5 text-amber-400" />;
                         case 'review':
-                          return <Sparkles className="w-3.5 h-3.5 text-rose-400" />;
+                          return <Sparkles className="w-3.5 h-3.5 text-teal-400" />;
                         default:
                           if (skill.source === 'workspace') {
                             return <Layers className="w-3.5 h-3.5 text-emerald-400" />;
                           }
-                          return <Terminal className="w-3.5 h-3.5 text-rose-400" />;
+                          return <Terminal className="w-3.5 h-3.5 text-teal-400" />;
                       }
                     };
 
@@ -1110,7 +1110,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                         onMouseEnter={() => setSelectedSkillIndex(idx)}
                         className={`px-3 py-2 cursor-pointer transition-all rounded-xl flex items-center justify-between gap-2.5 ${
                           isSelected
-                            ? 'bg-rose-500/10 text-rose-500 font-medium'
+                            ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 font-medium'
                             : 'hover:bg-cozy-subtle/60 text-cozy-muted hover:text-cozy-text'
                         }`}
                       >
@@ -1118,7 +1118,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 bg-cozy-subtle border border-cozy-border/60">
                             {getSkillIcon()}
                           </div>
-                          <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-rose-500' : 'text-cozy-text'}`}>
+                          <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-teal-600 dark:text-teal-400' : 'text-cozy-text'}`}>
                             {skill.name}
                           </span>
                           {skill.description && (
@@ -1173,7 +1173,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             {isStreaming ? (
               <button
                 onClick={handleAbort}
-                className="p-2.5 rounded-full bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 transition-all"
+                className="p-2.5 rounded-full bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-all"
                 title="Stop generation"
               >
                 <Square className="w-4 h-4 fill-current" />
@@ -1182,7 +1182,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <button
                 onClick={handleSendMessage}
                 disabled={(!inputPrompt.trim() && pendingAttachments.length === 0) || isUploading}
-                className="p-2.5 rounded-full bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-35 disabled:hover:bg-rose-500 transition-all shadow-glow-peach"
+                className="p-2.5 rounded-full bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-35 disabled:hover:bg-teal-500 transition-all shadow-glow-ocean"
                 title="Send message"
               >
                 <Send className="w-4 h-4" />

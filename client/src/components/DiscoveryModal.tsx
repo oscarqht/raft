@@ -139,8 +139,8 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
         {/* Header */}
         <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
-              <Sparkles className="w-5 h-5 text-rose-400" />
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
+              <Sparkles className="w-5 h-5 text-teal-500" />
             </div>
             <div>
               <h3 className="text-base font-bold text-cozy-text">AI Project Auto-Discovery</h3>
@@ -151,7 +151,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -164,7 +164,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
             <div className="flex items-center space-x-2 text-cozy-text font-medium">
               {isScanning ? (
                 <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-teal-500" />
                   <span>AI Agent is inspecting files and scripts in real time...</span>
                 </>
               ) : scanFailed ? (
@@ -184,15 +184,15 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                 <button
                   type="button"
                   onClick={triggerDiscovery}
-                  className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-cozy-surface hover:bg-cozy-subtle text-rose-500 border border-cozy-border/80 transition-all shadow-soft-sm"
+                  className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-cozy-surface hover:bg-cozy-subtle text-teal-600 dark:text-teal-400 border border-cozy-border/80 transition-all shadow-soft-sm"
                   title="Re-run auto discovery"
                 >
-                  <RefreshCw className="w-3 h-3 text-rose-400" />
+                  <RefreshCw className="w-3 h-3 text-teal-500" />
                   <span>Re-scan</span>
                 </button>
               )}
               <span className="font-mono text-cozy-muted text-[11px]">
-                Engine: <span className="text-rose-500 font-semibold uppercase">{settings?.agent_cli}</span>
+                Engine: <span className="text-teal-600 dark:text-teal-400 font-semibold uppercase">{settings?.agent_cli}</span>
               </span>
             </div>
           </div>
@@ -201,11 +201,11 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
           <div className="rounded-2xl border border-cozy-border/70 bg-cozy-surface/90 overflow-hidden flex flex-col h-44 shadow-soft-inner">
             <div className="px-3.5 py-2 bg-cozy-subtle/60 border-b border-cozy-border/50 flex items-center justify-between font-mono text-[11px] text-cozy-muted">
               <div className="flex items-center space-x-2 font-medium">
-                <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                <Terminal className="w-3.5 h-3.5 text-teal-500" />
                 <span className="text-cozy-text">Inspection Stream</span>
               </div>
               {isScanning && (
-                <span className="flex items-center space-x-1.5 text-rose-400 font-medium">
+                <span className="flex items-center space-x-1.5 text-teal-500 font-medium">
                   <RefreshCw className="w-3 h-3 animate-spin" />
                   <span>Scanning...</span>
                 </span>
@@ -230,7 +230,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
 
@@ -240,7 +240,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="text"
                   value={branchConvention}
                   onChange={(e) => setBranchConvention(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
             </div>
@@ -252,7 +252,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="text"
                   value={devCmd}
                   onChange={(e) => setDevCmd(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
 
@@ -262,7 +262,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="number"
                   value={devPort}
                   onChange={(e) => setDevPort(parseInt(e.target.value, 10) || 5173)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
             </div>
@@ -274,7 +274,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="text"
                   value={buildCmd}
                   onChange={(e) => setBuildCmd(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
 
@@ -284,7 +284,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
                   type="text"
                   value={testCmd}
                   onChange={(e) => setTestCmd(e.target.value)}
-                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
                 />
               </div>
             </div>
@@ -302,7 +302,7 @@ export const DiscoveryModal: React.FC<DiscoveryModalProps> = ({
           <button
             onClick={handleSave}
             disabled={!name.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white transition-all shadow-glow-peach cursor-pointer"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white transition-all shadow-glow-ocean cursor-pointer"
           >
             <FolderGit2 className="w-3.5 h-3.5" />
             <span>Confirm & Add Project</span>

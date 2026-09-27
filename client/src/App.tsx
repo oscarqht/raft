@@ -39,10 +39,10 @@ export default function App() {
       const isDark = mediaQuery.matches;
       if (isDark) {
         document.documentElement.classList.add('dark');
-        document.documentElement.style.backgroundColor = '#13151f';
+        document.documentElement.style.backgroundColor = '#0c1322';
       } else {
         document.documentElement.classList.remove('dark');
-        document.documentElement.style.backgroundColor = '#f8fafd';
+        document.documentElement.style.backgroundColor = '#f0f7fa';
       }
     };
 

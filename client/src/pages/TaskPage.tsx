@@ -127,14 +127,14 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   if (error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <p className="text-rose-400 text-sm mb-4">{error}</p>
+        <p className="text-red-500 text-sm mb-4">{error}</p>
         <button
           onClick={() => {
             const target = routeProjectId || task?.project_id;
             if (target) navigate(`/projects/${target}`);
             else navigate('/');
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white transition-all shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Return to Project</span>
@@ -162,7 +162,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
               onClick={() => setMobileTab('chat')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
                 mobileTab === 'chat'
-                  ? 'bg-rose-500 text-white shadow-glow-peach'
+                  ? 'bg-teal-500 text-white shadow-glow-ocean'
                   : 'text-cozy-muted hover:text-cozy-text'
               }`}
             >
@@ -174,7 +174,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
               onClick={() => setMobileTab('preview')}
               className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
                 mobileTab === 'preview'
-                  ? 'bg-rose-500 text-white shadow-glow-peach'
+                  ? 'bg-teal-500 text-white shadow-glow-ocean'
                   : 'text-cozy-muted hover:text-cozy-text'
               }`}
             >

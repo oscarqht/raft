@@ -104,7 +104,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
         {/* Modal Header */}
         <div className="p-5 sm:p-6 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
               <Pencil className="w-4 h-4" />
             </div>
             <div>
@@ -114,7 +114,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -123,7 +123,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
         {/* Modal Body */}
         <form onSubmit={handleSave} className="p-5 sm:p-6 space-y-4">
           {errorMessage && (
-            <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs">
+            <div className="flex items-center gap-2 p-3.5 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMessage}</span>
             </div>
@@ -132,7 +132,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
           {/* Task Name */}
           <div>
             <label className="text-xs font-semibold text-cozy-text block mb-1.5">
-              Task Name <span className="text-rose-400">*</span>
+              Task Name <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
@@ -142,7 +142,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
                 if (errorMessage) setErrorMessage(null);
               }}
               placeholder="e.g. support d&d tmp tab to favorite items"
-              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-4 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-4 py-2.5 text-xs text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
               autoFocus
             />
           </div>
@@ -155,7 +155,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             <select
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
-              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-rose-400 shadow-soft-sm"
+              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
             >
               {branches.map((b) => (
                 <option key={b} value={b}>
@@ -175,10 +175,10 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             </span>
             <div className="flex items-center justify-between text-xs">
               <span className="text-cozy-muted flex items-center gap-1.5">
-                <GitBranch className="w-3.5 h-3.5 text-rose-500" />
+                <GitBranch className="w-3.5 h-3.5 text-teal-500" />
                 Git Branch:
               </span>
-              <span className="font-mono text-rose-500 font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/10 border border-rose-400/20">
+              <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold px-2.5 py-0.5 rounded-full bg-teal-500/10 border border-teal-400/20">
                 {task.branch}
               </span>
             </div>
@@ -209,10 +209,10 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             <button
               type="submit"
               disabled={isSaving || !taskName.trim()}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all shadow-glow-peach cursor-pointer ${
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold transition-all shadow-glow-ocean cursor-pointer ${
                 saveSuccess
                   ? 'bg-emerald-600 text-white'
-                  : 'bg-rose-500 hover:bg-rose-600 disabled:opacity-40 text-white'
+                  : 'bg-teal-500 hover:bg-teal-600 disabled:opacity-40 text-white'
               }`}
             >
               {saveSuccess ? (

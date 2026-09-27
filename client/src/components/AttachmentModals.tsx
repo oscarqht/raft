@@ -221,7 +221,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ taskId, atta
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border bg-cozy-subtle/50">
           <div className="flex items-center gap-2.5 min-w-0 pr-4">
-            <div className="p-1.5 rounded-lg bg-cozy-surface border border-cozy-border text-rose-500 shadow-soft-sm shrink-0">
+            <div className="p-1.5 rounded-lg bg-cozy-surface border border-cozy-border text-teal-500 shadow-soft-sm shrink-0">
               {getFileIcon(attachment, 'w-4 h-4')}
             </div>
             <div className="min-w-0 flex flex-col">
@@ -269,11 +269,11 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ taskId, atta
         <div className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed bg-cozy-bg/80 select-text">
           {isLoading ? (
             <div className="h-64 flex flex-col items-center justify-center gap-3 text-cozy-muted">
-              <Loader2 className="w-6 h-6 animate-spin text-rose-400" />
+              <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
               <span className="text-xs">Loading file preview...</span>
             </div>
           ) : error ? (
-            <div className="h-64 flex flex-col items-center justify-center gap-2 text-rose-400 p-4 text-center">
+            <div className="h-64 flex flex-col items-center justify-center gap-2 text-red-500 p-4 text-center">
               <AlertCircle className="w-6 h-6" />
               <span className="font-medium text-xs">{error}</span>
             </div>

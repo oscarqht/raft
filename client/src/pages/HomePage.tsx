@@ -75,7 +75,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-cozy-text flex items-center gap-2.5">
             Local Projects
-            <Sparkles className="w-5 h-5 text-rose-400 fill-rose-400/20" />
+            <Sparkles className="w-5 h-5 text-teal-400 fill-teal-400/20" />
           </h1>
           <p className="text-sm text-cozy-muted mt-1 leading-relaxed">
             Manage your Git projects and launch AI-assisted tasks with isolated worktrees.
@@ -84,7 +84,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
         <button
           onClick={() => setIsAddOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach shrink-0 cursor-pointer"
+          className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>Add Project</span>
@@ -103,7 +103,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           </p>
           <button
             onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add First Project</span>
@@ -115,11 +115,11 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div
               key={p.id}
               onClick={() => handleSelect(p.id)}
-              className="group relative p-6 rounded-squircle glass-card border border-white/80 dark:border-white/10 hover:border-rose-400/40 shadow-soft hover:shadow-soft-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between"
+              className="group relative p-6 rounded-squircle glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 shadow-soft hover:shadow-soft-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between"
             >
               <div>
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm">
                     <FolderGit2 className="w-6 h-6" />
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -128,14 +128,14 @@ export const HomePage: React.FC<HomePageProps> = ({
                         e.stopPropagation();
                         setEditingProject(p);
                       }}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-cozy-subtle transition-all"
                       title="Edit project configuration"
                     >
                       <Sliders className="w-4 h-4" />
                     </button>
                     <button
                       onClick={(e) => handleDelete(p.id, e)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
                       title="Remove project"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -143,7 +143,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   </div>
                 </div>
 
-                <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-rose-500 transition-colors">
+                <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
                   {p.name}
                 </h3>
                 <p className="text-xs font-mono text-cozy-muted truncate mb-4" title={p.path}>
@@ -164,7 +164,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
               <div className="pt-3.5 border-t border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted font-medium">
                 <span>{p.task_count || 0} active {p.task_count === 1 ? 'task' : 'tasks'}</span>
-                <span className="flex items-center gap-1 text-rose-500 group-hover:translate-x-1 transition-transform font-semibold">
+                <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 group-hover:translate-x-1 transition-transform font-semibold">
                   Open Project <ArrowRight className="w-3 h-3" />
                 </span>
               </div>

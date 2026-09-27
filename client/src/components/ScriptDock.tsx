@@ -30,9 +30,9 @@ export const ScriptDock: React.FC = () => {
             key={item.id}
             className={`pointer-events-auto rounded-2.5xl glass-panel border p-3.5 w-full sm:w-84 text-xs shadow-soft-lg transition-all flex flex-col gap-2.5 ${
               isRunning
-                ? 'border-rose-400/40 shadow-glow-peach/20'
+                ? 'border-teal-400/40 shadow-glow-ocean/20'
                 : isFailed
-                ? 'border-rose-500/40 shadow-soft-md bg-rose-500/[0.03]'
+                ? 'border-red-500/40 shadow-soft-md bg-red-500/[0.03]'
                 : isCompleted
                 ? 'border-emerald-500/40 shadow-glow-mint/20'
                 : 'border-white/60 dark:border-white/10'
@@ -48,9 +48,9 @@ export const ScriptDock: React.FC = () => {
                   <Terminal
                     className={`w-3.5 h-3.5 shrink-0 ${
                       isFailed
-                        ? 'text-rose-500'
+                        ? 'text-red-500'
                         : isRunning
-                        ? 'text-rose-500'
+                        ? 'text-teal-500'
                         : isCompleted
                         ? 'text-emerald-500'
                         : 'text-cozy-muted'
@@ -72,9 +72,9 @@ export const ScriptDock: React.FC = () => {
                     isRunning
                       ? item.isCanceling
                         ? 'bg-amber-500/15 text-amber-500 border border-amber-400/30 animate-pulse'
-                        : 'bg-rose-500/15 text-rose-500 border border-rose-400/30 animate-pulse'
+                        : 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-400/30 animate-pulse'
                       : isFailed
-                      ? 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
+                      ? 'bg-red-500/15 text-red-500 border border-red-400/30'
                       : isCompleted
                       ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
                       : 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30'
@@ -93,7 +93,7 @@ export const ScriptDock: React.FC = () => {
                 {!isRunning && (
                   <button
                     type="button"
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all cursor-pointer"
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all cursor-pointer"
                     onClick={() => dismissExecution(item.id)}
                     title="Dismiss badge"
                   >
@@ -118,7 +118,7 @@ export const ScriptDock: React.FC = () => {
               {isRunning ? (
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-400/30 transition-all cursor-pointer shadow-soft-sm"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-red-500/15 text-red-500 hover:bg-red-500 hover:text-white border border-red-400/30 transition-all cursor-pointer shadow-soft-sm"
                   onClick={() => cancelScript(item.id, item.isCanceling)}
                   title={item.isCanceling ? 'Force kill process' : 'Stop process'}
                 >
@@ -126,7 +126,7 @@ export const ScriptDock: React.FC = () => {
                   <span>{item.isCanceling ? 'Force Kill' : 'Stop'}</span>
                 </button>
               ) : isFailed ? (
-                <span className="text-[11px] text-rose-500 font-mono font-medium">
+                <span className="text-[11px] text-red-500 font-mono font-medium">
                   Failed
                 </span>
               ) : isCompleted ? (

@@ -107,7 +107,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shadow-soft-sm shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
               <Terminal className="w-5 h-5" />
             </div>
             <div>
@@ -117,7 +117,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
           </div>
           <button
             type="button"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
             onClick={onClose}
           >
             <X className="w-4 h-4" />
@@ -127,7 +127,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
         {/* Content */}
         <div className="p-5 sm:p-6 flex-1 overflow-y-auto space-y-6">
           {error && (
-            <div className="flex items-center gap-2 p-3.5 text-xs bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl shadow-soft-sm">
+            <div className="flex items-center gap-2 p-3.5 text-xs bg-red-500/10 text-red-500 border border-red-500/20 rounded-2xl shadow-soft-sm">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -141,7 +141,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
               </span>
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-rose-500 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-400/20 transition-all cursor-pointer shadow-soft-sm"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-teal-600 dark:text-teal-400 bg-teal-500/10 hover:bg-teal-500/20 border border-teal-400/20 transition-all cursor-pointer shadow-soft-sm"
                 onClick={() => {
                   onClose();
                   onOpenManageScripts();
@@ -159,7 +159,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                 </p>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 bg-rose-500/10 border border-rose-400/20 rounded-full transition-all shadow-soft-sm"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-teal-600 dark:text-teal-400 hover:bg-teal-500/20 bg-teal-500/10 border border-teal-400/20 rounded-full transition-all shadow-soft-sm"
                   onClick={() => {
                     onClose();
                     onOpenManageScripts();
@@ -174,7 +174,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                 {scripts.map((script) => (
                   <div
                     key={script.id}
-                    className="flex items-center justify-between p-3.5 bg-cozy-subtle/60 border border-cozy-border/70 hover:border-rose-400/30 rounded-2xl group transition-all shadow-soft-sm hover:shadow-soft"
+                    className="flex items-center justify-between p-3.5 bg-cozy-subtle/60 border border-cozy-border/70 hover:border-teal-400/30 rounded-2xl group transition-all shadow-soft-sm hover:shadow-soft"
                   >
                     <div className="min-w-0 flex-1 pr-3">
                       <div className="text-xs font-semibold text-cozy-text truncate">
@@ -186,7 +186,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                     </div>
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-rose-500 text-white hover:bg-rose-600 shadow-glow-peach transition-all shrink-0 disabled:opacity-50 cursor-pointer"
+                      className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 text-white hover:bg-teal-600 shadow-glow-ocean transition-all shrink-0 disabled:opacity-50 cursor-pointer"
                       onClick={() => handleRunSavedScript(script)}
                       disabled={isRunning}
                     >
@@ -220,7 +220,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                   value={arbitraryCmd}
                   onChange={(e) => setArbitraryCmd(e.target.value)}
                   placeholder="e.g. npm run test:e2e or git status"
-                  className="w-full px-4 py-2.5 text-xs font-mono bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                  className="w-full px-4 py-2.5 text-xs font-mono bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-teal-400 shadow-soft-sm"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !saveToProject)) {
                       e.preventDefault();
@@ -241,10 +241,10 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                   type="checkbox"
                   checked={saveToProject}
                   onChange={(e) => setSaveToProject(e.target.checked)}
-                  className="rounded-lg border-cozy-border text-rose-500 focus:ring-0 focus:ring-offset-0 bg-cozy-surface"
+                  className="rounded-lg border-cozy-border text-teal-500 focus:ring-0 focus:ring-offset-0 bg-cozy-surface"
                 />
                 <span className="text-xs text-cozy-text font-medium flex items-center gap-1.5">
-                  <BookmarkPlus className="w-3.5 h-3.5 text-rose-500" />
+                  <BookmarkPlus className="w-3.5 h-3.5 text-teal-500" />
                   Save this command to project scripts
                 </span>
               </label>
@@ -259,7 +259,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
                     value={customName}
                     onChange={(e) => setCustomName(e.target.value)}
                     placeholder="e.g. End-to-End Tests"
-                    className="w-full px-3.5 py-2 text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-rose-400 shadow-soft-sm"
+                    className="w-full px-3.5 py-2 text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl text-cozy-text placeholder:text-cozy-muted/60 focus:outline-none focus:border-teal-400 shadow-soft-sm"
                   />
                 </div>
               )}
@@ -268,7 +268,7 @@ export const RunScriptModal: React.FC<RunScriptModalProps> = ({
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-rose-500 hover:bg-rose-600 rounded-full shadow-glow-peach transition-all disabled:opacity-50 cursor-pointer"
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-full shadow-glow-ocean transition-all disabled:opacity-50 cursor-pointer"
                 onClick={handleRunArbitrary}
                 disabled={isRunning || !arbitraryCmd.trim()}
               >

@@ -479,7 +479,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           {devState.status === 'running' ? (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500/20 transition-all shadow-soft-sm"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all shadow-soft-sm"
               title="Stop dev server"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
@@ -514,7 +514,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           <button
             onClick={handleRestart}
             disabled={devState.status !== 'running'}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle disabled:opacity-30 transition-all"
+            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle disabled:opacity-30 transition-all"
             title="Restart dev server"
             aria-label="Restart dev server"
           >
@@ -543,8 +543,8 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         </div>
 
         {/* URL Address Bar */}
-        <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-rose-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
-          <Globe className="w-3.5 h-3.5 text-rose-400 mr-1.5 shrink-0" />
+        <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-teal-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
+          <Globe className="w-3.5 h-3.5 text-teal-500 mr-1.5 shrink-0" />
           <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activePort}</span>
           <input
             type="text"
@@ -575,13 +575,13 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             disabled={devState.status !== 'running' || !isServerReady || isCapturing}
             className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
               activeScreenshot
-                ? 'bg-rose-500/15 text-rose-500'
+                ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30'
             }`}
             title="Take Screenshot & Annotate Preview"
           >
             {isCapturing ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />
             ) : (
               <Camera className="w-3.5 h-3.5" />
             )}
@@ -591,7 +591,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             href={currentUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={`w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all ${
+            className={`w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all ${
               devState.status !== 'running' || !isServerReady ? 'pointer-events-none opacity-30' : ''
             }`}
             title="Open in external browser window"
@@ -603,7 +603,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             onClick={() => setShowConsole(!showConsole)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shadow-soft-sm ${
               showConsole
-                ? 'bg-rose-500/10 border-rose-400/40 text-rose-500'
+                ? 'bg-teal-500/10 border-teal-400/40 text-teal-600 dark:text-teal-400'
                 : 'bg-cozy-subtle/70 text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border-cozy-border/70'
             }`}
             title="Toggle Console Logs"
@@ -622,7 +622,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       >
         {/* Error notification banner */}
         {captureError && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-md px-4 py-2.5 rounded-xl bg-rose-500/95 text-white text-xs shadow-lg backdrop-blur flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-md px-4 py-2.5 rounded-xl bg-red-500/95 text-white text-xs shadow-lg backdrop-blur flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
             <span className="flex-1 leading-snug">{captureError}</span>
             <button
               onClick={() => setCaptureError(null)}
@@ -644,7 +644,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             />
           ) : isTimedOut ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
-              <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-amber-500/15 via-rose-500/15 to-rose-600/10 border border-amber-400/30 flex items-center justify-center mb-4 shadow-soft-sm text-amber-500">
+              <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-amber-500/15 via-red-500/15 to-amber-600/10 border border-amber-400/30 flex items-center justify-center mb-4 shadow-soft-sm text-amber-500">
                 <AlertCircle className="w-7 h-7" />
               </div>
               <h3 className="text-base font-semibold text-cozy-text mb-1.5">
@@ -666,7 +666,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                     setIsTimedOut(false);
                     setAttemptCount(0);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                   <span>Retry Connection</span>
@@ -676,13 +676,13 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                   onClick={() => setShowConsole(true)}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium bg-cozy-surface/90 hover:bg-cozy-subtle text-cozy-text border border-cozy-border/80 transition-all shadow-soft-sm cursor-pointer"
                 >
-                  <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                  <Terminal className="w-3.5 h-3.5 text-teal-500" />
                   <span>View Console Logs ({logs.length})</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all cursor-pointer"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
                   <span>Stop Server</span>
@@ -692,10 +692,10 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           ) : (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
               <div className="relative mb-5">
-                <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-rose-500/15 via-amber-500/15 to-emerald-500/15 border border-rose-400/25 flex items-center justify-center shadow-soft-sm relative">
-                  <Globe className="w-7 h-7 text-rose-500 animate-pulse" />
+                <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/15 to-emerald-500/15 border border-teal-400/25 flex items-center justify-center shadow-soft-sm relative">
+                  <Globe className="w-7 h-7 text-teal-500 animate-pulse" />
                   <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cozy-surface border border-cozy-border/70 flex items-center justify-center shadow-sm">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />
                   </div>
                 </div>
               </div>
@@ -703,7 +703,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               <h3 className="text-base font-semibold text-cozy-text mb-1">
                 Waiting for Dev Server...
               </h3>
-              <p className="text-xs font-mono text-rose-500/90 dark:text-rose-400 mb-4 font-medium">
+              <p className="text-xs font-mono text-teal-600/90 dark:text-teal-400 mb-4 font-medium">
                 http://localhost:{activePort}
               </p>
 
@@ -714,7 +714,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 </div>
                 <div className="w-full h-1.5 bg-cozy-border/60 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-rose-500 to-amber-500 transition-all duration-300 rounded-full"
+                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 transition-all duration-300 rounded-full"
                     style={{ width: `${Math.max(5, (attemptCount / MAX_RETRY_ATTEMPTS) * 100)}%` }}
                   />
                 </div>
@@ -730,13 +730,13 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                   onClick={() => setShowConsole(!showConsole)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-surface/90 hover:bg-cozy-subtle text-cozy-text border border-cozy-border/80 transition-all shadow-soft-sm cursor-pointer"
                 >
-                  <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                  <Terminal className="w-3.5 h-3.5 text-teal-500" />
                   <span>View Logs ({logs.length})</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all cursor-pointer"
                 >
                   <Square className="w-3.5 h-3.5 fill-current" />
                   <span>Stop</span>
@@ -747,7 +747,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         ) : isInstalling ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
             <div className="relative mb-5">
-              <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-indigo-500/15 via-rose-500/15 to-amber-500/15 border border-indigo-400/25 flex items-center justify-center shadow-soft-sm relative">
+              <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-indigo-500/15 via-teal-500/15 to-amber-500/15 border border-indigo-400/25 flex items-center justify-center shadow-soft-sm relative">
                 <Package className="w-7 h-7 text-indigo-500 animate-pulse" />
                 <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cozy-surface border border-cozy-border/70 flex items-center justify-center shadow-sm">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
@@ -781,7 +781,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </div>
         ) : installFailed ? (
           <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
-            <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mb-4 shadow-soft-sm text-rose-500">
+            <div className="w-16 h-16 rounded-3xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mb-4 shadow-soft-sm text-red-500">
               <AlertCircle className="w-7 h-7" />
             </div>
 
@@ -789,7 +789,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               Dependency Installation Failed
             </h3>
             <div className="mb-3">
-              <span className="text-xs font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+              <span className="text-xs font-mono text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
                 <Terminal className="w-3 h-3" />
                 {installExecution?.command || 'Install script'} (exit code {installExecution?.exitCode ?? 'err'})
               </span>
@@ -806,7 +806,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                     onClick={() => scriptCtx.openModal(installExecution.id)}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium bg-cozy-surface hover:bg-cozy-subtle text-cozy-text border border-cozy-border shadow-soft-sm transition-all cursor-pointer"
                   >
-                    <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                    <Terminal className="w-3.5 h-3.5 text-red-400" />
                     <span>View Logs</span>
                   </button>
                   <button
@@ -830,8 +830,8 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </div>
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted">
-            <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">
-              <Globe className="w-6 h-6 text-rose-400" />
+            <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/10 via-cyan-500/10 to-emerald-500/10 border border-teal-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">
+              <Globe className="w-6 h-6 text-teal-500" />
             </div>
             <h3 className="text-base font-semibold text-cozy-text mb-1.5">Local Dev Preview</h3>
             <p className="text-xs max-w-sm mb-5 text-cozy-muted leading-relaxed">
@@ -839,7 +839,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             </p>
             <button
               onClick={handleStart}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Launch Dev Server</span>
@@ -852,7 +852,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           <React.Suspense
             fallback={
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80">
-                <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+                <Loader2 className="w-8 h-8 animate-spin text-teal-500" />
               </div>
             }
           >
@@ -873,12 +873,12 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         <div className="h-52 border-t border-cozy-border/60 bg-cozy-surface/95 backdrop-blur-md flex flex-col shrink-0 select-text animate-in slide-in-from-bottom duration-200">
           <div className="h-9 border-b border-cozy-border/50 px-3.5 flex items-center justify-between text-xs text-cozy-muted bg-cozy-subtle/50">
             <div className="flex items-center space-x-2 font-medium">
-              <Terminal className="w-3.5 h-3.5 text-rose-400" />
+              <Terminal className="w-3.5 h-3.5 text-teal-500" />
               <span className="font-mono text-[11px] text-cozy-text">Dev Server Console</span>
             </div>
             <button
               onClick={() => setLogs([])}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
             >
               <Trash2 className="w-3 h-3" />
               <span>Clear</span>

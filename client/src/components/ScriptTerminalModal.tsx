@@ -83,7 +83,7 @@ export const ScriptTerminalModal: React.FC = () => {
         {/* Terminal Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border/50 bg-cozy-subtle/50 select-none">
           <div className="flex items-center gap-3 min-w-0 pr-4">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-rose-500/15 via-amber-500/10 to-sky-500/15 border border-rose-400/25 flex items-center justify-center text-rose-500 shrink-0 shadow-soft-sm">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shrink-0 shadow-soft-sm">
               <Terminal className="w-4 h-4" />
             </div>
             <div className="min-w-0">
@@ -94,11 +94,11 @@ export const ScriptTerminalModal: React.FC = () => {
                     isRunning
                       ? execution.isCanceling
                         ? 'bg-amber-500/15 text-amber-500 border border-amber-400/30 animate-pulse'
-                        : 'bg-rose-500/15 text-rose-500 border border-rose-400/30 animate-pulse'
+                        : 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-400/30 animate-pulse'
                       : execution.status === 'completed'
                       ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-400/30'
                       : execution.status === 'failed'
-                      ? 'bg-rose-500/15 text-rose-500 border border-rose-400/30'
+                      ? 'bg-red-500/15 text-red-500 border border-red-400/30'
                       : 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30'
                   }`}
                 >
@@ -153,7 +153,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {isRunning && (
               <button
                 type="button"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-400/30 transition-all cursor-pointer shadow-soft-sm"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-red-500/15 text-red-500 hover:bg-red-500 hover:text-white border border-red-400/30 transition-all cursor-pointer shadow-soft-sm"
                 onClick={() => cancelScript(execution.id, execution.isCanceling)}
                 title={execution.isCanceling ? 'Force kill process' : 'Stop process'}
               >
@@ -177,7 +177,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {/* Close & Terminate */}
             <button
               type="button"
-              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-rose-500/10 transition-all cursor-pointer"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all cursor-pointer"
               onClick={handleClose}
               title={isRunning ? 'Terminate script and close' : 'Close modal'}
             >
@@ -218,7 +218,7 @@ export const ScriptTerminalModal: React.FC = () => {
             {!autoScroll && (
               <button
                 type="button"
-                className="text-rose-500 hover:underline cursor-pointer font-medium"
+                className="text-teal-600 dark:text-teal-400 hover:underline cursor-pointer font-medium"
                 onClick={() => {
                   setAutoScroll(true);
                   if (terminalRef.current) {

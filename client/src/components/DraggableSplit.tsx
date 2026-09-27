@@ -167,7 +167,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
         <div
           onPointerDown={handlePointerDown}
           className={`relative w-3 h-full cursor-col-resize transition-all flex items-center justify-center shrink-0 z-20 select-none group touch-none mx-0.5 rounded-full ${
-            isDragging ? 'bg-rose-500/10' : 'hover:bg-rose-500/5'
+            isDragging ? 'bg-teal-500/10' : 'hover:bg-teal-500/5'
           }`}
           title="Drag to resize panels"
         >
@@ -177,8 +177,8 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
           <div
             className={`w-1 rounded-full transition-all z-20 ${
               isDragging
-                ? 'bg-rose-400 h-16 shadow-glow-peach'
-                : 'h-8 bg-cozy-border/80 group-hover:bg-rose-400 group-hover:h-12'
+                ? 'bg-teal-400 h-16 shadow-glow-ocean'
+                : 'h-8 bg-cozy-border/80 group-hover:bg-teal-400 group-hover:h-12'
             }`}
           />
         </div>
