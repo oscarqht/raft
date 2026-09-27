@@ -286,6 +286,11 @@ export async function getChatMessages(sessionId: string): Promise<ChatMessage[]>
   return res.json();
 }
 
+export async function deleteChatMessage(id: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/messages/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
 // WebSocket client connection helper
 export function createWebSocketConnection(onMessage: (msg: any) => void): WebSocket {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

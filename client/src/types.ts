@@ -33,6 +33,7 @@ export interface Project {
   test_cmd: string;
   install_cmd?: string;
   branch_convention: string;
+  icon?: string;
   default_agent_cli?: string;
   default_model?: string;
   custom_scripts?: ProjectCustomScript[];

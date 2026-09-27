@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FolderGit2, GitBranch, Terminal, Trash2, ArrowRight, Sparkles, Sliders } from 'lucide-react';
+import { Plus, FolderGit2, Trash2, ArrowRight, Sparkles, Sliders } from 'lucide-react';
 import { Project, Settings, SelectionMeta } from '../types';
 import { getProjects, deleteProject, validateProjectPath } from '../api';
 import { DiscoveryModal } from '../components/DiscoveryModal';
@@ -119,8 +119,8 @@ export const HomePage: React.FC<HomePageProps> = ({
             >
               <div>
                 <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm">
-                    <FolderGit2 className="w-6 h-6" />
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm text-2xl select-none">
+                    {p.icon ? <span>{p.icon}</span> : <FolderGit2 className="w-6 h-6" />}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
@@ -150,16 +150,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                   {p.path}
                 </p>
 
-                <div className="flex flex-wrap gap-2 text-xs mb-4">
-                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-muted font-mono text-[11px] shadow-soft-sm">
-                    <GitBranch className="w-3 h-3 text-amber-400" />
-                    {p.branch_convention || 'main'}
-                  </span>
-                  <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-muted font-mono text-[11px] shadow-soft-sm">
-                    <Terminal className="w-3 h-3 text-emerald-400" />
-                    :{p.dev_port || 5173}
-                  </span>
-                </div>
+
               </div>
 
               <div className="pt-3.5 border-t border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted font-medium">

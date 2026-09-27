@@ -8,6 +8,7 @@ interface DraggableSplitProps {
   minRightWidth?: number;
   storageKey?: string;
   mobileActivePane?: 'left' | 'right';
+  mobileBreakpoint?: number;
 }
 
 export const DraggableSplit: React.FC<DraggableSplitProps> = ({
@@ -18,17 +19,18 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   minRightWidth = 320,
   storageKey = 'raft:split-ratio',
   mobileActivePane = 'left',
+  mobileBreakpoint = 920,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < mobileBreakpoint);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < mobileBreakpoint);
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [mobileBreakpoint]);
   const [ratio, setRatio] = useState<number>(() => {
     try {
       const saved = localStorage.getItem(storageKey) || (storageKey === 'raft:split-ratio' ? localStorage.getItem('termai:split-ratio') : null);
@@ -150,14 +152,18 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
         />
       )}
 
-      {/* Left Pane (Floating Island) */}
+      {/* Left Pane */}
       <div
         style={{
           width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 7px)`,
           display: isMobile && mobileActivePane !== 'left' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className="h-full flex flex-col min-w-0 overflow-hidden rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg relative"
+        className={`h-full flex flex-col min-w-0 overflow-hidden relative ${
+          isMobile
+            ? 'rounded-none border-0 shadow-none bg-cozy-surface/60'
+            : 'rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg'
+        }`}
       >
         {left}
       </div>
@@ -184,14 +190,18 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
         </div>
       )}
 
-      {/* Right Pane (Floating Island) */}
+      {/* Right Pane */}
       <div
         style={{
           width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 7px)`,
           display: isMobile && mobileActivePane !== 'right' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className="h-full flex flex-col min-w-0 overflow-hidden rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg relative"
+        className={`h-full flex flex-col min-w-0 overflow-hidden relative ${
+          isMobile
+            ? 'rounded-none border-0 shadow-none bg-cozy-surface/60'
+            : 'rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg'
+        }`}
       >
         {right}
       </div>

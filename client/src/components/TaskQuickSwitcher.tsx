@@ -12,6 +12,7 @@ interface TaskQuickSwitcherProps {
 interface ProjectGroup {
   projectId: string;
   projectName: string;
+  projectIcon?: string;
   latestUpdatedAt: number;
   tasks: Task[];
 }
@@ -98,13 +99,14 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
 
   // Group tasks by project and sort both groups and tasks by updated_at desc
   const groupedProjects = useMemo(() => {
-    const map = new Map<string, { projectName: string; tasks: Task[] }>();
+    const map = new Map<string, { projectName: string; projectIcon?: string; tasks: Task[] }>();
 
     for (const task of tasks) {
       const pId = task.project_id || 'unknown';
       const pName = task.project?.name || 'Other Tasks';
+      const pIcon = task.project?.icon;
       if (!map.has(pId)) {
-        map.set(pId, { projectName: pName, tasks: [] });
+        map.set(pId, { projectName: pName, projectIcon: pIcon, tasks: [] });
       }
       map.get(pId)!.tasks.push(task);
     }
@@ -124,6 +126,7 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
       groups.push({
         projectId,
         projectName: data.projectName,
+        projectIcon: data.projectIcon,
         latestUpdatedAt,
         tasks: sortedTasks,
       });
@@ -195,7 +198,11 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
                 <div key={group.projectId} className="flex flex-col space-y-0.5">
                   {/* Project Header */}
                   <div className="px-3 py-1.5 flex items-center gap-2 text-[11px] font-semibold text-cozy-muted tracking-wide select-none">
-                    <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                    {group.projectIcon ? (
+                      <span className="text-xs shrink-0 leading-none">{group.projectIcon}</span>
+                    ) : (
+                      <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                    )}
                     <span className="truncate">{group.projectName}</span>
                     <span className="ml-auto text-[10px] font-normal text-cozy-muted/70 px-1.5 py-0.2 rounded-full bg-cozy-subtle">
                       {group.tasks.length}

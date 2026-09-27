@@ -17,9 +17,11 @@ import {
   Trash2,
   Edit2,
   Package,
+  Smile,
 } from 'lucide-react';
 import { Settings, Project, ProjectCustomScript } from '../types';
 import { updateProject, validateProjectPath, createWebSocketConnection } from '../api';
+import { ProjectEmojiPicker } from './ProjectEmojiPicker';
 
 export interface ProjectConfigModalProps {
   project: Project;
@@ -43,6 +45,8 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   availableBranches: propBranches,
 }) => {
   const [name, setName] = useState(project.name);
+  const [icon, setIcon] = useState(project.icon || '📦');
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [branchConvention, setBranchConvention] = useState(project.branch_convention || 'main');
   const [devCmd, setDevCmd] = useState(project.dev_cmd || 'npm run dev');
   const [devPort, setDevPort] = useState(project.dev_port || 5173);
@@ -79,6 +83,8 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     if (!isOpen) return;
 
     setName(project.name);
+    setIcon(project.icon || '📦');
+    setIsEmojiPickerOpen(false);
     setBranchConvention(project.branch_convention || 'main');
     setDevCmd(project.dev_cmd || 'npm run dev');
     setDevPort(project.dev_port || 5173);
@@ -247,6 +253,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
       const updated = await updateProject(project.id, {
         name: name.trim(),
         branch_convention: branchConvention.trim() || 'main',
+        icon: icon || '📦',
         dev_cmd: devCmd.trim(),
         dev_port: devPort,
         build_cmd: buildCmd.trim(),
@@ -273,16 +280,38 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
       <div className="w-full max-w-2xl rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50">
+        <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50 relative z-20">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center text-teal-500 shadow-soft-sm shrink-0">
-              <Sliders className="w-4 h-4 text-teal-500" />
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
+                className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 hover:border-teal-400/50 flex items-center justify-center text-xl shadow-soft-sm shrink-0 cursor-pointer active:scale-95 transition-all group relative"
+                title="Click to change project emoji icon"
+              >
+                <span>{icon || '📦'}</span>
+                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-teal-500 text-white flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Smile className="w-2.5 h-2.5" />
+                </span>
+              </button>
+
+              {isEmojiPickerOpen && (
+                <div className="absolute top-full left-0 mt-2 z-50">
+                  <ProjectEmojiPicker
+                    onSelectEmoji={(selectedEmoji) => {
+                      setIcon(selectedEmoji);
+                      setIsEmojiPickerOpen(false);
+                    }}
+                    onClose={() => setIsEmojiPickerOpen(false)}
+                  />
+                </div>
+              )}
             </div>
             <div className="min-w-0">
               <h3 className="text-base font-bold text-cozy-text flex items-center gap-2">
                 Project Configuration
                 <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-cozy-subtle text-cozy-muted border border-cozy-border/70 shadow-soft-sm">
-                  {project.name}
+                  {name || project.name}
                 </span>
               </h3>
               <p className="text-xs text-cozy-muted font-mono truncate max-w-md sm:max-w-lg mt-0.5" title={project.path}>

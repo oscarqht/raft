@@ -39,43 +39,13 @@ import {
   deleteGitAccount,
 } from '../api';
 
-// LocalStorage helpers for caching CLI models and reasoning efforts
-const getCachedModels = (cli: string): ModelOption[] => {
-  try {
-    const raw = localStorage.getItem(`raft_models_${(cli || '').toLowerCase()}`) || localStorage.getItem(`termai_models_${(cli || '').toLowerCase()}`);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch {}
-  return [];
-};
-
-const setCachedModels = (cli: string, modelsList: ModelOption[]) => {
-  try {
-    if (modelsList && modelsList.length > 0) {
-      localStorage.setItem(`raft_models_${(cli || '').toLowerCase()}`, JSON.stringify(modelsList));
-    }
-  } catch {}
-};
-
-const getCachedProviderPreference = (cli: string): { model?: string; effort?: string } => {
-  try {
-    const raw = localStorage.getItem(`raft_pref_${(cli || '').toLowerCase()}`) || localStorage.getItem(`termai_pref_${(cli || '').toLowerCase()}`);
-    if (raw) {
-      return JSON.parse(raw);
-    }
-  } catch {}
-  return {};
-};
-
-const setCachedProviderPreference = (cli: string, model: string, effort: string) => {
-  try {
-    localStorage.setItem(`raft_pref_${(cli || '').toLowerCase()}`, JSON.stringify({ model, effort }));
-  } catch {}
-};
+import {
+  getCachedModels,
+  setCachedModels,
+  getCachedProviderPreference,
+  setCachedProviderPreference,
+  resolveModelAndEffort,
+} from '../cache';
 
 interface SettingsPageProps {
   settings: Settings | null;
@@ -225,28 +195,11 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
 
   const syncModelAndEffort = (cli: string, modelList: ModelOption[]): { modelId: string; effort: string } => {
     if (modelList.length === 0) return { modelId: defaultModel, effort: thinkingEffort };
-    const pref = getCachedProviderPreference(cli);
-    const candidateModelId = pref.model || defaultModel;
-    const matchedModel = modelList.find((m) => m.id === candidateModelId);
-    const active = matchedModel || modelList[0];
-
-    let chosenModelId = defaultModel;
-    let chosenEffort = thinkingEffort;
-
-    if (active) {
-      chosenModelId = active.id;
-      setDefaultModel(active.id);
-      const supported = active.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
-      const candidateEffort = pref.effort || thinkingEffort;
-      const effortLower = candidateEffort.toLowerCase();
-      const validEffort =
-        supported.find((s) => s.toLowerCase() === effortLower) || active.defaultEffort || supported[0] || 'medium';
-      chosenEffort = validEffort;
-      setThinkingEffort(validEffort);
-      setCachedProviderPreference(cli, active.id, validEffort);
-    }
-
-    return { modelId: chosenModelId, effort: chosenEffort };
+    const { modelId, effort } = resolveModelAndEffort(cli, modelList, defaultModel, thinkingEffort);
+    setDefaultModel(modelId);
+    setThinkingEffort(effort);
+    setCachedProviderPreference(cli, modelId, effort);
+    return { modelId, effort };
   };
 
   const loadModels = async (cli: string, refresh = false) => {

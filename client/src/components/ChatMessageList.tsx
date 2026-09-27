@@ -1,6 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles, FileCode, Play, ZoomIn, Download, Eye } from 'lucide-react';
-import { ChatMessage, FileAttachment } from '../types';
+import {
+  Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
+  FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap
+} from 'lucide-react';
+import { ChatMessage, FileAttachment, CliInfo } from '../types';
 import { MarkdownView } from './MarkdownView';
 import {
   isImageAttachment,
@@ -11,11 +14,90 @@ import {
   FilePreviewModal,
 } from './AttachmentModals';
 
+export function stripAnsi(text: string): string {
+  if (!text) return '';
+  return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+}
+
+export interface SpendCapInfo {
+  isSpendCap: boolean;
+  title: string;
+  message: string;
+  cliName?: string;
+  modelName?: string;
+}
+
+export function detectSpendCapInfo(msg: ChatMessage, fallbackCli?: string): SpendCapInfo {
+  let cliName = fallbackCli || '';
+  let modelName = '';
+  let isSpendCap = false;
+  let customErrorMsg = '';
+
+  if (msg.metadata) {
+    try {
+      const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      if (parsed.cli) cliName = parsed.cli;
+      if (parsed.model) modelName = parsed.model;
+      if (parsed.errorType === 'spend_cap' || parsed.isSpendCap) {
+        isSpendCap = true;
+        if (parsed.errorMessage) customErrorMsg = parsed.errorMessage;
+      }
+    } catch {}
+  }
+
+  const rawClean = stripAnsi(msg.content || '');
+  if (!isSpendCap) {
+    if (
+      /hit your spend cap|spend cap set by the owner|budget exceeded|exceeded your budget|out of credits|insufficient_quota|credit balance is too low|usage cap/i.test(
+        rawClean
+      )
+    ) {
+      isSpendCap = true;
+    }
+  }
+
+  if (isSpendCap) {
+    let cleanMessage = customErrorMsg;
+    if (!cleanMessage) {
+      const match = rawClean.match(
+        /(?:ERROR:\s*)?(You hit your spend cap[^.\n]*\.[^\n]*|.*budget[^.\n]*\.[^\n]*|.*quota exceeded[^.\n]*|.*out of credits[^.\n]*)/i
+      );
+      cleanMessage = match
+        ? match[1].replace(/^ERROR:\s*/i, '').trim()
+        : 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.';
+    }
+
+    if (!modelName) {
+      const modelMatch = rawClean.match(/model:\s*([a-zA-Z0-9._-]+)/i);
+      if (modelMatch) modelName = modelMatch[1];
+    }
+    if (!cliName) {
+      if (/codex/i.test(rawClean)) cliName = 'codex';
+      else if (/claude/i.test(rawClean)) cliName = 'claude';
+      else if (/agy|antigravity/i.test(rawClean)) cliName = 'agy';
+    }
+
+    return {
+      isSpendCap: true,
+      title: 'Spend Cap Reached',
+      message: cleanMessage,
+      cliName,
+      modelName,
+    };
+  }
+
+  return { isSpendCap: false, title: '', message: '' };
+}
+
 interface ChatMessageListProps {
   messages: ChatMessage[];
   liveStreamingChunk?: string;
   isStreaming?: boolean;
   taskId?: string;
+  clis?: CliInfo[];
+  currentCli?: string;
+  onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
@@ -23,6 +105,10 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   liveStreamingChunk,
   isStreaming,
   taskId,
+  clis,
+  currentCli,
+  onSwitchCliAndRetry,
+  onOpenSettings,
 }) => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
@@ -83,6 +169,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           onCopy={handleCopy}
           onPreviewImage={(att) => setPreviewImage(att)}
           onPreviewFile={(att) => setPreviewFile(att)}
+          clis={clis}
+          currentCli={currentCli}
+          previousUserPrompt={index > 0 && messages[index - 1].role === 'user' ? messages[index - 1].content : ''}
+          onSwitchCliAndRetry={onSwitchCliAndRetry}
+          onOpenSettings={onOpenSettings}
         />
       ))}
 
@@ -127,9 +218,33 @@ const MessageItem: React.FC<{
   onCopy: (id: string, text: string) => void;
   onPreviewImage: (att: FileAttachment) => void;
   onPreviewFile: (att: FileAttachment) => void;
-}> = ({ msg, isStreaming, copiedId, onCopy, onPreviewImage, onPreviewFile }) => {
+  clis?: CliInfo[];
+  currentCli?: string;
+  previousUserPrompt?: string;
+  onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
+  onOpenSettings?: () => void;
+}> = ({
+  msg,
+  isStreaming,
+  copiedId,
+  onCopy,
+  onPreviewImage,
+  onPreviewFile,
+  clis,
+  currentCli,
+  previousUserPrompt = '',
+  onSwitchCliAndRetry,
+  onOpenSettings,
+}) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
+
+  const spendCapInfo = useMemo(() => detectSpendCapInfo(msg, currentCli), [msg, currentCli]);
+
+  const alternativeClis = useMemo(() => {
+    const currentName = (spendCapInfo.cliName || currentCli || '').toLowerCase();
+    return (clis || []).filter((c) => c.available && c.name.toLowerCase() !== currentName);
+  }, [clis, spendCapInfo.cliName, currentCli]);
 
   // Parse attachments from msg.attachments or metadata
   const attachments: FileAttachment[] = useMemo(() => {
@@ -190,6 +305,10 @@ const MessageItem: React.FC<{
     cleanContent = msg.content.trim();
   }
 
+  // Strip ANSI escape codes from cleanContent and thoughts
+  cleanContent = stripAnsi(cleanContent);
+  if (thoughts) thoughts = stripAnsi(thoughts);
+
   // Friendly summary derivation
   const summaryBadge = useMemo(() => {
     if (!thoughts) return null;
@@ -226,7 +345,7 @@ const MessageItem: React.FC<{
   }, [thoughts]);
 
   // Text that should be copied when clicking copy
-  const textToCopy = cleanContent || (thoughts ? thoughts : msg.content);
+  const textToCopy = spendCapInfo.isSpendCap ? spendCapInfo.message : cleanContent || (thoughts ? thoughts : msg.content);
   const isCopied = copiedId === msg.id;
 
   // Fallback friendly message if assistant completed actions with no explicit closing text
@@ -243,16 +362,18 @@ const MessageItem: React.FC<{
         className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
           isUser
             ? 'bg-gradient-to-tr from-teal-500 to-cyan-600 border-teal-400/30 text-white shadow-glow-ocean'
+            : spendCapInfo.isSpendCap
+            ? 'bg-amber-500/10 border-amber-400/30 text-amber-500'
             : 'bg-cozy-surface border-teal-400/20 text-teal-500'
         }`}
       >
-        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+        {isUser ? <User className="w-4 h-4" /> : spendCapInfo.isSpendCap ? <AlertTriangle className="w-4 h-4 text-amber-500" /> : <Bot className="w-4 h-4" />}
       </div>
 
       {/* Bubble Content */}
       <div className={`space-y-1.5 ${isUser ? 'max-w-[85%] sm:max-w-[78%] items-end' : 'w-full max-w-[96%] sm:max-w-[92%] items-start'} min-w-0 flex flex-col`}>
         {/* Friendly Natural Summary Pill for Thoughts & Actions */}
-        {thoughts && summaryBadge && (
+        {thoughts && summaryBadge && !spendCapInfo.isSpendCap && (
           <div className="mb-1 w-full min-w-0">
             <button
               onClick={() => setShowThoughts(!showThoughts)}
@@ -292,11 +413,74 @@ const MessageItem: React.FC<{
           className={`group relative rounded-2xl text-sm shadow-soft-sm transition-all min-w-0 ${
             isUser
               ? 'bg-teal-500 text-white rounded-tr-sm shadow-glow-ocean px-6 sm:px-7 py-3 sm:py-3.5 pr-11 sm:pr-12 break-words [overflow-wrap:anywhere] font-medium'
+              : spendCapInfo.isSpendCap
+              ? 'rounded-tl-sm w-full border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/5 p-5 sm:p-6 text-cozy-text shadow-soft-sm break-words [overflow-wrap:anywhere]'
               : 'glass-card border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
           }`}
         >
           {isUser ? (
             <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">{displayContent}</div>
+          ) : spendCapInfo.isSpendCap ? (
+            <div className="space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-amber-500/15 pb-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0 text-amber-500 shadow-soft-sm">
+                    <Coins className="w-4.5 h-4.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-semibold text-cozy-text">{spendCapInfo.title}</h4>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/25">
+                        Spend Limit
+                      </span>
+                    </div>
+                    {(spendCapInfo.cliName || spendCapInfo.modelName) && (
+                      <p className="text-[11px] text-cozy-muted font-mono mt-0.5 truncate">
+                        {spendCapInfo.cliName?.toUpperCase() || 'AGENT'} {spendCapInfo.modelName ? `• ${spendCapInfo.modelName}` : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Message Explanation */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-cozy-text leading-relaxed">
+                  {spendCapInfo.message}
+                </p>
+                <p className="text-[11px] text-cozy-muted leading-relaxed">
+                  To continue working immediately without waiting for a workspace cap increase, switch to another ready CLI agent below:
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-1 flex flex-wrap items-center gap-2.5">
+                {alternativeClis.map((alt) => {
+                  const cliLabel = alt.name === 'agy' ? 'Google Antigravity' : alt.name === 'claude' ? 'Claude Code' : alt.name === 'codex' ? 'OpenAI Codex' : alt.name;
+                  return (
+                    <button
+                      key={alt.name}
+                      onClick={() => onSwitchCliAndRetry?.(alt.name, previousUserPrompt, msg.id)}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-medium text-xs shadow-soft-sm transition-all hover:scale-[1.02] cursor-pointer"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                      <span>Switch to {cliLabel} & Continue</span>
+                    </button>
+                  );
+                })}
+
+                {onOpenSettings && (
+                  <button
+                    onClick={onOpenSettings}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cozy-surface/90 hover:bg-cozy-subtle border border-cozy-border/80 text-cozy-text text-xs font-medium transition-all shadow-soft-sm hover:border-teal-400/40 cursor-pointer"
+                  >
+                    <SettingsIcon className="w-3.5 h-3.5 text-cozy-muted shrink-0" />
+                    <span>Configure CLIs in Settings</span>
+                  </button>
+                )}
+              </div>
+            </div>
           ) : displayContent ? (
             <MarkdownView content={displayContent} className="text-cozy-text font-sans min-w-0" />
           ) : isStreaming ? (

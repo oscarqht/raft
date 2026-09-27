@@ -55,6 +55,7 @@ db.exec(`
     test_cmd TEXT,
     install_cmd TEXT,
     branch_convention TEXT,
+    icon TEXT,
     default_agent_cli TEXT,
     default_model TEXT,
     custom_scripts TEXT,
@@ -136,6 +137,11 @@ try {
 }
 try {
   db.exec('ALTER TABLE projects ADD COLUMN install_cmd TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE projects ADD COLUMN icon TEXT');
 } catch {
   // column already exists
 }

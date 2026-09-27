@@ -1,4 +1,4 @@
-import { Task, ChatSession, ChatMessage } from './types';
+import { Task, ChatSession, ChatMessage, ModelOption } from './types';
 
 const PREFIX = 'raft:';
 const LEGACY_PREFIX = 'termai:';
@@ -170,4 +170,110 @@ function cleanOldCache() {
     index.sessionIds = index.sessionIds.slice(0, Math.floor(index.sessionIds.length / 2));
     saveIndex(index);
   } catch {}
+}
+
+// Provider models cache
+export function getCachedModels(cli: string): ModelOption[] {
+  try {
+    const raw =
+      localStorage.getItem(`raft_models_${(cli || '').toLowerCase()}`) ||
+      localStorage.getItem(`termai_models_${(cli || '').toLowerCase()}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return [];
+}
+
+export function setCachedModels(cli: string, modelsList: ModelOption[]): void {
+  try {
+    if (modelsList && modelsList.length > 0) {
+      localStorage.setItem(`raft_models_${(cli || '').toLowerCase()}`, JSON.stringify(modelsList));
+    }
+  } catch {}
+}
+
+// Provider model/effort preference cache
+export function getCachedProviderPreference(cli: string): { model?: string; effort?: string } {
+  try {
+    const raw =
+      localStorage.getItem(`raft_pref_${(cli || '').toLowerCase()}`) ||
+      localStorage.getItem(`termai_pref_${(cli || '').toLowerCase()}`);
+    if (raw) {
+      return JSON.parse(raw);
+    }
+  } catch {}
+  return {};
+}
+
+export function setCachedProviderPreference(cli: string, model: string, effort: string): void {
+  try {
+    localStorage.setItem(`raft_pref_${(cli || '').toLowerCase()}`, JSON.stringify({ model, effort }));
+  } catch {}
+}
+
+/**
+ * Resolves the appropriate model and reasoning effort for a CLI.
+ * 1. Checks if preferredModel exists in modelList.
+ * 2. Checks saved provider preferences for this CLI.
+ * 3. Checks for a recommended model (e.g. marked with "(Recommended)" or id has "recommended").
+ * 4. Falls back to the first available model.
+ * 5. Reconciles reasoning effort against supported reasoning efforts of the chosen model.
+ */
+export function resolveModelAndEffort(
+  cli: string,
+  modelList: ModelOption[],
+  preferredModel?: string,
+  preferredEffort?: string
+): { modelId: string; effort: string } {
+  if (!modelList || modelList.length === 0) {
+    return {
+      modelId: preferredModel || '',
+      effort: preferredEffort || 'medium',
+    };
+  }
+
+  // 1. Try preferredModel if provided and exists in modelList
+  let active = preferredModel ? modelList.find((m) => m.id === preferredModel) : undefined;
+
+  // 2. Try cached provider preference
+  if (!active) {
+    const pref = getCachedProviderPreference(cli);
+    if (pref.model) {
+      active = modelList.find((m) => m.id === pref.model);
+    }
+  }
+
+  // 3. Try recommended model (e.g. name has "(Recommended)" or id has "recommended")
+  if (!active) {
+    active = modelList.find(
+      (m) =>
+        m.name.toLowerCase().includes('(recommended)') ||
+        m.id.toLowerCase().includes('recommended')
+    );
+  }
+
+  // 4. Fallback to first model
+  if (!active) {
+    active = modelList[0];
+  }
+
+  const modelId = active.id;
+  const supportedEfforts =
+    active.reasoningEfforts && active.reasoningEfforts.length > 0
+      ? active.reasoningEfforts
+      : ['none', 'low', 'medium', 'high', 'max'];
+
+  const candidateEffort = preferredEffort || getCachedProviderPreference(cli).effort;
+  const effortLower = (candidateEffort || '').toLowerCase();
+  const validEffort =
+    supportedEfforts.find((s) => s.toLowerCase() === effortLower) ||
+    active.defaultEffort ||
+    supportedEfforts[0] ||
+    'medium';
+
+  return { modelId, effort: validEffort };
 }

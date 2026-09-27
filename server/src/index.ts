@@ -595,7 +595,7 @@ app.get('/api/projects', (_req: Request, res: Response) => {
 });
 
 app.post('/api/projects', (req: Request, res: Response) => {
-  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, custom_scripts } = req.body;
+  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon, custom_scripts } = req.body;
   const projectPath = path.resolve(rawPath);
   const repoInfo = GitService.getRepoInfo(projectPath);
   if (!repoInfo.isRepo) {
@@ -610,9 +610,9 @@ app.post('/api/projects', (req: Request, res: Response) => {
   try {
     const stmt = db.prepare(`
       INSERT INTO projects (
-        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention,
+        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon,
         default_agent_cli, default_model, custom_scripts, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -625,6 +625,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
       test_cmd || 'npm test',
       effectiveInstallCmd,
       branch_convention || repoInfo.currentBranch || 'main',
+      icon || '📦',
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
       custom_scripts ? JSON.stringify(custom_scripts) : '[]',
@@ -823,6 +824,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     test_cmd,
     install_cmd,
     branch_convention,
+    icon,
     default_agent_cli,
     default_model,
     custom_scripts,
@@ -843,6 +845,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       test_cmd = coalesce(?, test_cmd),
       install_cmd = coalesce(?, install_cmd),
       branch_convention = coalesce(?, branch_convention),
+      icon = coalesce(?, icon),
       default_agent_cli = coalesce(?, default_agent_cli),
       default_model = coalesce(?, default_model),
       custom_scripts = coalesce(?, custom_scripts),
@@ -856,6 +859,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     test_cmd !== undefined ? test_cmd : null,
     install_cmd !== undefined ? install_cmd : null,
     branch_convention !== undefined ? branch_convention : null,
+    icon !== undefined ? icon : null,
     default_agent_cli !== undefined ? default_agent_cli : null,
     default_model !== undefined ? default_model : null,
     custom_scripts !== undefined ? JSON.stringify(custom_scripts) : null,
@@ -998,7 +1002,7 @@ app.get('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
   res.json(tasks);
 });
 
-app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
+app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) => {
   const { name, baseBranch } = req.body;
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.projectId) as any;
   if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -1016,8 +1020,26 @@ app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
     // Create default initial chat session tab
     const chatSessionId = uuidv4();
     const defaultCli = getEffectiveAgentCli();
-    const defaultModel = getSetting('default_model', '');
-    const defaultEffort = getSetting('thinking_effort', 'medium');
+    let defaultModel = getSetting('default_model', '');
+    let defaultEffort = getSetting('thinking_effort', 'medium');
+
+    try {
+      const available = await getModelsForCli(defaultCli);
+      if (Array.isArray(available) && available.length > 0) {
+        const matches = defaultModel && available.some((m) => m.id === defaultModel);
+        if (!matches) {
+          const rec = available.find((m) => m.name.toLowerCase().includes('(recommended)')) || available[0];
+          defaultModel = rec.id;
+        }
+        const modelObj = available.find((m) => m.id === defaultModel);
+        if (modelObj) {
+          const validEfforts = modelObj.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+          if (!defaultEffort || !validEfforts.map((e) => e.toLowerCase()).includes(defaultEffort.toLowerCase())) {
+            defaultEffort = modelObj.defaultEffort || validEfforts[0] || 'medium';
+          }
+        }
+      }
+    } catch {}
 
     db.prepare(`
       INSERT INTO chat_sessions (id, task_id, title, agent_cli, model, thinking_effort, status, created_at, updated_at)
@@ -1358,13 +1380,38 @@ app.get('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
   res.json(chats);
 });
 
-app.post('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
+app.post('/api/tasks/:taskId/chats', async (req: Request, res: Response) => {
   const { title, agent_cli, model, thinking_effort } = req.body;
   const id = uuidv4();
   const now = Date.now();
   const cli = agent_cli || getEffectiveAgentCli();
-  const mod = model || getSetting('default_model', '');
-  const effort = thinking_effort || getSetting('thinking_effort', 'medium');
+  let mod = model;
+  let effort = thinking_effort;
+
+  try {
+    const available = await getModelsForCli(cli);
+    if (Array.isArray(available) && available.length > 0) {
+      const matches = mod && available.some((m) => m.id === mod);
+      if (!matches) {
+        const rec = available.find((m) => m.name.toLowerCase().includes('(recommended)')) || available[0];
+        mod = rec.id;
+      }
+      const modelObj = available.find((m) => m.id === mod);
+      if (modelObj) {
+        const validEfforts = modelObj.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+        if (!effort || !validEfforts.map((e) => e.toLowerCase()).includes(effort.toLowerCase())) {
+          effort = modelObj.defaultEffort || validEfforts[0] || 'medium';
+        }
+      }
+    }
+  } catch {}
+
+  if (!mod) {
+    mod = getSetting('default_model', '');
+  }
+  if (!effort) {
+    effort = getSetting('thinking_effort', 'medium');
+  }
 
   db.prepare(`
     INSERT INTO chat_sessions (id, task_id, title, agent_cli, model, thinking_effort, status, created_at, updated_at)
@@ -1412,7 +1459,7 @@ scriptManager.on('global_dismissed', ({ id }) => {
   broadcastWs({ type: 'script_dismissed', executionId: id });
 });
 
-app.patch('/api/chats/:id', (req: Request, res: Response) => {
+app.patch('/api/chats/:id', async (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   const { title, agent_cli, model, thinking_effort } = req.body;
   const existing = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatId) as any;
@@ -1422,9 +1469,27 @@ app.patch('/api/chats/:id', (req: Request, res: Response) => {
 
   const newTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : existing.title;
   const newCli = agent_cli !== undefined ? agent_cli : existing.agent_cli;
-  const newModel = model !== undefined ? model : existing.model;
-  const newEffort = thinking_effort !== undefined ? thinking_effort : existing.thinking_effort;
+  let newModel = model !== undefined ? model : existing.model;
+  let newEffort = thinking_effort !== undefined ? thinking_effort : existing.thinking_effort;
   const isCliChanged = agent_cli !== undefined && agent_cli !== existing.agent_cli;
+
+  if (isCliChanged) {
+    try {
+      const available = await getModelsForCli(newCli);
+      if (Array.isArray(available) && available.length > 0) {
+        const matchesCurrent = model !== undefined && available.some((m) => m.id === model);
+        if (!matchesCurrent) {
+          const rec = available.find((m) => m.name.toLowerCase().includes('(recommended)')) || available[0];
+          newModel = rec.id;
+          const validEfforts = rec.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+          if (!newEffort || !validEfforts.map((e) => e.toLowerCase()).includes(newEffort.toLowerCase())) {
+            newEffort = rec.defaultEffort || validEfforts[0] || 'medium';
+          }
+        }
+      }
+    } catch {}
+  }
+
   const now = Date.now();
 
   db.prepare(`
@@ -1444,6 +1509,12 @@ app.delete('/api/chats/:id', (req: Request, res: Response) => {
     activeChatSessions.get(chatId)?.abort();
   }
   db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(chatId);
+  res.json({ success: true });
+});
+
+app.delete('/api/messages/:id', (req: Request, res: Response) => {
+  const messageId = req.params.id as string;
+  db.prepare('DELETE FROM chat_messages WHERE id = ?').run(messageId);
   res.json({ success: true });
 });
 
@@ -1665,8 +1736,41 @@ wss.on('connection', (ws: WebSocket) => {
         });
 
         const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
-        const modelToUse = model || session.model;
-        const effortToUse = thinkingEffort || session.thinking_effort;
+        let modelToUse = model || session.model;
+        let effortToUse = thinkingEffort || session.thinking_effort;
+
+        // Validate and reconcile model and thinking effort against available models for cliToUse
+        try {
+          const availableModelsForCli = await getModelsForCli(cliToUse);
+          if (Array.isArray(availableModelsForCli) && availableModelsForCli.length > 0) {
+            const matched = availableModelsForCli.find((m) => m.id === modelToUse);
+            if (!matched) {
+              const rec =
+                availableModelsForCli.find((m) => m.name.toLowerCase().includes('(recommended)')) ||
+                availableModelsForCli[0];
+              modelToUse = rec.id;
+            }
+            const finalModelObj = availableModelsForCli.find((m) => m.id === modelToUse);
+            if (finalModelObj) {
+              const validEfforts = finalModelObj.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
+              if (!effortToUse || !validEfforts.map((e) => e.toLowerCase()).includes(effortToUse.toLowerCase())) {
+                effortToUse = finalModelObj.defaultEffort || validEfforts[0] || 'medium';
+              }
+            }
+          }
+        } catch {}
+
+        // Persist the effective agent, model and effort to the session in DB if changed
+        if (
+          session.agent_cli !== cliToUse ||
+          session.model !== modelToUse ||
+          session.thinking_effort !== effortToUse
+        ) {
+          try {
+            db.prepare('UPDATE chat_sessions SET agent_cli = ?, model = ?, thinking_effort = ? WHERE id = ?')
+              .run(cliToUse, modelToUse, effortToUse, sessionId);
+          } catch {}
+        }
 
         // Check if session has an existing CLI conversation/thread matching this engine
         const canResumeCliSession = Boolean(
@@ -1734,9 +1838,9 @@ wss.on('connection', (ws: WebSocket) => {
         } else {
           // codex
           if (cliSessionIdToResume) {
-            args.push('exec', 'resume', cliSessionIdToResume, effectivePrompt);
+            args.push('exec', 'resume', '--json', cliSessionIdToResume, effectivePrompt);
           } else {
-            args.push('exec', effectivePrompt);
+            args.push('exec', '--json', effectivePrompt);
           }
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') {
@@ -1811,6 +1915,22 @@ wss.on('connection', (ws: WebSocket) => {
             }
             assistantContent = compileAssistantContent();
             saveAssistantProgress(false);
+          } else if (ev.type === 'error' && ev.content) {
+            const errContent = ev.content;
+            const isSpendCap = ev.metadata?.isSpendCap || /spend cap|budget|quota exceeded|credit balance/i.test(errContent);
+            assistantResponse = errContent;
+            assistantContent = compileAssistantContent();
+            try {
+              db.prepare('UPDATE chat_messages SET metadata = ? WHERE id = ?')
+                .run(JSON.stringify({
+                  cli: cliToUse,
+                  model: modelToUse,
+                  error: true,
+                  errorType: isSpendCap ? 'spend_cap' : 'agent_error',
+                  errorMessage: errContent,
+                }), assistantMsgId);
+            } catch {}
+            saveAssistantProgress(true);
           }
 
           broadcastWs({
@@ -1829,7 +1949,20 @@ wss.on('connection', (ws: WebSocket) => {
                   .run(sessionId);
               } catch {}
             }
-            if (!assistantResponse.trim() && ev.type === 'done') {
+
+            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(assistantResponse) || ev.metadata?.isSpendCap;
+            if (isSpendCap) {
+              try {
+                db.prepare('UPDATE chat_messages SET metadata = ? WHERE id = ?')
+                  .run(JSON.stringify({
+                    cli: cliToUse,
+                    model: modelToUse,
+                    error: true,
+                    errorType: 'spend_cap',
+                    errorMessage: assistantResponse || 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.',
+                  }), assistantMsgId);
+              } catch {}
+            } else if (!assistantResponse.trim() && ev.type === 'done') {
               if (assistantThoughts.trim()) {
                 const actionCount = (assistantThoughts.match(/→/g) || []).length;
                 assistantResponse = `Completed ${actionCount > 0 ? `${actionCount} ` : ''}workspace actions and finished tasks.`;

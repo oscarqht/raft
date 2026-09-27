@@ -139,18 +139,22 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
   };
 
+  const isProjectPage = Boolean(projectMatch && !projectTaskMatch);
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-cozy-bg text-cozy-text font-sans">
       <Header
         currentPath={{
           projectId: currentProjectId || activeTask?.project_id || undefined,
           projectName: activeProject?.name || activeTask?.project?.name,
+          projectIcon: activeProject?.icon || activeTask?.project?.icon,
           taskId: currentTaskId || undefined,
           taskName: activeTask?.name,
         }}
         onNavigate={handleNavigate}
         settings={settings}
         onEditTask={currentTaskId && activeTask ? () => setIsEditTaskOpen(true) : undefined}
+        onNewTask={isProjectPage ? () => window.dispatchEvent(new CustomEvent('open-new-task')) : undefined}
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">

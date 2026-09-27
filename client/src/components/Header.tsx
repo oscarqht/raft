@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus } from 'lucide-react';
 import { Settings } from '../types';
 import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 
@@ -8,12 +8,14 @@ interface HeaderProps {
   currentPath?: {
     projectId?: string;
     projectName?: string;
+    projectIcon?: string;
     taskId?: string;
     taskName?: string;
   };
   onNavigate?: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
   onEditTask?: () => void;
+  onNewTask?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -21,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   settings,
   onEditTask,
+  onNewTask,
 }) => {
   const navigate = useNavigate();
 
@@ -60,21 +63,25 @@ export const Header: React.FC<HeaderProps> = ({
         </Link>
 
         {currentPath?.projectName && currentPath?.projectId && (
-          <div className="flex items-center space-x-2 text-cozy-muted min-w-0">
+          <div className="hidden min-[920px]:flex items-center space-x-2 text-cozy-muted min-w-0">
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
             <Link
               to={`/projects/${currentPath.projectId}`}
               onClick={() => onNavigate?.('project', { projectId: currentPath.projectId })}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-all max-w-[120px] sm:max-w-[200px] truncate shadow-soft-sm text-xs font-medium"
             >
-              <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0 hidden sm:inline" />
+              {currentPath.projectIcon ? (
+                <span className="text-sm shrink-0 leading-none">{currentPath.projectIcon}</span>
+              ) : (
+                <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0 hidden sm:inline" />
+              )}
               <span className="truncate">{currentPath.projectName}</span>
             </Link>
           </div>
         )}
 
         {currentPath?.taskName && (
-          <div className="flex items-center space-x-2 text-cozy-muted min-w-0">
+          <div className="hidden min-[920px]:flex items-center space-x-2 text-cozy-muted min-w-0">
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
             <button
               type="button"
@@ -98,6 +105,18 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Task Switcher, Agent Status & Controls */}
       <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+        {onNewTask && (
+          <button
+            type="button"
+            onClick={onNewTask}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer shrink-0"
+            title="Start a new task in this project"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Start New Task</span>
+          </button>
+        )}
+
         <TaskQuickSwitcher
           currentTaskId={currentPath?.taskId}
           currentTaskName={currentPath?.taskName}
@@ -108,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
           <Link
             to="/settings"
             onClick={() => onNavigate?.('settings')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
+            className="hidden min-[920px]:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
             title="Active AI Agent CLI"
           >
             <span className="w-2 h-2 rounded-full bg-teal-400 shadow-glow-ocean"></span>

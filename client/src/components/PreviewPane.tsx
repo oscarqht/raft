@@ -33,7 +33,37 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [logs, setLogs] = useState<string[]>([]);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const captureStreamRef = useRef<MediaStream | null>(null);
+
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth;
+    }
+    return 800;
+  });
+
+  useEffect(() => {
+    if (!panelRef.current) return;
+    const updateWidth = () => {
+      if (panelRef.current) {
+        setPanelWidth(panelRef.current.offsetWidth);
+      }
+    };
+    updateWidth();
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect) {
+          setPanelWidth(entry.contentRect.width);
+        }
+      }
+    });
+    observer.observe(panelRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  const isCompact = panelWidth < 620;
 
   const stopCaptureStream = () => {
     if (captureStreamRef.current) {
@@ -456,7 +486,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
   const currentUrl = `http://${hostname}:${activePort}${currentPath}`;
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
+    <div ref={panelRef} className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
       {/* Toast Notification when dependencies finish installing */}
       {showInstalledToast && (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500 text-white text-xs font-medium shadow-soft-xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
@@ -473,23 +503,27 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       )}
 
       {/* Top Address & Controls Toolbar */}
-      <div className="min-h-[64px] py-3.5 px-4 sm:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 gap-3 select-none">
+      <div className="min-h-[64px] py-3.5 px-3 sm:px-4 md:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 gap-2 sm:gap-3 select-none">
         {/* Server Start/Stop/Restart */}
         <div className="flex items-center space-x-1.5 shrink-0">
           {devState.status === 'running' ? (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all shadow-soft-sm"
+              className={`flex items-center gap-1.5 rounded-full text-xs font-medium bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all shadow-soft-sm ${
+                isCompact ? 'w-8 h-8 justify-center p-0' : 'px-3 py-1.5'
+              }`}
               title="Stop dev server"
             >
               <Square className="w-3.5 h-3.5 fill-current" />
-              <span>Stop</span>
+              {!isCompact && <span>Stop</span>}
             </button>
           ) : (
             <button
               onClick={handleStart}
               disabled={isInstalling || installFailed}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 rounded-full text-xs font-medium transition-all ${
+                isCompact ? 'w-8 h-8 justify-center p-0' : 'px-3.5 py-1.5'
+              } ${
                 isInstalling || installFailed
                   ? 'bg-cozy-subtle/80 border border-cozy-border text-cozy-muted cursor-not-allowed opacity-60'
                   : 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-500/25 shadow-glow-mint'
@@ -507,7 +541,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               ) : (
                 <Play className="w-3.5 h-3.5 fill-current" />
               )}
-              <span>{isInstalling ? 'Installing...' : 'Start'}</span>
+              {!isCompact && <span>{isInstalling ? 'Installing...' : 'Start'}</span>}
             </button>
           )}
 
@@ -522,43 +556,24 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </button>
         </div>
 
-        {/* Status Pill & Port */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-xs shadow-soft-sm shrink-0">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              devState.status === 'running' && isServerReady
-                ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
-                : devState.status === 'running' || devState.status === 'starting'
-                ? 'bg-amber-400 animate-ping'
-                : 'bg-cozy-muted/40'
-            }`}
-          />
-          <span className="font-mono text-cozy-muted text-[11px] font-medium">
-            {devState.status === 'running' && isServerReady
-              ? `:${activePort}`
-              : devState.status === 'running' || devState.status === 'starting'
-              ? `starting :${activePort}`
-              : 'offline'}
-          </span>
-        </div>
-
         {/* URL Address Bar */}
-        <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-teal-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
-          <Globe className="w-3.5 h-3.5 text-teal-500 mr-1.5 shrink-0" />
-          <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activePort}</span>
-          <input
-            type="text"
-            value={pathInput}
-            onChange={(e) => setPathInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
-            placeholder="/"
-            className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
-          />
-        </div>
+        {!isCompact && (
+          <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-teal-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
+            <Globe className="w-3.5 h-3.5 text-teal-500 mr-1.5 shrink-0" />
+            <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activePort}</span>
+            <input
+              type="text"
+              value={pathInput}
+              onChange={(e) => setPathInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
+              placeholder="/"
+              className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
+            />
+          </div>
+        )}
 
-        {/* Action icons */}
+        {/* Action icons & Status badge at very right edge */}
         <div className="flex items-center space-x-1 shrink-0">
-
           <button
             onClick={handleReloadIframe}
             disabled={devState.status !== 'running' || !isServerReady}
@@ -612,6 +627,39 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <span className="font-mono text-[11px]">{logs.length}</span>
             {showConsole ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
           </button>
+
+          {/* Status Pill & Port at very right edge */}
+          <div
+            className={`flex items-center gap-1.5 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-xs shadow-soft-sm shrink-0 ml-1 ${
+              isCompact ? 'w-8 h-8 justify-center p-0' : 'px-2.5 py-1'
+            }`}
+            title={
+              devState.status === 'running' && isServerReady
+                ? `Online :${activePort}`
+                : devState.status === 'running' || devState.status === 'starting'
+                ? `Starting :${activePort}`
+                : 'Offline'
+            }
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                devState.status === 'running' && isServerReady
+                  ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
+                  : devState.status === 'running' || devState.status === 'starting'
+                  ? 'bg-amber-400 animate-ping'
+                  : 'bg-cozy-muted/40'
+              }`}
+            />
+            {!isCompact && (
+              <span className="font-mono text-cozy-muted text-[11px] font-medium">
+                {devState.status === 'running' && isServerReady
+                  ? `:${activePort}`
+                  : devState.status === 'running' || devState.status === 'starting'
+                  ? `starting :${activePort}`
+                  : 'offline'}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

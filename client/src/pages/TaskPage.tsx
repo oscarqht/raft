@@ -153,43 +153,42 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
-      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-2 sm:p-3 md:p-4 bg-cozy-bg">
-        {/* Mobile Sub-header Segmented Pill Control */}
-        <div className="md:hidden flex items-center justify-between mb-2 select-none">
-          <div className="flex items-center p-1 bg-cozy-surface/90 backdrop-blur-md rounded-full border border-cozy-border/70 shadow-soft-sm w-full">
-            <button
-              type="button"
-              onClick={() => setMobileTab('chat')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
-                mobileTab === 'chat'
-                  ? 'bg-teal-500 text-white shadow-glow-ocean'
-                  : 'text-cozy-muted hover:text-cozy-text'
+      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[920px]:p-4 bg-cozy-bg">
+        {/* Mobile Header Tabs */}
+        <div className="min-[920px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface/80 backdrop-blur-md shrink-0 select-none">
+          <button
+            type="button"
+            onClick={() => setMobileTab('chat')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
+              mobileTab === 'chat'
+                ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
+                : 'border-transparent text-cozy-muted hover:text-cozy-text'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Chat</span>
+          </button>
+          <div className="w-[1px] h-4 bg-cozy-border/40 shrink-0" />
+          <button
+            type="button"
+            onClick={() => setMobileTab('preview')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
+              mobileTab === 'preview'
+                ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
+                : 'border-transparent text-cozy-muted hover:text-cozy-text'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Preview</span>
+            <span
+              className={`w-2 h-2 rounded-full transition-all ${
+                isDevRunning
+                  ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
+                  : 'bg-zinc-400/40'
               }`}
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>Chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileTab('preview')}
-              className={`flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-full text-xs font-medium transition-all ${
-                mobileTab === 'preview'
-                  ? 'bg-teal-500 text-white shadow-glow-ocean'
-                  : 'text-cozy-muted hover:text-cozy-text'
-              }`}
-            >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Preview</span>
-              <span
-                className={`w-2 h-2 rounded-full transition-all ${
-                  isDevRunning
-                    ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
-                    : 'bg-zinc-400/40'
-                }`}
-                title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
-              />
-            </button>
-          </div>
+              title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
+            />
+          </button>
         </div>
 
         <DraggableSplit

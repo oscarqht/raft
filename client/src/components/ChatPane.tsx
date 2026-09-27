@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
@@ -6,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment } from '../types';
 import { ChatMessageList } from './ChatMessageList';
-import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, getModels, getSkills, uploadTaskAttachments } from '../api';
+import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, deleteChatMessage, getModels, getSkills, uploadTaskAttachments } from '../api';
 import {
   formatFileSize,
   getFileIcon,
@@ -20,6 +21,11 @@ import {
   getCachedMessages,
   setCachedMessages,
   deleteCachedChat,
+  getCachedModels,
+  setCachedModels,
+  getCachedProviderPreference,
+  setCachedProviderPreference,
+  resolveModelAndEffort,
 } from '../cache';
 
 interface ChatPaneProps {
@@ -41,6 +47,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   onOpenSubmit,
   onOpenScripts,
 }) => {
+  const navigate = useNavigate();
   // Synchronous cache initialization for 0ms instantaneous load
   const [chats, setChats] = useState<ChatSession[]>(() => getCachedChats(task.id) || []);
   const [activeChatId, setActiveChatId] = useState<string | null>(() => {
@@ -122,6 +129,31 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const skillsPopupRef = useRef<HTMLDivElement>(null);
   const popupListRef = useRef<HTMLDivElement>(null);
+  const configRef = useRef<HTMLDivElement>(null);
+  const configBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!showConfig) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        configRef.current &&
+        !configRef.current.contains(e.target as Node) &&
+        configBtnRef.current &&
+        !configBtnRef.current.contains(e.target as Node)
+      ) {
+        setShowConfig(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showConfig]);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(Math.max(textareaRef.current.scrollHeight, 48), 200)}px`;
+    }
+  }, [inputPrompt]);
 
   useEffect(() => {
     if (editingChatId && editInputRef.current) {
@@ -161,9 +193,26 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     if (!activeChatId) return;
     const currentChat = chats.find((c) => c.id === activeChatId);
     if (currentChat) {
-      setTabCli(currentChat.agent_cli || settings?.agent_cli || 'agy');
-      setTabModel(currentChat.model || settings?.default_model || '');
-      setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
+      const cli = currentChat.agent_cli || settings?.agent_cli || 'agy';
+      setTabCli(cli);
+
+      // Instantly load cached models for this CLI if available
+      const cached = getCachedModels(cli);
+      if (cached.length > 0) {
+        setAvailableModels(cached);
+        const resolved = resolveModelAndEffort(
+          cli,
+          cached,
+          currentChat.model,
+          currentChat.thinking_effort || settings?.thinking_effort || 'medium'
+        );
+        setTabModel(resolved.modelId);
+        setTabEffort(resolved.effort);
+      } else {
+        setTabModel(currentChat.model || settings?.default_model || '');
+        setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
+      }
+
       if (currentChat.status === 'running') {
         setIsStreaming(true);
       } else {
@@ -192,8 +241,61 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   // Load models when tab CLI changes
   useEffect(() => {
     const cli = tabCli || settings?.agent_cli || 'agy';
-    getModels(cli).then(setAvailableModels).catch(() => {});
-  }, [tabCli, settings?.agent_cli]);
+    let isCurrent = true;
+
+    // Immediately show cached models for this CLI if available
+    const cached = getCachedModels(cli);
+    if (cached.length > 0) {
+      setAvailableModels(cached);
+    }
+
+    getModels(cli)
+      .then((data) => {
+        if (!isCurrent || !Array.isArray(data) || data.length === 0) return;
+        setAvailableModels(data);
+        setCachedModels(cli, data);
+
+        // Reconcile tabModel and tabEffort
+        setTabModel((currModel) => {
+          const currentChat = chats.find((c) => c.id === activeChatId);
+          const isCurrValid = currModel && data.some((m) => m.id === currModel);
+          const isChatModelValid = currentChat?.model && data.some((m) => m.id === currentChat.model);
+          const candidateModel = isCurrValid ? currModel : isChatModelValid ? currentChat?.model : undefined;
+
+          const resolved = resolveModelAndEffort(cli, data, candidateModel, tabEffort);
+
+          setTabEffort(resolved.effort);
+          if (resolved.modelId) {
+            setCachedProviderPreference(cli, resolved.modelId, resolved.effort);
+          }
+
+          if (
+            activeChatId &&
+            currentChat &&
+            (currentChat.model !== resolved.modelId || currentChat.thinking_effort !== resolved.effort)
+          ) {
+            const nextChats = chats.map((c) =>
+              c.id === activeChatId
+                ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
+                : c
+            );
+            setChats(nextChats);
+            setCachedChats(task.id, nextChats);
+            updateChatSession(activeChatId, {
+              model: resolved.modelId,
+              thinking_effort: resolved.effort,
+            }).catch(() => {});
+          }
+
+          return resolved.modelId;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [tabCli, settings?.agent_cli, activeChatId]);
 
   // Load skills for current agent CLI
   useEffect(() => {
@@ -418,12 +520,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   const handleCreateChat = async () => {
     const newTitle = `Chat ${chats.length + 1}`;
+    const cliToUse = tabCli || settings?.agent_cli || 'agy';
+    const cached = getCachedModels(cliToUse);
+    const { modelId, effort } = resolveModelAndEffort(
+      cliToUse,
+      cached.length > 0 ? cached : availableModels,
+      tabModel,
+      tabEffort
+    );
+
     const newChat = await createChatSession(
       task.id,
       newTitle,
-      tabCli || settings?.agent_cli,
-      tabModel || settings?.default_model,
-      tabEffort || settings?.thinking_effort
+      cliToUse,
+      modelId,
+      effort
     );
     const nextChats = [...chats, newChat];
     setChats(nextChats);
@@ -485,12 +596,72 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   const handleCliChange = (newCli: string) => {
     setTabCli(newCli);
+
+    // 1. Immediately load cached models for new CLI if available
+    const cached = getCachedModels(newCli);
+    if (cached.length > 0) {
+      setAvailableModels(cached);
+    }
+
+    // 2. Resolve default/recommended model and effort for new CLI (ignoring old CLI's model)
+    const { modelId: nextModel, effort: nextEffort } = resolveModelAndEffort(
+      newCli,
+      cached,
+      undefined, // Do NOT use tabModel since it belongs to previous CLI!
+      tabEffort
+    );
+
+    setTabModel(nextModel);
+    setTabEffort(nextEffort);
+    if (nextModel) {
+      setCachedProviderPreference(newCli, nextModel, nextEffort);
+    }
+
+    // 3. Update the active chat in DB and state with new CLI and resolved model/effort
     if (activeChatId) {
-      const nextChats = chats.map((c) => (c.id === activeChatId ? { ...c, agent_cli: newCli } : c));
+      const nextChats = chats.map((c) =>
+        c.id === activeChatId
+          ? { ...c, agent_cli: newCli, model: nextModel, thinking_effort: nextEffort }
+          : c
+      );
       setChats(nextChats);
       setCachedChats(task.id, nextChats);
-      updateChatSession(activeChatId, { agent_cli: newCli }).catch(() => {});
+      updateChatSession(activeChatId, {
+        agent_cli: newCli,
+        model: nextModel,
+        thinking_effort: nextEffort,
+      }).catch(() => {});
     }
+
+    // 4. Fetch fresh models for new CLI from API
+    getModels(newCli)
+      .then((fresh) => {
+        if (Array.isArray(fresh) && fresh.length > 0) {
+          setAvailableModels(fresh);
+          setCachedModels(newCli, fresh);
+          const resolved = resolveModelAndEffort(newCli, fresh, nextModel, nextEffort);
+          setTabModel(resolved.modelId);
+          setTabEffort(resolved.effort);
+          if (resolved.modelId) {
+            setCachedProviderPreference(newCli, resolved.modelId, resolved.effort);
+          }
+
+          if (activeChatId && (resolved.modelId !== nextModel || resolved.effort !== nextEffort)) {
+            const updatedChats = chats.map((c) =>
+              c.id === activeChatId
+                ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
+                : c
+            );
+            setChats(updatedChats);
+            setCachedChats(task.id, updatedChats);
+            updateChatSession(activeChatId, {
+              model: resolved.modelId,
+              thinking_effort: resolved.effort,
+            }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
   };
 
   const handleModelChange = (newModel: string) => {
@@ -499,10 +670,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     let nextEffort = tabEffort;
     if (found?.reasoningEfforts && found.reasoningEfforts.length > 0) {
       if (!found.reasoningEfforts.map((s) => s.toLowerCase()).includes(tabEffort.toLowerCase())) {
-        nextEffort = found.defaultEffort || found.reasoningEfforts[0];
+        nextEffort = found.defaultEffort || found.reasoningEfforts[0] || 'medium';
         setTabEffort(nextEffort);
       }
     }
+    setCachedProviderPreference(tabCli, newModel, nextEffort);
     if (activeChatId) {
       const nextChats = chats.map((c) =>
         c.id === activeChatId ? { ...c, model: newModel, thinking_effort: nextEffort } : c
@@ -515,6 +687,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   const handleEffortChange = (newEffort: string) => {
     setTabEffort(newEffort);
+    if (tabModel) {
+      setCachedProviderPreference(tabCli, tabModel, newEffort);
+    }
     if (activeChatId) {
       const nextChats = chats.map((c) =>
         c.id === activeChatId ? { ...c, thinking_effort: newEffort } : c
@@ -629,6 +804,18 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setIsStreaming(true);
     setStreamingChunk('');
 
+    // Ensure the model and effort being sent are valid for tabCli
+    let modelToSend = tabModel;
+    let effortToSend = tabEffort;
+    if (availableModels.length > 0) {
+      const isValid = availableModels.some((m) => m.id === tabModel);
+      if (!isValid) {
+        const resolved = resolveModelAndEffort(tabCli, availableModels, undefined, tabEffort);
+        modelToSend = resolved.modelId;
+        effortToSend = resolved.effort;
+      }
+    }
+
     ws.send(
       JSON.stringify({
         type: 'send_chat_message',
@@ -637,8 +824,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         prompt,
         attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
         agentCli: tabCli,
-        model: tabModel,
-        thinkingEffort: tabEffort,
+        model: modelToSend,
+        thinkingEffort: effortToSend,
       })
     );
   };
@@ -648,6 +835,80 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     ws.send(JSON.stringify({ type: 'abort', sessionId: activeChatId }));
     setIsStreaming(false);
     setStreamingChunk('');
+  };
+
+  const handleSwitchCliAndRetry = async (targetCli: string, userPrompt: string, failedAssistantMsgId: string) => {
+    if (!activeChatId || !ws || isStreaming) return;
+
+    // 1. Remove the failed assistant message from DB and local state
+    try {
+      await deleteChatMessage(failedAssistantMsgId);
+    } catch {}
+
+    const remainingMessages = messages.filter((m) => m.id !== failedAssistantMsgId);
+
+    // 2. Resolve default model and effort for targetCli
+    let targetModels = getCachedModels(targetCli) || [];
+    if (targetModels.length === 0) {
+      try {
+        targetModels = await getModels(targetCli);
+        setCachedModels(targetCli, targetModels);
+      } catch {}
+    }
+
+    const { modelId: newModel, effort: newEffort } = resolveModelAndEffort(targetCli, targetModels);
+
+    // 3. Update tab state and session in DB
+    setTabCli(targetCli);
+    setTabModel(newModel);
+    setTabEffort(newEffort);
+    setAvailableModels(targetModels);
+
+    try {
+      await updateChatSession(activeChatId, {
+        agent_cli: targetCli,
+        model: newModel,
+        thinking_effort: newEffort,
+      });
+      setCachedProviderPreference(targetCli, newModel, newEffort);
+    } catch {}
+
+    // 4. Send message with the new CLI immediately
+    const effectivePrompt =
+      userPrompt ||
+      (remainingMessages.length > 0 && remainingMessages[remainingMessages.length - 1].role === 'user'
+        ? remainingMessages[remainingMessages.length - 1].content
+        : '');
+
+    const now = Date.now();
+    const optimisticAssistantMessage: ChatMessage = {
+      id: `pending-${now}`,
+      session_id: activeChatId,
+      role: 'assistant',
+      content: '',
+      timestamp: now + 1,
+    };
+
+    const nextMessages = [...remainingMessages, optimisticAssistantMessage];
+    setMessages(nextMessages);
+    setCachedMessages(activeChatId, nextMessages);
+    setIsStreaming(true);
+    setStreamingChunk('');
+
+    ws.send(
+      JSON.stringify({
+        type: 'send_chat_message',
+        sessionId: activeChatId,
+        messageId:
+          typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        prompt: effectivePrompt || 'Continue with this task.',
+        agentCli: targetCli,
+        model: newModel,
+        thinkingEffort: newEffort,
+      })
+    );
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -674,6 +935,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setShowSkillsPopup(false);
         return;
       }
+    }
+
+    if (showConfig && e.key === 'Escape') {
+      e.preventDefault();
+      setShowConfig(false);
+      return;
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -847,6 +1114,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         liveStreamingChunk={streamingChunk}
         isStreaming={isStreaming}
         taskId={task.id}
+        clis={clis}
+        currentCli={tabCli || settings?.agent_cli || 'codex'}
+        onSwitchCliAndRetry={handleSwitchCliAndRetry}
+        onOpenSettings={() => navigate('/settings')}
       />
       <div ref={messagesEndRef} />
       {/* Input Area */}
@@ -866,104 +1137,22 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <p className="text-xs text-cozy-muted mt-1">Images, code, documents up to 50MB (max 10 files)</p>
           </div>
         )}
-        {/* Agent / Model / Effort Selector (collapsible above editor) */}
-        {showConfig ? (
-          <div className="mb-3 p-3.5 rounded-2xl bg-cozy-subtle/90 border border-cozy-border/80 shadow-soft-sm transition-all space-y-2.5">
-            <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
-              <span className="flex items-center gap-2 text-cozy-text font-semibold">
-                <Sliders className="w-3.5 h-3.5 text-teal-500" />
-                Agent & Model Configuration
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowConfig(false)}
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface transition-colors text-xs"
-                title="Collapse configuration"
-              >
-                <span>Collapse</span>
-                <ChevronUp className="w-3 h-3" />
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 text-xs text-cozy-muted pt-0.5">
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-cozy-text shrink-0">Agent:</span>
-                <select
-                  value={tabCli}
-                  onChange={(e) => handleCliChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400"
-                >
-                  {clis.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name} {!c.available && '(not found)'}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center space-x-2 flex-1 min-w-[200px]">
-                <span className="font-medium text-cozy-text shrink-0">Model:</span>
-                <select
-                  value={tabModel}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate"
-                >
-                  {availableModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <span className="font-medium text-cozy-text shrink-0">Effort:</span>
-                <select
-                  value={tabEffort}
-                  onChange={(e) => handleEffortChange(e.target.value)}
-                  className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
-                >
-                  {(() => {
-                    const current = availableModels.find((m) => m.id === tabModel);
-                    const efforts = current?.reasoningEfforts || ['none', 'low', 'medium', 'high', 'max'];
-                    return efforts.map((eff) => (
-                      <option key={eff} value={eff}>
-                        {eff.charAt(0).toUpperCase() + eff.slice(1)}
-                      </option>
-                    ));
-                  })()}
-                </select>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mb-2.5 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setShowConfig(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/70 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all group max-w-full min-w-0"
-              title="Click to configure agent, model, and reasoning effort"
-            >
-              <Sliders className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-              <span className="font-semibold text-teal-600 dark:text-teal-400 shrink-0">{tabCli || 'agy'}</span>
-              <span className="text-cozy-muted/50 shrink-0">·</span>
-              <span className="truncate max-w-[130px] sm:max-w-[220px]">
-                {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
-              </span>
-              {tabEffort && (
-                <>
-                  <span className="text-cozy-muted/50">·</span>
-                  <span className="text-cozy-muted capitalize">{tabEffort}</span>
-                </>
-              )}
-              <ChevronDown className="w-3.5 h-3.5 text-cozy-muted group-hover:text-teal-500 ml-0.5 transition-transform" />
-            </button>
-          </div>
-        )}
+        {/* Hidden File Picker Input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files && e.target.files.length > 0) {
+              handleUploadFiles(e.target.files);
+            }
+          }}
+        />
 
         {/* Upload Error Banner */}
         {uploadError && (
-          <div className="mb-2.5 p-2 px-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-500 text-xs flex items-center justify-between">
+          <div className="mb-2 p-2 px-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-500 text-xs flex items-center justify-between">
             <div className="flex items-center gap-1.5 min-w-0">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{uploadError}</span>
@@ -979,81 +1168,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </div>
         )}
 
-        {/* Pending Attachments List */}
-        {(pendingAttachments.length > 0 || isUploading) && (
-          <div className="mb-2.5 flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin">
-            {pendingAttachments.map((att) => {
-              const isImg = isImageAttachment(att);
-              return (
-                <div
-                  key={att.id}
-                  className="group relative flex items-center gap-2 pl-2 pr-1.5 py-1.5 rounded-xl bg-cozy-subtle border border-cozy-border/80 shadow-soft-sm text-xs text-cozy-text shrink-0 max-w-[220px]"
-                >
-                  {isImg ? (
-                    <img
-                      src={att.url}
-                      alt={att.name}
-                      className="w-7 h-7 object-cover rounded-lg border border-cozy-border shrink-0 bg-black/10"
-                    />
-                  ) : (
-                    <div className="w-7 h-7 rounded-lg bg-cozy-surface border border-cozy-border flex items-center justify-center text-teal-500 shrink-0">
-                      {getFileIcon(att, 'w-3.5 h-3.5')}
-                    </div>
-                  )}
-                  <div className="flex flex-col min-w-0 pr-1">
-                    <span className="font-medium truncate text-[11px] leading-tight">
-                      {att.name}
-                    </span>
-                    <span className="text-[10px] text-cozy-muted font-mono leading-tight">
-                      {formatFileSize(att.size)}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttachment(att.id)}
-                    className="p-1 rounded-md text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0 ml-auto"
-                    title="Remove attachment"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              );
-            })}
-
-            {isUploading && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-400/30 text-teal-600 dark:text-teal-400 text-xs shrink-0 animate-pulse font-medium">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Uploading...</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="relative flex items-end rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-teal-400/60 focus-within:ring-2 focus-within:ring-teal-400/20 shadow-soft-sm transition-all p-2.5">
-          {/* Hidden File Picker Input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files && e.target.files.length > 0) {
-                handleUploadFiles(e.target.files);
-              }
-            }}
-          />
-
-          {/* Paperclip Button */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming || isUploading}
-            className="p-2 mb-0.5 rounded-xl text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
-            title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
-          >
-            <Paperclip className="w-4 h-4" />
-          </button>
-
+        {/* Editor Box */}
+        <div className="relative flex flex-col rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-teal-400/60 focus-within:ring-2 focus-within:ring-teal-400/20 shadow-soft-sm transition-all p-2.5">
           {/* Skills Autocompletion Popup */}
           {showSkillsPopup && (
             <div
@@ -1150,6 +1266,57 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             </div>
           )}
 
+          {/* Pending Attachments List */}
+          {(pendingAttachments.length > 0 || isUploading) && (
+            <div className="mb-2 flex items-center gap-2 overflow-x-auto py-1 scrollbar-thin">
+              {pendingAttachments.map((att) => {
+                const isImg = isImageAttachment(att);
+                return (
+                  <div
+                    key={att.id}
+                    className="group relative flex items-center gap-2 pl-2 pr-1.5 py-1.5 rounded-xl bg-cozy-subtle border border-cozy-border/80 shadow-soft-sm text-xs text-cozy-text shrink-0 max-w-[220px]"
+                  >
+                    {isImg ? (
+                      <img
+                        src={att.url}
+                        alt={att.name}
+                        className="w-7 h-7 object-cover rounded-lg border border-cozy-border shrink-0 bg-black/10"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-lg bg-cozy-surface border border-cozy-border flex items-center justify-center text-teal-500 shrink-0">
+                        {getFileIcon(att, 'w-3.5 h-3.5')}
+                      </div>
+                    )}
+                    <div className="flex flex-col min-w-0 pr-1">
+                      <span className="font-medium truncate text-[11px] leading-tight">
+                        {att.name}
+                      </span>
+                      <span className="text-[10px] text-cozy-muted font-mono leading-tight">
+                        {formatFileSize(att.size)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(att.id)}
+                      className="p-1 rounded-md text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-colors shrink-0 ml-auto"
+                      title="Remove attachment"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+
+              {isUploading && (
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-teal-500/10 border border-teal-400/30 text-teal-600 dark:text-teal-400 text-xs shrink-0 animate-pulse font-medium">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Uploading...</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Editor Textarea */}
           <textarea
             ref={textareaRef}
             value={inputPrompt}
@@ -1166,36 +1333,157 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             onPaste={handlePaste}
             placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`}
             rows={2}
-            className="flex-1 bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1 leading-relaxed"
+            className="w-full bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1 leading-relaxed min-h-[48px] max-h-48"
           />
 
-          <div className="flex items-center space-x-1.5 pl-2 pb-0.5">
-            {isStreaming ? (
+          {/* Bottom Toolbar: Model switch on left, Attachment & Send buttons on right */}
+          <div className="flex items-center justify-between gap-2 pt-1.5 px-0.5">
+            {/* Model Switch - Bottom Left */}
+            <div className="relative shrink-0 min-w-0">
               <button
-                onClick={handleAbort}
-                className="p-2.5 rounded-full bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-all"
-                title="Stop generation"
+                ref={configBtnRef}
+                type="button"
+                onClick={() => setShowConfig((prev) => !prev)}
+                className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all group max-w-full min-w-0 ${
+                  showConfig
+                    ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400 shadow-soft-sm'
+                    : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm'
+                }`}
+                title="Click to configure agent, model, and reasoning effort"
               >
-                <Square className="w-4 h-4 fill-current" />
+                <Sliders className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                <span className="font-semibold text-teal-600 dark:text-teal-400 shrink-0">{tabCli || 'agy'}</span>
+                <span className="text-cozy-muted/50 shrink-0">·</span>
+                <span className="truncate max-w-[120px] sm:max-w-[200px]">
+                  {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
+                </span>
+                {tabEffort && (
+                  <>
+                    <span className="text-cozy-muted/50 shrink-0">·</span>
+                    <span className="text-cozy-muted capitalize shrink-0">{tabEffort}</span>
+                  </>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-cozy-muted group-hover:text-teal-500 ml-0.5 transition-transform shrink-0 ${showConfig ? 'rotate-180 text-teal-500' : ''}`} />
               </button>
-            ) : (
+
+              {/* Model / Agent Config Popover */}
+              {showConfig && (
+                <div
+                  ref={configRef}
+                  className="absolute bottom-full left-0 mb-2 p-3.5 rounded-2xl popup-surface bg-white dark:bg-[#0c1322] border border-cozy-border/80 shadow-xl z-30 transition-all space-y-2.5 min-w-[280px] sm:min-w-[360px] max-w-[calc(100vw-3rem)]"
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
+                    <span className="flex items-center gap-2 text-cozy-text font-semibold">
+                      <Sliders className="w-3.5 h-3.5 text-teal-500" />
+                      Agent & Model Configuration
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowConfig(false)}
+                      className="p-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors text-xs"
+                      title="Close configuration"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 text-xs text-cozy-muted pt-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-cozy-text shrink-0">Agent:</span>
+                      <select
+                        value={tabCli}
+                        onChange={(e) => handleCliChange(e.target.value)}
+                        className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400"
+                      >
+                        {clis.map((c) => (
+                          <option key={c.name} value={c.name}>
+                            {c.name} {!c.available && '(not found)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center space-x-2 flex-1 min-w-[160px]">
+                      <span className="font-medium text-cozy-text shrink-0">Model:</span>
+                      <select
+                        value={tabModel}
+                        onChange={(e) => handleModelChange(e.target.value)}
+                        disabled={availableModels.length === 0}
+                        className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate disabled:opacity-60"
+                      >
+                        {availableModels.length === 0 ? (
+                          <option value={tabModel || ''}>
+                            {tabModel || 'Loading models...'}
+                          </option>
+                        ) : (
+                          availableModels.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="font-medium text-cozy-text shrink-0">Effort:</span>
+                      <select
+                        value={tabEffort}
+                        onChange={(e) => handleEffortChange(e.target.value)}
+                        className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
+                      >
+                        {(() => {
+                          const current = availableModels.find((m) => m.id === tabModel);
+                          const efforts = current?.reasoningEfforts && current.reasoningEfforts.length > 0
+                            ? current.reasoningEfforts
+                            : ['none', 'low', 'medium', 'high', 'max'];
+                          return efforts.map((eff) => (
+                            <option key={eff} value={eff}>
+                              {eff.charAt(0).toUpperCase() + eff.slice(1)}
+                            </option>
+                          ));
+                        })()}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Right: Attachment Button + Send Button */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Paperclip Button */}
               <button
-                onClick={handleSendMessage}
-                disabled={(!inputPrompt.trim() && pendingAttachments.length === 0) || isUploading}
-                className="p-2.5 rounded-full bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-35 disabled:hover:bg-teal-500 transition-all shadow-glow-ocean"
-                title="Send message"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || isUploading}
+                className="p-2 rounded-xl text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
+                title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
               >
-                <Send className="w-4 h-4" />
+                <Paperclip className="w-4 h-4" />
               </button>
-            )}
+
+              {/* Send / Abort Button */}
+              {isStreaming ? (
+                <button
+                  onClick={handleAbort}
+                  className="p-2 rounded-xl bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-all shrink-0"
+                  title="Stop generation"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSendMessage}
+                  disabled={(!inputPrompt.trim() && pendingAttachments.length === 0) || isUploading}
+                  className="p-2 rounded-xl bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-35 disabled:hover:bg-teal-500 transition-all shadow-glow-ocean shrink-0"
+                  title="Send message"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="mt-2 flex items-center justify-between text-[11px] text-cozy-muted/70 px-1">
-          <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-            Branch: <span className="text-cozy-text font-medium">{task.branch}</span>
-          </span>
-          <span>Base: <span className="text-cozy-muted font-medium">{task.base_branch}</span></span>
         </div>
       </div>
     </div>

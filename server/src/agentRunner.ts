@@ -589,6 +589,7 @@ async function discoverAgyModels(): Promise<ModelOption[]> {
 // Discover options for Claude Code CLI
 async function discoverClaudeModels(): Promise<ModelOption[]> {
   const claudeHome = os.homedir();
+  const catalogDir = path.join(claudeHome, '.claude', 'cache', 'model-catalog');
   const configPath = path.join(claudeHome, '.claude.json');
 
   const claudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -600,6 +601,125 @@ async function discoverClaudeModels(): Promise<ModelOption[]> {
     { id: 'max', label: 'Max', description: 'Maximum thinking compute' },
   ];
 
+  const familySlogans: Record<string, string> = {
+    opus: 'Best for everyday, complex tasks',
+    sonnet: 'Efficient for routine tasks',
+    haiku: 'Fastest for quick answers',
+    fable: 'Most capable for your hardest and longest-running tasks',
+  };
+
+  const getFamilySlogan = (id: string): string => {
+    const idLower = id.toLowerCase();
+    for (const [k, v] of Object.entries(familySlogans)) {
+      if (idLower.includes(k)) return v;
+    }
+    return 'Advanced AI model';
+  };
+
+  // 1. Try reading dynamic served catalog cache from ~/.claude/cache/model-catalog
+  if (fs.existsSync(catalogDir)) {
+    try {
+      const files = fs.readdirSync(catalogDir).filter((f) => f.endsWith('.json'));
+      files.sort((a, b) => {
+        try {
+          return (
+            fs.statSync(path.join(catalogDir, b)).mtimeMs -
+            fs.statSync(path.join(catalogDir, a)).mtimeMs
+          );
+        } catch {
+          return 0;
+        }
+      });
+
+      for (const file of files) {
+        try {
+          const raw = fs.readFileSync(path.join(catalogDir, file), 'utf-8');
+          const data = JSON.parse(raw);
+          const catModels: any[] = data.catalog?.config?.models;
+          const catState = data.catalog?.state;
+
+          if (Array.isArray(catModels) && catModels.length > 0) {
+            const defaultModelId = catState?.model || 'claude-opus-5-5';
+            const models: ModelOption[] = [];
+
+            for (const m of catModels) {
+              const isRecommended = m.id === defaultModelId;
+              const cleanName = m.name?.startsWith('Claude ') ? m.name : `Claude ${m.name || m.id}`;
+              const name = isRecommended ? `${cleanName} (Recommended)` : cleanName;
+              const description = m.description || getFamilySlogan(m.id);
+
+              let reasoningEfforts = claudeEfforts;
+              let reasoningEffortOptions = claudeEffortOptions;
+              let defaultEffort = 'medium';
+
+              if (m.thinking?.type === 'none') {
+                reasoningEfforts = ['none'];
+                reasoningEffortOptions = [{ id: 'none', label: 'None', description: 'Standard fast output' }];
+                defaultEffort = 'none';
+              } else if (Array.isArray(m.thinking?.effort_options) && m.thinking.effort_options.length > 0) {
+                reasoningEfforts = m.thinking.effort_options.map((o: any) => o.id);
+                reasoningEffortOptions = m.thinking.effort_options.map((o: any) => ({
+                  id: o.id,
+                  label: o.name || (o.id === 'xhigh' ? 'xHigh' : o.id.charAt(0).toUpperCase() + o.id.slice(1)),
+                  description:
+                    claudeEffortOptions.find((eo) => eo.id === o.id)?.description ||
+                    `${o.id} reasoning effort`,
+                }));
+                const defOpt = m.thinking.effort_options.find(
+                  (o: any) => o.badge?.message?.toLowerCase() === 'default'
+                );
+                defaultEffort =
+                  (isRecommended && catState?.thinking?.effort) || defOpt?.id || 'medium';
+              }
+
+              models.push({
+                id: m.id,
+                name,
+                description,
+                reasoningEfforts,
+                reasoningEffortOptions,
+                defaultEffort,
+                discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
+              });
+            }
+
+            // Also check ~/.claude.json for legacy models like claude-3-opus-20240229 if entitled
+            if (fs.existsSync(configPath)) {
+              try {
+                const confRaw = fs.readFileSync(configPath, 'utf-8');
+                const confData = JSON.parse(confRaw);
+                const accessCache: Array<{ apiName: string; entitled: boolean }> = Array.isArray(
+                  confData.modelAccessCache
+                )
+                  ? confData.modelAccessCache
+                  : [];
+                const entitledSet = new Set(
+                  accessCache.filter((x) => x.entitled).map((x) => x.apiName)
+                );
+                if (entitledSet.has('claude-3-opus-20240229') && !models.some((x) => x.id === 'claude-3-opus-20240229')) {
+                  models.push({
+                    id: 'claude-3-opus-20240229',
+                    name: 'Claude 3 Opus',
+                    description: 'Legacy conceptual design model',
+                    reasoningEfforts: ['none'],
+                    reasoningEffortOptions: [{ id: 'none', label: 'None', description: 'Standard generation' }],
+                    defaultEffort: 'none',
+                    discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
+                  });
+                }
+              } catch {}
+            }
+
+            if (models.length > 0) return models;
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Failed to read ~/.claude/cache/model-catalog:', err);
+    }
+  }
+
+  // 2. Fallback to ~/.claude.json modelAccessCache if catalog cache is unavailable
   if (fs.existsSync(configPath)) {
     try {
       const raw = fs.readFileSync(configPath, 'utf-8');
@@ -610,96 +730,117 @@ async function discoverClaudeModels(): Promise<ModelOption[]> {
       const entitledSet = new Set(accessCache.filter((m) => m.entitled).map((m) => m.apiName));
 
       const models: ModelOption[] = [];
+      const defaultModelId =
+        data.orgModelDefaultCache?.override_user_selection && data.orgModelDefaultCache?.name
+          ? data.orgModelDefaultCache.name
+          : entitledSet.has('claude-opus-5-5')
+          ? 'claude-opus-5-5'
+          : 'claude-sonnet-5';
 
-      // 1. Claude Sonnet 5 (Recommended / Default)
-      if (entitledSet.has('claude-sonnet-5') || data.orgModelDefaultCache?.name === 'claude-sonnet-5') {
-        models.push({
-          id: 'claude-sonnet-5',
-          name: 'Claude Sonnet 5 (Recommended)',
-          description: 'Flagship model for high-speed coding, refactoring, and reasoning',
+      const candidateModels = [
+        {
+          id: 'claude-opus-5-5',
+          name: 'Claude Opus 5.5',
+          description: 'Most capable for ambitious work',
           reasoningEfforts: claudeEfforts,
           reasoningEffortOptions: claudeEffortOptions,
           defaultEffort: 'medium',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 2. Claude Fable 5.1
-      if (entitledSet.has('claude-fable-5-1') || entitledSet.has('claude-fable-5')) {
-        models.push({
-          id: 'claude-fable-5-1',
-          name: 'Claude Fable 5.1',
-          description: 'Most capable model for hardest and longest-running tasks',
-          reasoningEfforts: claudeEfforts,
-          reasoningEffortOptions: claudeEffortOptions,
-          defaultEffort: 'high',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 3. Claude Opus 5
-      if (entitledSet.has('claude-opus-5')) {
-        models.push({
+        },
+        {
           id: 'claude-opus-5',
           name: 'Claude Opus 5',
-          description: 'Deep conceptual reasoning, system architecture, and complex refactors',
+          description: 'For complex tasks',
           reasoningEfforts: claudeEfforts,
           reasoningEffortOptions: claudeEffortOptions,
           defaultEffort: 'high',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 4. Claude Opus 4.8
-      if (entitledSet.has('claude-opus-4-8')) {
-        models.push({
-          id: 'claude-opus-4-8',
-          name: 'Claude Opus 4.8',
-          description: 'Advanced reasoning and complex workflows',
-          reasoningEfforts: ['low', 'medium', 'high', 'max'],
-          reasoningEffortOptions: claudeEffortOptions.filter((e) => e.id !== 'xhigh'),
-          defaultEffort: 'medium',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 5. Claude Sonnet 4.6
-      if (entitledSet.has('claude-sonnet-4-6')) {
-        models.push({
-          id: 'claude-sonnet-4-6',
-          name: 'Claude Sonnet 4.6',
-          description: 'Fast, reliable coding model',
-          reasoningEfforts: ['low', 'medium', 'high', 'max'],
-          reasoningEffortOptions: claudeEffortOptions.filter((e) => e.id !== 'xhigh'),
-          defaultEffort: 'medium',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 6. Claude Haiku 4.5
-      if (entitledSet.has('claude-haiku-4-5-20251001')) {
-        models.push({
+        },
+        {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          description: 'Most efficient for everyday tasks',
+          reasoningEfforts: claudeEfforts,
+          reasoningEffortOptions: claudeEffortOptions,
+          defaultEffort: 'high',
+        },
+        {
+          id: 'claude-fable-5-1',
+          name: 'Claude Fable 5.1',
+          description: 'For your toughest challenges',
+          reasoningEfforts: claudeEfforts,
+          reasoningEffortOptions: claudeEffortOptions,
+          defaultEffort: 'high',
+        },
+        {
           id: 'claude-haiku-4-5-20251001',
           name: 'Claude Haiku 4.5',
-          description: 'Lightweight, ultra-fast generation and exploration',
+          description: 'Fastest for quick answers',
           reasoningEfforts: ['none'],
           reasoningEffortOptions: [{ id: 'none', label: 'None', description: 'Standard fast output' }],
           defaultEffort: 'none',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
-      }
-
-      // 7. Claude 3 Opus
-      if (entitledSet.has('claude-3-opus-20240229')) {
-        models.push({
+        },
+        {
+          id: 'claude-fable-5',
+          name: 'Claude Fable 5',
+          description: 'Most capable for your hardest and longest-running tasks',
+          reasoningEfforts: claudeEfforts,
+          reasoningEffortOptions: claudeEffortOptions,
+          defaultEffort: 'high',
+        },
+        {
+          id: 'claude-opus-4-8',
+          name: 'Claude Opus 4.8',
+          description: 'Best for everyday, complex tasks',
+          reasoningEfforts: claudeEfforts,
+          reasoningEffortOptions: claudeEffortOptions,
+          defaultEffort: 'high',
+        },
+        {
+          id: 'claude-opus-4-7',
+          name: 'Claude Opus 4.7',
+          description: 'Best for everyday, complex tasks',
+          reasoningEfforts: claudeEfforts,
+          reasoningEffortOptions: claudeEffortOptions,
+          defaultEffort: 'xhigh',
+        },
+        {
+          id: 'claude-opus-4-6',
+          name: 'Claude Opus 4.6',
+          description: 'Best for everyday, complex tasks',
+          reasoningEfforts: ['low', 'medium', 'high', 'max'],
+          reasoningEffortOptions: claudeEffortOptions.filter((e) => e.id !== 'xhigh'),
+          defaultEffort: 'high',
+        },
+        {
+          id: 'claude-sonnet-4-6',
+          name: 'Claude Sonnet 4.6',
+          description: 'Efficient for routine tasks',
+          reasoningEfforts: ['low', 'medium', 'high', 'max'],
+          reasoningEffortOptions: claudeEffortOptions.filter((e) => e.id !== 'xhigh'),
+          defaultEffort: 'high',
+        },
+        {
           id: 'claude-3-opus-20240229',
           name: 'Claude 3 Opus',
           description: 'Legacy conceptual design model',
           reasoningEfforts: ['none'],
           reasoningEffortOptions: [{ id: 'none', label: 'None', description: 'Standard generation' }],
           defaultEffort: 'none',
-          discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
-        });
+        },
+      ];
+
+      for (const m of candidateModels) {
+        if (entitledSet.has(m.id) || m.id === defaultModelId) {
+          const isRecommended = m.id === defaultModelId;
+          models.push({
+            id: m.id,
+            name: isRecommended ? `${m.name} (Recommended)` : m.name,
+            description: m.description,
+            reasoningEfforts: m.reasoningEfforts,
+            reasoningEffortOptions: m.reasoningEffortOptions,
+            defaultEffort: m.defaultEffort,
+            discoveredFrom: 'Claude Code CLI Discovery (~/.claude.json)',
+          });
+        }
       }
 
       if (models.length > 0) return models;
@@ -708,30 +849,39 @@ async function discoverClaudeModels(): Promise<ModelOption[]> {
     }
   }
 
-  // Fallback defaults for Claude Code CLI
+  // 3. Fallback defaults for Claude Code CLI
   return [
     {
-      id: 'claude-sonnet-5',
-      name: 'Claude Sonnet 5 (Recommended)',
-      description: 'Flagship model for high-speed coding, refactoring, and reasoning',
+      id: 'claude-opus-5-5',
+      name: 'Claude Opus 5.5 (Recommended)',
+      description: 'Most capable for ambitious work · Best for everyday, complex tasks',
       reasoningEfforts: claudeEfforts,
       reasoningEffortOptions: claudeEffortOptions,
       defaultEffort: 'medium',
       discoveredFrom: 'Claude Code CLI Discovery',
     },
     {
-      id: 'claude-fable-5-1',
-      name: 'Claude Fable 5.1',
-      description: 'Most capable model for hardest and longest-running tasks',
+      id: 'claude-opus-5',
+      name: 'Claude Opus 5',
+      description: 'For complex tasks',
       reasoningEfforts: claudeEfforts,
       reasoningEffortOptions: claudeEffortOptions,
       defaultEffort: 'high',
       discoveredFrom: 'Claude Code CLI Discovery',
     },
     {
-      id: 'claude-opus-5',
-      name: 'Claude Opus 5',
-      description: 'Deep conceptual reasoning, system architecture, and complex refactors',
+      id: 'claude-sonnet-5',
+      name: 'Claude Sonnet 5',
+      description: 'Most efficient for everyday tasks',
+      reasoningEfforts: claudeEfforts,
+      reasoningEffortOptions: claudeEffortOptions,
+      defaultEffort: 'high',
+      discoveredFrom: 'Claude Code CLI Discovery',
+    },
+    {
+      id: 'claude-fable-5-1',
+      name: 'Claude Fable 5.1',
+      description: 'For your toughest challenges',
       reasoningEfforts: claudeEfforts,
       reasoningEffortOptions: claudeEffortOptions,
       defaultEffort: 'high',
@@ -740,13 +890,36 @@ async function discoverClaudeModels(): Promise<ModelOption[]> {
     {
       id: 'claude-haiku-4-5-20251001',
       name: 'Claude Haiku 4.5',
-      description: 'Lightweight, ultra-fast generation and exploration',
+      description: 'Fastest for quick answers',
       reasoningEfforts: ['none'],
       reasoningEffortOptions: [{ id: 'none', label: 'None', description: 'Standard fast output' }],
       defaultEffort: 'none',
       discoveredFrom: 'Claude Code CLI Discovery',
     },
+    {
+      id: 'claude-fable-5',
+      name: 'Claude Fable 5',
+      description: 'Most capable for your hardest and longest-running tasks',
+      reasoningEfforts: claudeEfforts,
+      reasoningEffortOptions: claudeEffortOptions,
+      defaultEffort: 'high',
+      discoveredFrom: 'Claude Code CLI Discovery',
+    },
+    {
+      id: 'claude-opus-4-8',
+      name: 'Claude Opus 4.8',
+      description: 'Best for everyday, complex tasks',
+      reasoningEfforts: claudeEfforts,
+      reasoningEffortOptions: claudeEffortOptions,
+      defaultEffort: 'high',
+      discoveredFrom: 'Claude Code CLI Discovery',
+    },
   ];
+}
+
+export function stripAnsi(text: string): string {
+  if (!text) return '';
+  return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 }
 
 export interface StreamEvent {
@@ -858,6 +1031,36 @@ export function spawnAgentCli(
             });
           }
 
+          // Check for error events in JSON stream (Codex / Claude / etc.)
+          if (parsed.type === 'error' || parsed.type === 'turn.failed') {
+            const errorMsg = parsed.message || parsed.error?.message || 'Agent execution failed';
+            const cleanMsg = stripAnsi(errorMsg).trim();
+            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(cleanMsg);
+            onEvent({
+              type: 'error',
+              content: cleanMsg,
+              metadata: { ...parsed, isSpendCap, errorType: isSpendCap ? 'spend_cap' : 'agent_error' },
+              conversationId: detectedConversationId,
+            });
+            continue;
+          }
+
+          // In Codex CLI, configuration warnings are emitted as item.completed with item.type === "error" or "warning"
+          if (
+            parsed.type === 'item.completed' &&
+            parsed.item &&
+            (parsed.item.type === 'error' || parsed.item.type === 'warning')
+          ) {
+            const warningMsg = parsed.item.message || '';
+            if (
+              warningMsg.includes('unrecognized configuration setting') ||
+              warningMsg.includes('windows_wsl_setup_acknowledged') ||
+              warningMsg.includes('deprecated')
+            ) {
+              continue;
+            }
+          }
+
           // Handle agy stream-json format
           if (parsed.event === 'init') {
             // Handled conversationId above
@@ -931,7 +1134,42 @@ export function spawnAgentCli(
       }
 
       if (!handled) {
-        onEvent({ type: 'chunk', content: line + '\n' });
+        const cleanLine = stripAnsi(line).trim();
+        if (!cleanLine) continue;
+
+        // Filter out CLI startup banners and headers (e.g. Codex / Claude terminal headers)
+        if (
+          cleanLine.startsWith('Reading additional input from stdin') ||
+          cleanLine.startsWith('OpenAI Codex v') ||
+          cleanLine === '--------' ||
+          cleanLine.startsWith('workdir:') ||
+          cleanLine.startsWith('model:') ||
+          cleanLine.startsWith('provider:') ||
+          cleanLine.startsWith('approval:') ||
+          cleanLine.startsWith('sandbox:') ||
+          cleanLine.startsWith('reasoning effort:') ||
+          cleanLine.startsWith('reasoning summaries:') ||
+          cleanLine.startsWith('session id:') ||
+          cleanLine === 'user' ||
+          cleanLine.startsWith('user (') ||
+          cleanLine.includes('windows_wsl_setup_acknowledged is ignored')
+        ) {
+          continue;
+        }
+
+        // Check for spend cap or fatal error in plain text output
+        if (/spend cap|budget limit|quota exceeded/i.test(cleanLine)) {
+          const match = cleanLine.match(/(?:ERROR:\s*)?(You hit your spend cap[^.\n]*\.[^\n]*|.*budget[^.\n]*\.[^\n]*)/i);
+          const msg = match ? match[1].trim() : cleanLine;
+          onEvent({
+            type: 'error',
+            content: msg,
+            metadata: { isSpendCap: true, errorType: 'spend_cap' },
+          });
+          continue;
+        }
+
+        onEvent({ type: 'chunk', content: cleanLine + '\n' });
       }
     }
   });
@@ -946,14 +1184,44 @@ export function spawnAgentCli(
           onEvent({ type: 'chunk', content: lineBuffer });
         }
       } catch {
-        onEvent({ type: 'chunk', content: lineBuffer });
+        const clean = stripAnsi(lineBuffer).trim();
+        if (clean && !clean.startsWith('Reading additional input')) {
+          onEvent({ type: 'chunk', content: clean });
+        }
       }
     }
   });
 
   proc.stderr?.on('data', (data: Buffer) => {
-    const text = data.toString('utf-8');
-    onEvent({ type: 'chunk', content: text });
+    const raw = data.toString('utf-8');
+    const clean = stripAnsi(raw).trim();
+    if (!clean) return;
+
+    // Filter out internal transport and config noise
+    if (
+      clean.includes('windows_wsl_setup_acknowledged') ||
+      clean.includes('rmcp::transport::worker') ||
+      clean.includes('Transport channel closed') ||
+      clean.includes('No Authorization: Bearer') ||
+      clean.includes('deprecated settings')
+    ) {
+      return;
+    }
+
+    // Check if stderr contains a spend cap or budget limit error
+    if (/spend cap|budget limit|quota exceeded/i.test(clean)) {
+      const match = clean.match(/(?:ERROR:\s*)?(You hit your spend cap[^.\n]*\.[^\n]*|.*budget[^.\n]*\.[^\n]*)/i);
+      const msg = match ? match[1].trim() : clean;
+      onEvent({
+        type: 'error',
+        content: msg,
+        metadata: { isSpendCap: true, errorType: 'spend_cap' },
+      });
+      return;
+    }
+
+    // Non-fatal stderr diagnostic goes into thought stream so it doesn't pollute assistant content
+    onEvent({ type: 'thought', content: clean + '\n' });
   });
 
   proc.on('close', (code) => {
