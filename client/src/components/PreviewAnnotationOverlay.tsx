@@ -238,6 +238,9 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
   // Handle Copy to Clipboard
   const handleCopy = useCallback(async () => {
     try {
+      if (!navigator.clipboard?.write) {
+        throw new Error('Clipboard API is not available in this context (requires HTTPS or http://localhost)');
+      }
       const blob = await exportImageBlob();
       await navigator.clipboard.write([
         new ClipboardItem({ 'image/png': blob }),
@@ -701,13 +704,13 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 z-30 flex flex-col bg-slate-950/95 overflow-hidden select-none animate-in fade-in duration-200"
+      className="absolute inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden select-none animate-in fade-in duration-200"
     >
-      {/* Floating Action Header Bar */}
-      <div className="preview-annotation-bar absolute top-3 left-3 right-3 z-40 flex items-center justify-between px-3.5 py-2 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200/80 dark:border-slate-800/80 shadow-lg pointer-events-auto">
+      {/* Top Action Header Bar - in normal flex document flow so it never overlaps or gets blocked by Tldraw */}
+      <div className="preview-annotation-bar relative shrink-0 h-12 z-50 flex items-center justify-between px-4 bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 shadow-sm pointer-events-auto">
         {/* Left: Title & Dimensions */}
         <div className="flex items-center space-x-2.5">
-          <div className="flex items-center space-x-1.5 px-2 py-1 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200/60 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-semibold">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200/60 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 text-xs font-semibold">
             <Camera className="w-3.5 h-3.5" />
             <span>Annotate Preview</span>
           </div>
@@ -717,15 +720,15 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
         </div>
 
         {/* Center: Crop & Undo/Redo */}
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-1.5">
           <button
             type="button"
             onClick={toggleCrop}
             title={isCropping ? 'Finish Cropping (C)' : 'Crop Screenshot (C)'}
-            className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
               isCropping
                 ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/30'
-                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+                : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60'
             }`}
           >
             <Crop className="w-3.5 h-3.5" />
@@ -740,7 +743,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             onClick={() => editorRef.current?.undo()}
             disabled={!canUndo}
             title="Undo (⌘Z)"
-            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700/60 disabled:opacity-30 disabled:pointer-events-none transition-colors"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -750,19 +753,19 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             onClick={() => editorRef.current?.redo()}
             disabled={!canRedo}
             title="Redo (⌘⇧Z)"
-            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700/60 disabled:opacity-30 disabled:pointer-events-none transition-colors"
           >
             <Redo2 className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center space-x-1.5">
+        <div className="flex items-center space-x-2">
           <button
             type="button"
             onClick={handleCopy}
             title="Copy image to clipboard"
-            className="flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors cursor-pointer"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
             <span>{copied ? 'Copied!' : 'Copy'}</span>
@@ -772,18 +775,9 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             type="button"
             onClick={handleDownload}
             title="Download PNG"
-            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            title="Cancel (Esc)"
-            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
           </button>
 
           {/* Primary Action: Attach to Chat */}
@@ -792,7 +786,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             onClick={handleAttachToChat}
             disabled={isAttaching}
             title="Attach to Chat (⌘↵)"
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-medium text-xs shadow-sm shadow-rose-500/25 transition-all disabled:opacity-60"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white font-medium text-xs shadow-sm shadow-rose-500/25 transition-all disabled:opacity-60 cursor-pointer"
           >
             {isAttaching ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -801,6 +795,17 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
             )}
             <span>{isAttaching ? 'Attaching...' : 'Attach to Chat'}</span>
             <span className="hidden sm:inline-block ml-0.5 text-[10px] text-rose-200">⌘↵</span>
+          </button>
+
+          <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" />
+
+          <button
+            type="button"
+            onClick={onClose}
+            title="Close (Esc)"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700/60 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -815,10 +820,17 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
       </div>
 
       {/* Canvas Area */}
-      <div className="relative flex-1 w-full h-full tldraw-container">
+      <div className="relative flex-1 w-full min-h-0 tldraw-container preview-annotation-canvas">
         <Tldraw
           autoFocus
           onMount={handleMount}
+          components={{
+            PageMenu: null,
+            NavigationPanel: null,
+            SharePanel: null,
+            HelpMenu: null,
+            TopPanel: null,
+          }}
         />
       </div>
     </div>

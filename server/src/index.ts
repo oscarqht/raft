@@ -27,6 +27,7 @@ import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
 import { resolveHost } from './tailscale.js';
+import { captureUrlScreenshot, warmupScreenshotWorker } from './screenshotService.js';
 import multer from 'multer';
 
 const app = express();
@@ -1154,6 +1155,7 @@ app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
   const devCmd = project?.dev_cmd || 'npm run dev';
   const port = project?.dev_port || 5173;
   const state = devServerManager.startServer(task.id, task.worktree_path, devCmd, port);
+  warmupScreenshotWorker();
   res.json(state);
 });
 
@@ -1167,6 +1169,32 @@ app.post('/api/tasks/:id/dev-server/restart', (req: Request, res: Response) => {
   const taskId = req.params.id as string;
   const state = devServerManager.restartServer(taskId);
   res.json(state);
+});
+
+app.post('/api/tasks/:id/dev-server/screenshot', async (req: Request, res: Response) => {
+  const taskId = req.params.id as string;
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const state = devServerManager.getServerState(taskId);
+  if (state.status !== 'running' && state.status !== 'starting') {
+    return res.status(400).json({ error: 'Dev server is not running for this task' });
+  }
+
+  const port = state.port || 5173;
+  const rawPath = typeof req.body?.path === 'string' ? req.body.path : '/';
+  const targetPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
+  const targetUrl = `http://localhost:${port}${targetPath}`;
+  const width = typeof req.body?.width === 'number' && req.body.width > 0 ? Math.min(3840, Math.max(320, req.body.width)) : 1280;
+  const height = typeof req.body?.height === 'number' && req.body.height > 0 ? Math.min(2160, Math.max(240, req.body.height)) : 800;
+
+  try {
+    const screenshot = await captureUrlScreenshot(targetUrl, width, height);
+    res.json(screenshot);
+  } catch (err: any) {
+    console.error(`[raft-server] Failed to capture dev server screenshot for task ${taskId}:`, err);
+    res.status(500).json({ error: err?.message || 'Failed to capture dev server screenshot' });
+  }
 });
 
 // Attachments
@@ -1917,10 +1945,21 @@ if (clientDistDir) {
 
 export { app, server };
 
-if (process.env.NODE_ENV !== 'test') {
-  server.listen(PORT, HOST, () => {
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  Boolean(process.env.NODE_TEST_CONTEXT) ||
+  process.execArgv.includes('--test') ||
+  process.argv.some((arg) => arg.includes('test'));
+
+if (!isTestEnv) {
+  const listenHost = isTailscale ? '0.0.0.0' : HOST;
+  server.listen(PORT, listenHost, () => {
     const networkType = isTailscale ? 'Tailscale network' : 'local interface';
     console.log(`[raft-server] listening on http://${HOST}:${PORT} (${networkType}, source: ${hostSource})`);
+    if (isTailscale) {
+      console.log(`[raft-server] also accessible locally at http://localhost:${PORT}`);
+    }
+    warmupScreenshotWorker();
   });
 }
 

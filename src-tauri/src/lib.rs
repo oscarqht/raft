@@ -54,7 +54,7 @@ pub fn run() {
 
             tauri::async_runtime::spawn(async move {
                 match server::start_server(app_handle.clone()).await {
-                    Ok((server_url, _port)) => {
+                    Ok((server_url, port)) => {
                         println!("[raft] Server running at {server_url}");
 
                         // Store server URL in app state for single-instance focus
@@ -69,10 +69,11 @@ pub fn run() {
                         }
                         updater::start_background_updater(app_handle.clone());
 
-                        // Automatically open browser on initial interactive launch
+                        // Automatically open browser on initial interactive launch (using localhost for secure context)
                         let is_autostart = std::env::args().any(|a| a == "--autostart" || a == "--silent");
                         if !is_autostart {
-                            let _ = open::that(&server_url);
+                            let local_url = format!("http://localhost:{port}");
+                            let _ = open::that(&local_url);
                         }
 
                         #[cfg(target_os = "macos")]

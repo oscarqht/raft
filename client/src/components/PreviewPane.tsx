@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2 } from 'lucide-react';
+import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2 } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
-import { getDevServerState, startDevServer, stopDevServer, restartDevServer } from '../api';
+import { getDevServerState, startDevServer, stopDevServer, restartDevServer, captureDevServerScreenshot } from '../api';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
   import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
@@ -31,6 +31,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [activeScreenshot, setActiveScreenshot] = useState<{
     dataUrl: string;
     width: number;
@@ -104,79 +105,185 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setIframeKey((k) => k + 1);
   };
 
+// Draws a crisp 1px subtle border around the perimeter of the captured screenshot
+// so that light/white pages have clear contrast against the tldraw canvas and chat bubbles.
+async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(dataUrl);
+
+        ctx.drawImage(img, 0, 0);
+
+        // Draw crisp 1px inset border around screenshot edge
+        ctx.strokeStyle = 'rgba(100, 116, 139, 0.4)'; // Slate 500
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
+
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
   const handleCaptureScreenshot = async () => {
     if (isCapturing || !previewContainerRef.current) return;
     try {
       setIsCapturing(true);
+      setCaptureError(null);
       const container = previewContainerRef.current;
       const rect = container.getBoundingClientRect();
+      const targetWidth = Math.max(100, Math.round(rect.width));
+      const targetHeight = Math.max(100, Math.round(rect.height));
 
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'browser',
-        } as any,
-        audio: false,
-        preferCurrentTab: true,
-        selfBrowserSurface: 'include',
-        surfaceSwitching: 'include',
-        systemAudio: 'exclude',
-      } as any);
+      // 1. Browser-native live preview capture (Captures the EXACT live page, session, and interactions on user's screen)
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              displaySurface: 'browser',
+            } as any,
+            audio: false,
+            preferCurrentTab: true,
+            selfBrowserSurface: 'include',
+            surfaceSwitching: 'include',
+            systemAudio: 'exclude',
+          } as any);
 
-      const track = stream.getVideoTracks()[0];
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-      await video.play();
+          const track = stream.getVideoTracks()[0];
+          let drawSource: CanvasImageSource | null = null;
+          let sourceWidth = 0;
+          let sourceHeight = 0;
 
-      await new Promise<void>((resolve) => {
-        if (video.readyState >= 2) return resolve();
-        video.onloadeddata = () => resolve();
-      });
+          // Accelerated GPU frame extraction via ImageCapture if supported (instant, 0ms latency)
+          if (typeof (window as any).ImageCapture !== 'undefined') {
+            try {
+              const imageCapture = new (window as any).ImageCapture(track);
+              const bitmap = await imageCapture.grabFrame();
+              sourceWidth = bitmap.width;
+              sourceHeight = bitmap.height;
+              drawSource = bitmap;
+            } catch {
+              drawSource = null;
+            }
+          }
 
-      // Brief delay for video frame rendering
-      await new Promise((r) => setTimeout(r, 120));
+          // Fallback to video element if ImageCapture is unavailable
+          if (!drawSource) {
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.muted = true;
+            video.playsInline = true;
+            await video.play();
 
-      const videoW = video.videoWidth;
-      const videoH = video.videoHeight;
-      const windowW = window.innerWidth;
-      const windowH = window.innerHeight;
+            await new Promise<void>((resolve) => {
+              if (video.readyState >= 2) return resolve();
+              video.onloadeddata = () => resolve();
+            });
 
-      const scaleX = videoW / windowW;
-      const scaleY = videoH / windowH;
+            // Brief delay for video frame buffer
+            await new Promise((r) => setTimeout(r, 60));
 
-      let cropX = Math.max(0, Math.round(rect.left * scaleX));
-      let cropY = Math.max(0, Math.round(rect.top * scaleY));
-      let cropW = Math.min(videoW - cropX, Math.round(rect.width * scaleX));
-      let cropH = Math.min(videoH - cropY, Math.round(rect.height * scaleY));
+            sourceWidth = video.videoWidth;
+            sourceHeight = video.videoHeight;
+            drawSource = video;
+          }
 
-      if (cropW <= 0 || cropH <= 0) {
-        cropX = 0;
-        cropY = 0;
-        cropW = videoW;
-        cropH = videoH;
+          const windowW = window.innerWidth;
+          const windowH = window.innerHeight;
+
+          const scaleX = sourceWidth / windowW;
+          const scaleY = sourceHeight / windowH;
+
+          let cropX = Math.max(0, Math.round(rect.left * scaleX));
+          let cropY = Math.max(0, Math.round(rect.top * scaleY));
+          let cropW = Math.min(sourceWidth - cropX, Math.round(rect.width * scaleX));
+          let cropH = Math.min(sourceHeight - cropY, Math.round(rect.height * scaleY));
+
+          if (cropW <= 0 || cropH <= 0) {
+            cropX = 0;
+            cropY = 0;
+            cropW = sourceWidth;
+            cropH = sourceHeight;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = cropW;
+          canvas.height = cropH;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('Failed to create 2d canvas context');
+
+          ctx.drawImage(drawSource, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+          // Release ImageBitmap resources if applicable
+          if (typeof (drawSource as any).close === 'function') {
+            (drawSource as any).close();
+          }
+
+          track.stop();
+          stream.getTracks().forEach((t) => t.stop());
+
+          const rawDataUrl = canvas.toDataURL('image/png');
+          const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
+          setActiveScreenshot({
+            dataUrl: borderedDataUrl,
+            width: cropW,
+            height: cropH,
+          });
+          return;
+        } catch (displayErr: any) {
+          // If user dismissed or cancelled the tab share dialog, gracefully exit
+          if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
+            return;
+          }
+          console.warn('Browser getDisplayMedia capture failed, attempting server-side fallback:', displayErr);
+        }
       }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = cropW;
-      canvas.height = cropH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Failed to create 2d canvas context');
+      // 2. Server-Side Headless CDP Fallback (For insecure contexts, remote Tailscale web, or headless webviews)
+      if (devState.status === 'running' || devState.status === 'starting') {
+        try {
+          const result = await captureDevServerScreenshot(task.id, {
+            path: pathInput,
+            width: targetWidth,
+            height: targetHeight,
+          });
 
-      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+          if (result?.dataUrl) {
+            const borderedDataUrl = await addBorderToScreenshotDataUrl(result.dataUrl);
+            setActiveScreenshot({
+              dataUrl: borderedDataUrl,
+              width: result.width || targetWidth,
+              height: result.height || targetHeight,
+            });
+            return;
+          }
+        } catch (serverErr: any) {
+          console.warn('Server-side preview capture fallback failed:', serverErr);
+        }
+      }
 
-      track.stop();
-      stream.getTracks().forEach((t) => t.stop());
-
-      const dataUrl = canvas.toDataURL('image/png');
-      setActiveScreenshot({
-        dataUrl,
-        width: cropW,
-        height: cropH,
-      });
+      // 3. Fallback message if neither method succeeded
+      const isSecure = typeof window !== 'undefined' ? window.isSecureContext : false;
+      const errorMsg = !isSecure
+        ? 'Screen capture in the browser requires a secure context (access via http://localhost:5180 or HTTPS) or Edge/Chrome installed on host.'
+        : 'Failed to capture preview screenshot. Please verify dev server is running and try again.';
+      setCaptureError(errorMsg);
+      setTimeout(() => setCaptureError(null), 6000);
     } catch (err: any) {
       if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         console.error('Failed to capture preview screenshot:', err);
+        setCaptureError(err.message || 'Failed to capture preview screenshot');
+        setTimeout(() => setCaptureError(null), 6000);
       }
     } finally {
       setIsCapturing(false);
@@ -225,9 +332,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
             onClick={handleRestart}
             disabled={devState.status !== 'running'}
             className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle disabled:opacity-30 transition-all"
-            title="Restart server"
+            title="Restart dev server"
+            aria-label="Restart dev server"
           >
-            <RotateCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -268,6 +376,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
             disabled={devState.status !== 'running'}
             className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
             title="Reload preview"
+            aria-label="Reload preview"
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
@@ -323,6 +432,19 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         ref={previewContainerRef}
         className="flex-1 relative w-full h-full bg-white dark:bg-[#0e1017] overflow-hidden"
       >
+        {/* Error notification banner */}
+        {captureError && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-md px-4 py-2.5 rounded-xl bg-rose-500/95 text-white text-xs shadow-lg backdrop-blur flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+            <span className="flex-1 leading-snug">{captureError}</span>
+            <button
+              onClick={() => setCaptureError(null)}
+              className="text-white/80 hover:text-white text-sm font-semibold px-1"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {devState.status === 'running' ? (
           <iframe
             key={iframeKey}

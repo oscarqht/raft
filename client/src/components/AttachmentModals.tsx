@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Download,
@@ -87,7 +88,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({ attachme
 
   if (!attachment) return null;
 
-  return (
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
@@ -139,6 +140,8 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({ attachme
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 };
 
 // Modal for Text / Code Preview
@@ -203,7 +206,7 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ taskId, atta
 
   if (!attachment) return null;
 
-  return (
+  const modalContent = (
     <div
       role="dialog"
       aria-modal="true"
@@ -290,4 +293,6 @@ export const FilePreviewModal: React.FC<FilePreviewModalProps> = ({ taskId, atta
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 };

@@ -234,7 +234,17 @@ pub fn setup_tray(
         ],
     )?;
 
-    let url_clone = server_url.clone();
+    let port_part = server_url
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.split('/').next())
+        .unwrap_or("3100");
+    let local_url = format!("http://localhost:{port_part}");
+    let url_for_browser = if is_tailscale { local_url } else { server_url.clone() };
+
+    let url_for_browser_click = url_for_browser.clone();
+    let url_for_browser_menu = url_for_browser;
+    let url_for_copy = server_url.clone();
     let autostart_item_clone = autostart_item.clone();
 
     let icon_image = app.default_window_icon().cloned().unwrap();
@@ -251,7 +261,6 @@ pub fn setup_tray(
         tray_builder = tray_builder.icon_as_template(true);
     }
 
-    let url_for_click = server_url.clone();
     tray_builder
         .on_tray_icon_event(move |_tray, event| {
             if let TrayIconEvent::Click {
@@ -260,17 +269,17 @@ pub fn setup_tray(
                 ..
             } = event
             {
-                let _ = open::that(&url_for_click);
+                let _ = open::that(&url_for_browser_click);
             }
         })
         .on_menu_event(move |app_handle, event| {
             let id = event.id.as_ref();
             match id {
                 "open_browser" => {
-                    let _ = open::that(&url_clone);
+                    let _ = open::that(&url_for_browser_menu);
                 }
                 "copy_url" => {
-                    copy_to_clipboard(&url_clone);
+                    copy_to_clipboard(&url_for_copy);
                 }
                 "full_disk_access" => {
                     #[cfg(target_os = "macos")]
