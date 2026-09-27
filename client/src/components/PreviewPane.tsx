@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle } from 'lucide-react';
+import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
-import { getDevServerState, startDevServer, stopDevServer, restartDevServer, captureDevServerScreenshot, pingDevServer } from '../api';
+import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer } from '../api';
+import { useOptionalScriptExecution } from '../contexts/ScriptExecutionContext';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
   import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
@@ -32,7 +33,14 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [logs, setLogs] = useState<string[]>([]);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const captureStreamRef = useRef<MediaStream | null>(null);
+
+  const stopCaptureStream = () => {
+    if (captureStreamRef.current) {
+      captureStreamRef.current.getTracks().forEach((t) => t.stop());
+      captureStreamRef.current = null;
+    }
+  };
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -47,13 +55,60 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [attemptCount, setAttemptCount] = useState(0);
   const [isTimedOut, setIsTimedOut] = useState(false);
 
+  // Script execution context tracking for dependency installation
+  const scriptCtx = useOptionalScriptExecution();
+  const [bypassInstallFailure, setBypassInstallFailure] = useState(false);
+  const [showInstalledToast, setShowInstalledToast] = useState(false);
+  const prevInstallingRef = useRef<boolean>(false);
+
+  // Find the latest execution for "Install Dependencies"
+  const installExecution = scriptCtx?.executions?.find(
+    (e) => e.taskId === task.id && (e.scriptName === 'Install Dependencies' || (task.project?.install_cmd && e.command === task.project.install_cmd))
+  );
+
+  const isInstalling = installExecution?.status === 'running';
+  const installFailed = Boolean(
+    installExecution &&
+    (installExecution.status === 'failed' || installExecution.status === 'canceled') &&
+    !bypassInstallFailure
+  );
+  const installCompleted = installExecution?.status === 'completed';
+
+  // Watch for completion transition to notify the user
+  useEffect(() => {
+    if (prevInstallingRef.current && installCompleted) {
+      setShowInstalledToast(true);
+      const timer = setTimeout(() => setShowInstalledToast(false), 5000);
+      return () => clearTimeout(timer);
+    }
+    prevInstallingRef.current = Boolean(isInstalling);
+  }, [isInstalling, installCompleted]);
+
+  // Clean up screen capture stream on component unmount
+  useEffect(() => {
+    return () => {
+      stopCaptureStream();
+    };
+  }, []);
+
+  // Reset dev server logs, readiness, and active capture stream when switching tasks
+  useEffect(() => {
+    setLogs([]);
+    setIsServerReady(false);
+    setIsTimedOut(false);
+    setAttemptCount(0);
+    stopCaptureStream();
+  }, [task.id]);
+
   // Subscribe to dev server WebSocket events
   useEffect(() => {
     if (!ws) return;
 
     // Send subscribe message once connected
     const subscribe = () => {
-      ws.send(JSON.stringify({ type: 'subscribe_dev_server', taskId: task.id }));
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'subscribe_dev_server', taskId: task.id }));
+      }
     };
 
     if (ws.readyState === WebSocket.OPEN) {
@@ -67,6 +122,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         const msg = JSON.parse(event.data);
         if (msg.type === 'dev_server_state') {
           setDevState(msg.state);
+          if (msg.state?.logs && msg.state.logs.length > 0) {
+            setLogs((prev) => (prev.length === 0 ? msg.state.logs : prev));
+          }
         } else if (msg.type === 'dev_server_log') {
           setLogs((prev) => [...prev, msg.log]);
         }
@@ -74,38 +132,24 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     };
 
     ws.addEventListener('message', handleMessage);
-    return () => ws.removeEventListener('message', handleMessage);
+    return () => {
+      ws.removeEventListener('open', subscribe);
+      ws.removeEventListener('message', handleMessage);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'unsubscribe_dev_server', taskId: task.id }));
+      }
+    };
   }, [ws, task.id]);
 
-  // Listen for in-flight injected tracking script URL updates from iframe
-  useEffect(() => {
-    const handleWindowMessage = (event: MessageEvent) => {
-      try {
-        const data = event.data;
-        if (!data || data.type !== 'TERMAI_PREVIEW_URL_CHANGED') return;
-        if (data.taskId && data.taskId !== task.id) return;
-
-        if (typeof data.pathname === 'string') {
-          let targetPath = data.pathname;
-          const prefix = `/api/preview/${task.id}`;
-          if (targetPath.startsWith(prefix)) {
-            targetPath = targetPath.slice(prefix.length) || '/';
-          }
-          setPathInput(targetPath);
-        }
-      } catch {}
-    };
-
-    window.addEventListener('message', handleWindowMessage);
-    return () => window.removeEventListener('message', handleWindowMessage);
-  }, [task.id]);
 
   // Initial fetch
   useEffect(() => {
     getDevServerState(task.id)
       .then((state) => {
         setDevState(state);
-        if (state.logs) setLogs(state.logs);
+        if (state.logs && state.logs.length > 0) {
+          setLogs((prev) => (prev.length === 0 ? state.logs : prev));
+        }
       })
       .catch(() => {});
   }, [task.id]);
@@ -192,6 +236,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   }, [logs, showConsole]);
 
   const handleStart = async () => {
+    setLogs([]);
     setIsServerReady(false);
     setIsTimedOut(false);
     setAttemptCount(0);
@@ -200,6 +245,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleStop = async () => {
+    stopCaptureStream();
     await stopDevServer(task.id);
     setDevState((prev) => ({ ...prev, status: 'stopped' }));
     setIsServerReady(false);
@@ -208,6 +254,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleRestart = async () => {
+    setLogs([]);
     setIsServerReady(false);
     setIsTimedOut(false);
     setAttemptCount(0);
@@ -217,33 +264,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleReloadIframe = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_RELOAD' }, '*');
-    }
     setIframeKey((k) => k + 1);
-  };
-
-  const handleGoBack = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_BACK' }, '*');
-    }
-  };
-
-  const handleGoForward = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_FORWARD' }, '*');
-    }
-  };
-
-  const handleNavigateToPath = (inputPath: string) => {
-    const formatted = inputPath.startsWith('/') ? inputPath : '/' + inputPath;
-    setPathInput(formatted);
-    const proxyTarget = `/api/preview/${task.id}${formatted}`;
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_TO', url: proxyTarget }, '*');
-    } else {
-      setIframeKey((k) => k + 1);
-    }
   };
 
 // Draws a crisp 1px subtle border around the perimeter of the captured screenshot
@@ -278,18 +299,26 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
   const handleCaptureScreenshot = async () => {
     if (isCapturing || !previewContainerRef.current) return;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
+      setCaptureError('Screen capture is not supported in this browser environment.');
+      setTimeout(() => setCaptureError(null), 5000);
+      return;
+    }
+
     try {
       setIsCapturing(true);
       setCaptureError(null);
       const container = previewContainerRef.current;
       const rect = container.getBoundingClientRect();
-      const targetWidth = Math.max(100, Math.round(rect.width));
-      const targetHeight = Math.max(100, Math.round(rect.height));
 
-      // 1. Browser-native live preview capture (Captures the EXACT live page, session, and interactions on user's screen)
-      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getDisplayMedia) {
+      // 1. Check if we have an active live stream from an earlier capture in this session
+      let stream = captureStreamRef.current;
+      let track = stream?.getVideoTracks().find((t) => t.readyState === 'live');
+
+      // 2. If no active track, request getDisplayMedia (prompts user ONCE per session)
+      if (!stream || !track) {
         try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({
+          stream = await navigator.mediaDevices.getDisplayMedia({
             video: {
               displaySurface: 'browser',
             } as any,
@@ -300,131 +329,111 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             systemAudio: 'exclude',
           } as any);
 
-          const track = stream.getVideoTracks()[0];
-          let drawSource: CanvasImageSource | null = null;
-          let sourceWidth = 0;
-          let sourceHeight = 0;
+          track = stream.getVideoTracks()[0];
+          if (!track) {
+            throw new Error('No video track returned from screen capture');
+          }
 
-          // Accelerated GPU frame extraction via ImageCapture if supported (instant, 0ms latency)
-          if (typeof (window as any).ImageCapture !== 'undefined') {
-            try {
-              const imageCapture = new (window as any).ImageCapture(track);
-              const bitmap = await imageCapture.grabFrame();
-              sourceWidth = bitmap.width;
-              sourceHeight = bitmap.height;
-              drawSource = bitmap;
-            } catch {
-              drawSource = null;
+          // When user stops sharing via browser bar, clear ref
+          track.onended = () => {
+            if (captureStreamRef.current === stream) {
+              captureStreamRef.current = null;
             }
-          }
+          };
 
-          // Fallback to video element if ImageCapture is unavailable
-          if (!drawSource) {
-            const video = document.createElement('video');
-            video.srcObject = stream;
-            video.muted = true;
-            video.playsInline = true;
-            await video.play();
-
-            await new Promise<void>((resolve) => {
-              if (video.readyState >= 2) return resolve();
-              video.onloadeddata = () => resolve();
-            });
-
-            // Brief delay for video frame buffer
-            await new Promise((r) => setTimeout(r, 60));
-
-            sourceWidth = video.videoWidth;
-            sourceHeight = video.videoHeight;
-            drawSource = video;
-          }
-
-          const windowW = window.innerWidth;
-          const windowH = window.innerHeight;
-
-          const scaleX = sourceWidth / windowW;
-          const scaleY = sourceHeight / windowH;
-
-          let cropX = Math.max(0, Math.round(rect.left * scaleX));
-          let cropY = Math.max(0, Math.round(rect.top * scaleY));
-          let cropW = Math.min(sourceWidth - cropX, Math.round(rect.width * scaleX));
-          let cropH = Math.min(sourceHeight - cropY, Math.round(rect.height * scaleY));
-
-          if (cropW <= 0 || cropH <= 0) {
-            cropX = 0;
-            cropY = 0;
-            cropW = sourceWidth;
-            cropH = sourceHeight;
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = cropW;
-          canvas.height = cropH;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('Failed to create 2d canvas context');
-
-          ctx.drawImage(drawSource, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-          // Release ImageBitmap resources if applicable
-          if (typeof (drawSource as any).close === 'function') {
-            (drawSource as any).close();
-          }
-
-          track.stop();
-          stream.getTracks().forEach((t) => t.stop());
-
-          const rawDataUrl = canvas.toDataURL('image/png');
-          const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
-          setActiveScreenshot({
-            dataUrl: borderedDataUrl,
-            width: cropW,
-            height: cropH,
-          });
-          return;
+          captureStreamRef.current = stream;
         } catch (displayErr: any) {
           // If user dismissed or cancelled the tab share dialog, gracefully exit
           if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
             return;
           }
-          console.warn('Browser getDisplayMedia capture failed, attempting server-side fallback:', displayErr);
+          throw displayErr;
         }
       }
 
-      // 2. Server-Side Headless CDP Fallback (For insecure contexts, remote Tailscale web, or headless webviews)
-      if (devState.status === 'running' || devState.status === 'starting') {
+      let drawSource: CanvasImageSource | null = null;
+      let sourceWidth = 0;
+      let sourceHeight = 0;
+
+      // 3. Accelerated GPU frame extraction via ImageCapture if supported (instant, 0ms latency)
+      if (typeof (window as any).ImageCapture !== 'undefined') {
         try {
-          const result = await captureDevServerScreenshot(task.id, {
-            path: pathInput,
-            width: targetWidth,
-            height: targetHeight,
-          });
-
-          if (result?.dataUrl) {
-            const borderedDataUrl = await addBorderToScreenshotDataUrl(result.dataUrl);
-            setActiveScreenshot({
-              dataUrl: borderedDataUrl,
-              width: result.width || targetWidth,
-              height: result.height || targetHeight,
-            });
-            return;
-          }
-        } catch (serverErr: any) {
-          console.warn('Server-side preview capture fallback failed:', serverErr);
+          const imageCapture = new (window as any).ImageCapture(track);
+          const bitmap = await imageCapture.grabFrame();
+          sourceWidth = bitmap.width;
+          sourceHeight = bitmap.height;
+          drawSource = bitmap;
+        } catch {
+          drawSource = null;
         }
       }
 
-      // 3. Fallback message if neither method succeeded
-      const isSecure = typeof window !== 'undefined' ? window.isSecureContext : false;
-      const errorMsg = !isSecure
-        ? 'Screen capture in the browser requires a secure context (access via http://localhost:5180 or HTTPS) or Edge/Chrome installed on host.'
-        : 'Failed to capture preview screenshot. Please verify dev server is running and try again.';
-      setCaptureError(errorMsg);
-      setTimeout(() => setCaptureError(null), 6000);
+      // 4. Fallback to video element if ImageCapture is unavailable
+      if (!drawSource) {
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        await video.play();
+
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 2) return resolve();
+          video.onloadeddata = () => resolve();
+        });
+
+        // Brief delay for video frame buffer
+        await new Promise((r) => setTimeout(r, 60));
+
+        sourceWidth = video.videoWidth;
+        sourceHeight = video.videoHeight;
+        drawSource = video;
+      }
+
+      const windowW = window.innerWidth;
+      const windowH = window.innerHeight;
+
+      const scaleX = sourceWidth / windowW;
+      const scaleY = sourceHeight / windowH;
+
+      let cropX = Math.max(0, Math.round(rect.left * scaleX));
+      let cropY = Math.max(0, Math.round(rect.top * scaleY));
+      let cropW = Math.min(sourceWidth - cropX, Math.round(rect.width * scaleX));
+      let cropH = Math.min(sourceHeight - cropY, Math.round(rect.height * scaleY));
+
+      if (cropW <= 0 || cropH <= 0) {
+        cropX = 0;
+        cropY = 0;
+        cropW = sourceWidth;
+        cropH = sourceHeight;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to create 2d canvas context');
+
+      ctx.drawImage(drawSource, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      // Release ImageBitmap resources if applicable
+      if (typeof (drawSource as any).close === 'function') {
+        (drawSource as any).close();
+      }
+
+      // NOTE: Intentionally keep track and stream active in captureStreamRef for persistent session reuse!
+
+      const rawDataUrl = canvas.toDataURL('image/png');
+      const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
+      setActiveScreenshot({
+        dataUrl: borderedDataUrl,
+        width: cropW,
+        height: cropH,
+      });
     } catch (err: any) {
       if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         console.error('Failed to capture preview screenshot:', err);
         setCaptureError(err.message || 'Failed to capture preview screenshot');
-        setTimeout(() => setCaptureError(null), 6000);
+        setTimeout(() => setCaptureError(null), 5000);
       }
     } finally {
       setIsCapturing(false);
@@ -440,12 +449,29 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
+  const hostname = typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== ''
+    ? window.location.hostname
+    : 'localhost';
   const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
-  const currentUrl = `http://localhost:${activePort}${currentPath}`;
-  const proxyUrl = `/api/preview/${task.id}${currentPath}`;
+  const currentUrl = `http://${hostname}:${activePort}${currentPath}`;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
+      {/* Toast Notification when dependencies finish installing */}
+      {showInstalledToast && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500 text-white text-xs font-medium shadow-soft-xl backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>Dependencies installed successfully! You can now start preview.</span>
+          <button
+            type="button"
+            onClick={() => setShowInstalledToast(false)}
+            className="ml-2 hover:opacity-80 p-0.5 cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top Address & Controls Toolbar */}
       <div className="min-h-[64px] py-3.5 px-4 sm:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 gap-3 select-none">
         {/* Server Start/Stop/Restart */}
@@ -462,11 +488,26 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           ) : (
             <button
               onClick={handleStart}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-500/25 transition-all shadow-glow-mint"
-              title="Start local dev server"
+              disabled={isInstalling || installFailed}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+                isInstalling || installFailed
+                  ? 'bg-cozy-subtle/80 border border-cozy-border text-cozy-muted cursor-not-allowed opacity-60'
+                  : 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-500/25 shadow-glow-mint'
+              }`}
+              title={
+                isInstalling
+                  ? 'Installing dependencies... Please wait'
+                  : installFailed
+                  ? 'Dependency installation failed'
+                  : 'Start local dev server'
+              }
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Start</span>
+              {isInstalling ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+              ) : (
+                <Play className="w-3.5 h-3.5 fill-current" />
+              )}
+              <span>{isInstalling ? 'Installing...' : 'Start'}</span>
             </button>
           )}
 
@@ -509,7 +550,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             type="text"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleNavigateToPath(pathInput)}
+            onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
             placeholder="/"
             className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
           />
@@ -517,25 +558,6 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
         {/* Action icons */}
         <div className="flex items-center space-x-1 shrink-0">
-          <button
-            onClick={handleGoBack}
-            disabled={devState.status !== 'running' || !isServerReady}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
-            title="Go back"
-            aria-label="Go back"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={handleGoForward}
-            disabled={devState.status !== 'running' || !isServerReady}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
-            title="Go forward"
-            aria-label="Go forward"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
 
           <button
             onClick={handleReloadIframe}
@@ -614,12 +636,11 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         {devState.status === 'running' || devState.status === 'starting' ? (
           isServerReady ? (
             <iframe
-              ref={iframeRef}
               key={iframeKey}
-              src={proxyUrl}
+              src={currentUrl}
               title="Task Dev Server Preview"
               className="w-full h-full border-0"
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
             />
           ) : isTimedOut ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
@@ -723,6 +744,90 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               </div>
             </div>
           )
+        ) : isInstalling ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
+            <div className="relative mb-5">
+              <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-indigo-500/15 via-rose-500/15 to-amber-500/15 border border-indigo-400/25 flex items-center justify-center shadow-soft-sm relative">
+                <Package className="w-7 h-7 text-indigo-500 animate-pulse" />
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cozy-surface border border-cozy-border/70 flex items-center justify-center shadow-sm">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                </div>
+              </div>
+            </div>
+
+            <h3 className="text-base font-semibold text-cozy-text mb-1.5">
+              Installing Project Dependencies...
+            </h3>
+            <div className="mb-3">
+              <span className="text-xs font-mono text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                <Terminal className="w-3 h-3" />
+                {installExecution?.command || 'npm install'}
+              </span>
+            </div>
+            <p className="text-xs text-cozy-muted max-w-sm mb-6 leading-relaxed">
+              Since this task is running in a new git worktree, project dependencies are being installed first. Please wait before starting preview.
+            </p>
+
+            {scriptCtx && installExecution && (
+              <button
+                type="button"
+                onClick={() => scriptCtx.openModal(installExecution.id)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium bg-cozy-surface hover:bg-cozy-subtle text-cozy-text border border-cozy-border shadow-soft-sm transition-all cursor-pointer"
+              >
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                <span>View Terminal Logs</span>
+              </button>
+            )}
+          </div>
+        ) : installFailed ? (
+          <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
+            <div className="w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mb-4 shadow-soft-sm text-rose-500">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-base font-semibold text-cozy-text mb-1.5">
+              Dependency Installation Failed
+            </h3>
+            <div className="mb-3">
+              <span className="text-xs font-mono text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 rounded-full inline-flex items-center gap-1.5">
+                <Terminal className="w-3 h-3" />
+                {installExecution?.command || 'Install script'} (exit code {installExecution?.exitCode ?? 'err'})
+              </span>
+            </div>
+            <p className="text-xs text-cozy-muted max-w-sm mb-6 leading-relaxed">
+              The dependency installation script did not finish successfully. Preview dev server might fail to run without installed packages.
+            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {scriptCtx && installExecution && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => scriptCtx.openModal(installExecution.id)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium bg-cozy-surface hover:bg-cozy-subtle text-cozy-text border border-cozy-border shadow-soft-sm transition-all cursor-pointer"
+                  >
+                    <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                    <span>View Logs</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => scriptCtx.rerunScript(installExecution.id)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 border border-indigo-500/30 transition-all cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Install</span>
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setBypassInstallFailure(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-medium text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer"
+              >
+                <span>Start Preview Anyway</span>
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted">
             <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">

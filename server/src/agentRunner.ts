@@ -967,6 +967,42 @@ export function spawnAgentCli(
   return proc;
 }
 
+export function detectInstallCommand(projectPath: string): string {
+  try {
+    if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) {
+      return 'pnpm install';
+    }
+    if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) {
+      return 'yarn install';
+    }
+    if (fs.existsSync(path.join(projectPath, 'bun.lockb')) || fs.existsSync(path.join(projectPath, 'bun.lock'))) {
+      return 'bun install';
+    }
+    if (fs.existsSync(path.join(projectPath, 'package-lock.json')) || fs.existsSync(path.join(projectPath, 'package.json'))) {
+      return 'npm install';
+    }
+    if (fs.existsSync(path.join(projectPath, 'requirements.txt'))) {
+      return 'pip install -r requirements.txt';
+    }
+    if (fs.existsSync(path.join(projectPath, 'Pipfile'))) {
+      return 'pipenv install';
+    }
+    if (fs.existsSync(path.join(projectPath, 'pyproject.toml'))) {
+      if (fs.existsSync(path.join(projectPath, 'poetry.lock'))) {
+        return 'poetry install';
+      }
+      return 'pip install -e .';
+    }
+    if (fs.existsSync(path.join(projectPath, 'Cargo.toml'))) {
+      return 'cargo build';
+    }
+    if (fs.existsSync(path.join(projectPath, 'go.mod'))) {
+      return 'go mod download';
+    }
+  } catch {}
+  return 'npm install';
+}
+
 // Discovery Agent: analyzes a project to auto-detect dev, build, test, and conventions
 export async function runDiscoveryAgent(
   projectPath: string,
@@ -979,6 +1015,7 @@ export async function runDiscoveryAgent(
   dev_port: number;
   build_cmd: string;
   test_cmd: string;
+  install_cmd: string;
   branch_convention: string;
   summary: string;
 }> {
@@ -999,7 +1036,8 @@ export async function runDiscoveryAgent(
 2. The default localhost port the dev server runs on (e.g., 5173, 3000, 8080)
 3. The build command (e.g., "npm run build", "cargo build")
 4. The test command (e.g., "npm test", "npm run test", or "npm test" as default)
-5. The git branch convention (e.g., "main" or "master")
+5. The dependency installation command (e.g., "npm install", "pnpm install", "yarn install", etc.)
+6. The git branch convention (e.g., "main" or "master")
 
 Important instructions:
 - Keep your analysis quick and concise. Read the root config files first.
@@ -1011,6 +1049,7 @@ Important instructions:
   "dev_port": 5173,
   "build_cmd": "npm run build",
   "test_cmd": "npm test",
+  "install_cmd": "npm install",
   "branch_convention": "main",
   "summary": "Brief 1-line description of project"
 }
@@ -1073,6 +1112,7 @@ Important instructions:
         dev_port: Number(parsed.dev_port) || 5173,
         build_cmd: parsed.build_cmd || 'npm run build',
         test_cmd: parsed.test_cmd || 'npm test',
+        install_cmd: parsed.install_cmd || detectInstallCommand(projectPath),
         branch_convention: parsed.branch_convention || 'main',
         summary: parsed.summary || 'Auto-discovered project configuration',
       };
@@ -1086,6 +1126,7 @@ Important instructions:
   let dev_port = 5173;
   let build_cmd = 'npm run build';
   let test_cmd = 'npm test';
+  let install_cmd = detectInstallCommand(projectPath);
   let branch_convention = 'main';
 
   const pkgJsonPath = path.join(projectPath, 'package.json');
@@ -1106,6 +1147,7 @@ Important instructions:
     dev_port,
     build_cmd,
     test_cmd,
+    install_cmd,
     branch_convention,
     summary: 'Discovered via repository configuration files',
   };

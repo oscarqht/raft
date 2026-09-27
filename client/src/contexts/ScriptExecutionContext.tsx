@@ -255,6 +255,10 @@ export const ScriptExecutionProvider: React.FC<{
   );
 };
 
+export function useOptionalScriptExecution(): ScriptExecutionContextType | null {
+  return useContext(ScriptExecutionContext);
+}
+
 export function useScriptExecution(): ScriptExecutionContextType {
   const context = useContext(ScriptExecutionContext);
   if (!context) {

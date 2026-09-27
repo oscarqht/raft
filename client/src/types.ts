@@ -31,6 +31,7 @@ export interface Project {
   dev_port: number;
   build_cmd: string;
   test_cmd: string;
+  install_cmd?: string;
   branch_convention: string;
   default_agent_cli?: string;
   default_model?: string;

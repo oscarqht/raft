@@ -53,6 +53,7 @@ db.exec(`
     dev_port INTEGER,
     build_cmd TEXT,
     test_cmd TEXT,
+    install_cmd TEXT,
     branch_convention TEXT,
     default_agent_cli TEXT,
     default_model TEXT,
@@ -130,6 +131,11 @@ db.exec(`
 // Migrations for existing databases
 try {
   db.exec('ALTER TABLE projects ADD COLUMN custom_scripts TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE projects ADD COLUMN install_cmd TEXT');
 } catch {
   // column already exists
 }

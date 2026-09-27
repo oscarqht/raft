@@ -109,7 +109,7 @@ body.crop-dragging-active * {
 }
 
 .crop-marquee-overlay {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
   z-index: 10000;
   box-sizing: border-box;

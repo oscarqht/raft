@@ -143,7 +143,263 @@ export class GitService {
     }
   }
 
+  /**
+   * Syncs the local base branch with its remote tracking branch (fast-forward or rebase)
+   * before creating a new worktree / branch.
+   */
+  static syncBaseBranchWithRemote(repoRoot: string, baseBranch: string): void {
+    if (!baseBranch || !repoRoot) return;
+
+    try {
+      // 1. Check if git remotes exist
+      const remotesOutput = execSync('git remote', {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+
+      if (!remotesOutput) {
+        return; // No remotes configured
+      }
+
+      const remotes = remotesOutput.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+      if (remotes.length === 0) return;
+
+      // 2. Determine remote to use
+      let remote = '';
+      try {
+        remote = execSync(`git config --get branch.${baseBranch}.remote`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+      } catch {}
+
+      if (!remote || !remotes.includes(remote)) {
+        remote = remotes.includes('origin') ? 'origin' : remotes[0];
+      }
+
+      // 3. Fetch latest commits for baseBranch from remote
+      try {
+        execSync(`git fetch ${remote} ${baseBranch}`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+      } catch {
+        try {
+          execSync(`git fetch ${remote}`, {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        } catch {}
+      }
+
+      const remoteRef = `refs/remotes/${remote}/${baseBranch}`;
+      let remoteExists = false;
+      try {
+        execSync(`git rev-parse --verify ${remoteRef}`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        remoteExists = true;
+      } catch {}
+
+      if (!remoteExists) {
+        return; // Remote branch does not exist on remote
+      }
+
+      // 4. Check if local branch exists
+      const localRef = `refs/heads/${baseBranch}`;
+      let localExists = false;
+      try {
+        execSync(`git rev-parse --verify ${localRef}`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        localExists = true;
+      } catch {}
+
+      if (!localExists) {
+        try {
+          execSync(`git branch --track "${baseBranch}" "${remote}/${baseBranch}"`, {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        } catch {
+          try {
+            execSync(`git branch "${baseBranch}" "${remoteRef}"`, {
+              cwd: repoRoot,
+              encoding: 'utf-8',
+              stdio: ['pipe', 'pipe', 'ignore'],
+            });
+          } catch {}
+        }
+        return;
+      }
+
+      // 5. Check if local is behind or diverged from remote
+      const revListOutput = execSync(`git rev-list --left-right --count ${localRef}...${remoteRef}`, {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+
+      const [aheadStr, behindStr] = revListOutput.split(/\s+/);
+      const ahead = parseInt(aheadStr, 10) || 0;
+      const behind = parseInt(behindStr, 10) || 0;
+
+      if (behind === 0) {
+        // Local is already up to date with or ahead of remote
+        return;
+      }
+
+      // 6. Update local baseBranch to incorporate remote changes
+      let currentBranch = '';
+      try {
+        currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+      } catch {}
+
+      let worktreeWithBaseBranch = '';
+      try {
+        const wtOutput = execSync('git worktree list --porcelain', {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        const blocks = wtOutput.split(/(?:\r?\n){2,}/).filter(Boolean);
+        for (const block of blocks) {
+          let wtPath = '';
+          let wtBranch = '';
+          for (const line of block.split(/\r?\n/)) {
+            if (line.startsWith('worktree ')) wtPath = line.replace('worktree ', '').trim();
+            else if (line.startsWith('branch refs/heads/')) {
+              wtBranch = line.replace('branch refs/heads/', '').trim();
+            }
+          }
+          if (wtBranch === baseBranch && wtPath) {
+            worktreeWithBaseBranch = wtPath;
+            break;
+          }
+        }
+      } catch {}
+
+      if (ahead === 0) {
+        // Strictly behind: can be fast-forwarded!
+        if (currentBranch === baseBranch) {
+          execSync(`git merge --ff-only "${remoteRef}"`, {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        } else if (worktreeWithBaseBranch) {
+          execSync(`git merge --ff-only "${remoteRef}"`, {
+            cwd: worktreeWithBaseBranch,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        } else {
+          execSync(`git update-ref "${localRef}" "${remoteRef}"`, {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          });
+        }
+      } else {
+        // Diverged (ahead > 0 and behind > 0): rebase local commits on top of remote
+        if (currentBranch === baseBranch) {
+          const isDirty = execSync('git status --porcelain', {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim().length > 0;
+
+          if (!isDirty) {
+            try {
+              execSync(`git rebase "${remoteRef}"`, {
+                cwd: repoRoot,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'ignore'],
+              });
+            } catch {
+              try {
+                execSync('git rebase --abort', { cwd: repoRoot, stdio: 'ignore' });
+              } catch {}
+            }
+          }
+        } else if (worktreeWithBaseBranch) {
+          const isDirty = execSync('git status --porcelain', {
+            cwd: worktreeWithBaseBranch,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim().length > 0;
+
+          if (!isDirty) {
+            try {
+              execSync(`git rebase "${remoteRef}"`, {
+                cwd: worktreeWithBaseBranch,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'ignore'],
+              });
+            } catch {
+              try {
+                execSync('git rebase --abort', { cwd: worktreeWithBaseBranch, stdio: 'ignore' });
+              } catch {}
+            }
+          }
+        } else {
+          const isDirty = execSync('git status --porcelain', {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim().length > 0;
+
+          if (!isDirty && currentBranch) {
+            try {
+              execSync(`git checkout "${baseBranch}"`, {
+                cwd: repoRoot,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'ignore'],
+              });
+              try {
+                execSync(`git rebase "${remoteRef}"`, {
+                  cwd: repoRoot,
+                  encoding: 'utf-8',
+                  stdio: ['pipe', 'pipe', 'ignore'],
+                });
+              } catch {
+                try {
+                  execSync('git rebase --abort', { cwd: repoRoot, stdio: 'ignore' });
+                } catch {}
+              }
+              execSync(`git checkout "${currentBranch}"`, {
+                cwd: repoRoot,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'ignore'],
+              });
+            } catch {}
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[GitService] Notice: Could not sync base branch "${baseBranch}" with remote: ${err?.message || err}`);
+    }
+  }
+
   static createWorktree(repoRoot: string, taskSlug: string, baseBranch: string): { worktreePath: string; branch: string } {
+    // Always sync base branch with its remote (fast-forward or rebase) if behind or diverged
+    if (baseBranch) {
+      this.syncBaseBranchWithRemote(repoRoot, baseBranch);
+    }
+
     const branch = sanitizeBranchName(taskSlug);
     const worktreesDir = path.join(repoRoot, '.worktrees');
     if (!fs.existsSync(worktreesDir)) {

@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   Edit2,
+  Package,
 } from 'lucide-react';
 import { Settings, Project, ProjectCustomScript } from '../types';
 import { updateProject, validateProjectPath, createWebSocketConnection } from '../api';
@@ -47,6 +48,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   const [devPort, setDevPort] = useState(project.dev_port || 5173);
   const [buildCmd, setBuildCmd] = useState(project.build_cmd || 'npm run build');
   const [testCmd, setTestCmd] = useState(project.test_cmd || 'npm test');
+  const [installCmd, setInstallCmd] = useState(project.install_cmd || 'npm install');
   const [customScripts, setCustomScripts] = useState<ProjectCustomScript[]>(project.custom_scripts || []);
   const [editingScriptId, setEditingScriptId] = useState<string | null>(null);
   const [scriptNameInput, setScriptNameInput] = useState('');
@@ -82,6 +84,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     setDevPort(project.dev_port || 5173);
     setBuildCmd(project.build_cmd || 'npm run build');
     setTestCmd(project.test_cmd || 'npm test');
+    setInstallCmd(project.install_cmd || 'npm install');
     setCustomScripts(project.custom_scripts || []);
     setEditingScriptId(null);
     setScriptNameInput('');
@@ -184,6 +187,10 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
               setTestCmd(res.test_cmd);
               newChanges.test_cmd = true;
             }
+            if (res.install_cmd && res.install_cmd !== installCmd) {
+              setInstallCmd(res.install_cmd);
+              newChanges.install_cmd = true;
+            }
             if (res.branch_convention && res.branch_convention !== branchConvention) {
               setBranchConvention(res.branch_convention);
               newChanges.branch_convention = true;
@@ -244,6 +251,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         dev_port: devPort,
         build_cmd: buildCmd.trim(),
         test_cmd: testCmd.trim(),
+        install_cmd: installCmd.trim(),
         custom_scripts: customScripts,
       });
 
@@ -563,6 +571,33 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                   }`}
                 />
               </div>
+            </div>
+
+            {/* Row 4: Dependency Install Command */}
+            <div>
+              <label className="text-xs font-medium text-cozy-text flex items-center justify-between mb-1">
+                <span className="flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5 text-indigo-400" />
+                  Dependency Install Command
+                </span>
+                {changedFields.install_cmd && (
+                  <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded font-mono">
+                    ✨ AI Updated
+                  </span>
+                )}
+              </label>
+              <input
+                type="text"
+                value={installCmd}
+                onChange={(e) => setInstallCmd(e.target.value)}
+                placeholder="e.g. npm install, pnpm install, yarn install"
+                className={`w-full bg-cozy-bg border rounded-xl px-3.5 py-2 text-xs font-mono text-cozy-text focus:outline-none transition-colors ${
+                  changedFields.install_cmd ? 'border-indigo-500/50' : 'border-cozy-border focus:border-sky-500'
+                }`}
+              />
+              <p className="text-[11px] text-cozy-muted mt-1">
+                Automatically executed in isolated task worktrees before starting preview.
+              </p>
             </div>
 
             {/* Custom Scripts Section */}

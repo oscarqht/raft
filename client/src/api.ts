@@ -249,22 +249,6 @@ export async function restartDevServer(taskId: string): Promise<DevServerState> 
   return res.json();
 }
 
-export async function captureDevServerScreenshot(
-  taskId: string,
-  params?: { path?: string; width?: number; height?: number }
-): Promise<{ dataUrl: string; width: number; height: number }> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/screenshot`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params || {}),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to capture server-side screenshot');
-  }
-  return res.json();
-}
-
 export async function getTaskChats(taskId: string): Promise<ChatSession[]> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/chats`);
   return res.json();

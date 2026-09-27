@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execSync } from 'node:child_process';
 import { db, insertGitAccount, getAllGitAccounts, getGitAccountById, deleteGitAccountById } from './db.js';
 import { GitService } from './gitService.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -256,4 +257,97 @@ test('GitService.configureRepoCredentials configures local extraheader', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('GitService.syncBaseBranchWithRemote fast-forwards base branch when behind remote', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-sync-ff-'));
+  const remoteDir = path.join(tmpDir, 'remote.git');
+  const localDir = path.join(tmpDir, 'local');
+  const peerDir = path.join(tmpDir, 'peer');
+
+  try {
+    // 1. Setup bare remote with default branch main
+    execSync(`git init --bare -b main "${remoteDir.replace(/\\/g, '/')}"`, { stdio: 'ignore' });
+
+    // 2. Setup local repo and push initial commit
+    fs.mkdirSync(localDir, { recursive: true });
+    execSync('git init -b main', { cwd: localDir, stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: localDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: localDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(localDir, 'file1.txt'), 'hello 1');
+    execSync('git add . && git commit -m "commit 1"', { cwd: localDir, stdio: 'ignore' });
+    execSync(`git remote add origin "${remoteDir.replace(/\\/g, '/')}"`, { cwd: localDir, stdio: 'ignore' });
+    execSync('git push -u origin main', { cwd: localDir, stdio: 'ignore' });
+
+    // 3. Clone peer, make commit 2, and push to origin
+    execSync(`git clone -b main "${remoteDir.replace(/\\/g, '/')}" "${peerDir.replace(/\\/g, '/')}"`, { stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: peerDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: peerDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(peerDir, 'file2.txt'), 'hello 2');
+    execSync('git add . && git commit -m "commit 2 from remote"', { cwd: peerDir, stdio: 'ignore' });
+    execSync('git push origin main', { cwd: peerDir, stdio: 'ignore' });
+
+    // At this point, localDir is 1 commit behind origin/main!
+    const wt = GitService.createWorktree(localDir, 'task-ff', 'main');
+    try {
+      // Verify file2.txt exists in the new worktree
+      assert.ok(fs.existsSync(path.join(wt.worktreePath, 'file2.txt')));
+      // Verify local base branch was also fast-forwarded
+      assert.ok(fs.existsSync(path.join(localDir, 'file2.txt')));
+    } finally {
+      GitService.removeWorktree(localDir, wt.worktreePath, wt.branch);
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('GitService.syncBaseBranchWithRemote rebases base branch when diverged from remote', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-sync-rebase-'));
+  const remoteDir = path.join(tmpDir, 'remote.git');
+  const localDir = path.join(tmpDir, 'local');
+  const peerDir = path.join(tmpDir, 'peer');
+
+  try {
+    // 1. Setup bare remote with default branch main
+    execSync(`git init --bare -b main "${remoteDir.replace(/\\/g, '/')}"`, { stdio: 'ignore' });
+
+    // 2. Setup local repo and push initial commit
+    fs.mkdirSync(localDir, { recursive: true });
+    execSync('git init -b main', { cwd: localDir, stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: localDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: localDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(localDir, 'common.txt'), 'base');
+    execSync('git add . && git commit -m "commit base"', { cwd: localDir, stdio: 'ignore' });
+    execSync(`git remote add origin "${remoteDir.replace(/\\/g, '/')}"`, { cwd: localDir, stdio: 'ignore' });
+    execSync('git push -u origin main', { cwd: localDir, stdio: 'ignore' });
+
+    // 3. Clone peer, make commit A, and push to origin
+    execSync(`git clone -b main "${remoteDir.replace(/\\/g, '/')}" "${peerDir.replace(/\\/g, '/')}"`, { stdio: 'ignore' });
+    execSync('git config user.name "Test"', { cwd: peerDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: peerDir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(peerDir, 'remote_change.txt'), 'from remote');
+    execSync('git add . && git commit -m "remote commit A"', { cwd: peerDir, stdio: 'ignore' });
+    execSync('git push origin main', { cwd: peerDir, stdio: 'ignore' });
+
+    // 4. In localDir, make local commit B on main (diverging from origin)
+    fs.writeFileSync(path.join(localDir, 'local_change.txt'), 'from local');
+    execSync('git add . && git commit -m "local commit B"', { cwd: localDir, stdio: 'ignore' });
+
+    // Now local main has diverged (ahead 1, behind 1)
+    const wt = GitService.createWorktree(localDir, 'task-diverged', 'main');
+    try {
+      // Both files must exist in the worktree because local commits were rebased onto remote!
+      assert.ok(fs.existsSync(path.join(wt.worktreePath, 'remote_change.txt')));
+      assert.ok(fs.existsSync(path.join(wt.worktreePath, 'local_change.txt')));
+      // Local main must also have both files
+      assert.ok(fs.existsSync(path.join(localDir, 'remote_change.txt')));
+      assert.ok(fs.existsSync(path.join(localDir, 'local_change.txt')));
+    } finally {
+      GitService.removeWorktree(localDir, wt.worktreePath, wt.branch);
+    }
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 

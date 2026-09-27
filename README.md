@@ -75,7 +75,6 @@ raft/
 │   │   ├── gitService.ts             # Worktrees, branch operations & diff analysis
 │   │   ├── agentRunner.ts            # Multi-CLI agent executor (agy, claude, codex)
 │   │   ├── devServerManager.ts       # Background dev server lifecycle & log streaming
-│   │   ├── screenshotService.ts      # Preview snapshot capture service
 │   │   ├── scriptManager.ts          # Project scripts runner & stream manager
 │   │   ├── skillService.ts           # Workspace & global skill discovery
 │   │   ├── tailscale.ts              # Tailscale CGNAT detection & status

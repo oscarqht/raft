@@ -43,6 +43,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
   const editorRef = useRef<Editor | null>(null);
   const screenshotShapeIdRef = useRef<TLShapeId>(createShapeId('screenshot-background'));
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
   const marqueeRef = useRef<HTMLDivElement>(null);
   const badgeRef = useRef<HTMLDivElement>(null);
 
@@ -125,6 +126,9 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
     };
 
     editor.complete?.();
+    if (canvasContainerRef.current) {
+      editor.updateViewportScreenBounds(canvasContainerRef.current);
+    }
     editor.run(
       () => {
         editor.updateShape({
@@ -315,8 +319,11 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
       { history: 'ignore', ignoreShapeLock: true }
     );
 
-    // Initial camera fitting
+    // Initial camera fitting & screen bounds sync
     setTimeout(() => {
+      if (canvasContainerRef.current) {
+        editor.updateViewportScreenBounds(canvasContainerRef.current);
+      }
       fitScreenshotToViewport(true);
     }, 60);
 
@@ -449,13 +456,20 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
 
     const updateMarqueeUI = (box: any) => {
       if (!marqueeEl) return;
+      const canvasEl = canvasContainerRef.current;
+      if (!canvasEl) return;
+      const canvasRect = canvasEl.getBoundingClientRect();
+
       const screenP1 = editor.pageToScreen({ x: box.boxPageX, y: box.boxPageY });
       const screenP2 = editor.pageToScreen({ x: box.boxPageX + box.boxPageW, y: box.boxPageY + box.boxPageH });
 
-      const left = Math.min(screenP1.x, screenP2.x);
-      const top = Math.min(screenP1.y, screenP2.y);
+      const screenLeft = Math.min(screenP1.x, screenP2.x);
+      const screenTop = Math.min(screenP1.y, screenP2.y);
       const width = Math.abs(screenP2.x - screenP1.x);
       const height = Math.abs(screenP2.y - screenP1.y);
+
+      const left = screenLeft - canvasRect.left;
+      const top = screenTop - canvasRect.top;
 
       marqueeEl.style.left = `${left}px`;
       marqueeEl.style.top = `${top}px`;
@@ -469,7 +483,7 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
         const naturalH = Math.round((box.boxPageH / box.metrics.height) * currentMetrics.height);
         badgeEl.textContent = `${naturalW} × ${naturalH}`;
 
-        if (top + height + 34 > window.innerHeight) {
+        if (top + height + 34 > canvasRect.height) {
           badgeEl.style.bottom = 'auto';
           badgeEl.style.top = '-28px';
         } else {
@@ -548,6 +562,11 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
         return;
       }
 
+      const canvasEl = canvasContainerRef.current;
+      if (!canvasEl || !canvasEl.contains(target)) {
+        return;
+      }
+
       if (
         target?.closest?.(
           '[data-testid*="handle"], [class*="handle"], [class*="corner"], [class*="edge"]'
@@ -555,6 +574,9 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
       ) {
         return;
       }
+
+      // Keep tldraw viewport screen bounds strictly in sync with canvas position
+      editor.updateViewportScreenBounds(canvasEl);
 
       if (isNearHandle(e.clientX, e.clientY)) {
         return;
@@ -810,17 +832,20 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
         </div>
       </div>
 
-      {/* Marquee Crop Overlay DOM Element */}
-      <div
-        ref={marqueeRef}
-        id="crop-marquee-overlay"
-        className="crop-marquee-overlay hidden"
-      >
-        <div ref={badgeRef} className="crop-marquee-badge" />
-      </div>
-
       {/* Canvas Area */}
-      <div className="relative flex-1 w-full min-h-0 tldraw-container preview-annotation-canvas">
+      <div
+        ref={canvasContainerRef}
+        className="relative flex-1 w-full min-h-0 tldraw-container preview-annotation-canvas overflow-hidden"
+      >
+        {/* Marquee Crop Overlay DOM Element */}
+        <div
+          ref={marqueeRef}
+          id="crop-marquee-overlay"
+          className="crop-marquee-overlay hidden"
+        >
+          <div ref={badgeRef} className="crop-marquee-badge" />
+        </div>
+
         <Tldraw
           autoFocus
           onMount={handleMount}

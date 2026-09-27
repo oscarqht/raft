@@ -16,6 +16,7 @@ import {
   installCliProcess,
   runCommitMessageAgent,
   runDiscoveryAgent,
+  detectInstallCommand,
   runRebaseAgent,
   runSubmitAgent,
   spawnAgentCli,
@@ -27,29 +28,16 @@ import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
 import { resolveHost } from './tailscale.js';
-import { captureUrlScreenshot, warmupScreenshotWorker } from './screenshotService.js';
-import { createPreviewProxyMiddleware, handlePreviewUpgrade } from './previewProxy.js';
 import multer from 'multer';
 
 const app = express();
 app.use(cors());
-// Mount preview proxy before express.json() to preserve raw request streaming
-app.use(createPreviewProxyMiddleware());
 app.use(express.json());
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3100;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
-
-server.on('upgrade', (req, socket, head) => {
-  if (handlePreviewUpgrade(req, socket as any, head)) {
-    return;
-  }
-  wss.handleUpgrade(req, socket as any, head, (client) => {
-    wss.emit('connection', client, req);
-  });
-});
+const wss = new WebSocketServer({ server });
 
 const upload = multer({
   limits: {
@@ -607,7 +595,7 @@ app.get('/api/projects', (_req: Request, res: Response) => {
 });
 
 app.post('/api/projects', (req: Request, res: Response) => {
-  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention, custom_scripts } = req.body;
+  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, custom_scripts } = req.body;
   const projectPath = path.resolve(rawPath);
   const repoInfo = GitService.getRepoInfo(projectPath);
   if (!repoInfo.isRepo) {
@@ -617,13 +605,14 @@ app.post('/api/projects', (req: Request, res: Response) => {
   const id = uuidv4();
   const name = customName || path.basename(projectPath);
   const now = Date.now();
+  const effectiveInstallCmd = install_cmd !== undefined ? install_cmd : detectInstallCommand(projectPath);
 
   try {
     const stmt = db.prepare(`
       INSERT INTO projects (
-        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
+        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention,
         default_agent_cli, default_model, custom_scripts, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -634,6 +623,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
       dev_port || 5173,
       build_cmd || 'npm run build',
       test_cmd || 'npm test',
+      effectiveInstallCmd,
       branch_convention || repoInfo.currentBranch || 'main',
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
@@ -784,9 +774,9 @@ app.post('/api/projects/create-new', (req: Request, res: Response) => {
 
     const stmt = db.prepare(`
       INSERT INTO projects (
-        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
+        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention,
         default_agent_cli, default_model, custom_scripts, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -797,6 +787,7 @@ app.post('/api/projects/create-new', (req: Request, res: Response) => {
       5173,
       'npm run build',
       'npm test',
+      detectInstallCommand(targetPath),
       repoInfo.currentBranch || defaultBranch || 'main',
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
@@ -830,6 +821,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     dev_port,
     build_cmd,
     test_cmd,
+    install_cmd,
     branch_convention,
     default_agent_cli,
     default_model,
@@ -849,6 +841,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       dev_port = coalesce(?, dev_port),
       build_cmd = coalesce(?, build_cmd),
       test_cmd = coalesce(?, test_cmd),
+      install_cmd = coalesce(?, install_cmd),
       branch_convention = coalesce(?, branch_convention),
       default_agent_cli = coalesce(?, default_agent_cli),
       default_model = coalesce(?, default_model),
@@ -861,6 +854,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     parsedPort !== null && !isNaN(parsedPort) ? parsedPort : null,
     build_cmd !== undefined ? build_cmd : null,
     test_cmd !== undefined ? test_cmd : null,
+    install_cmd !== undefined ? install_cmd : null,
     branch_convention !== undefined ? branch_convention : null,
     default_agent_cli !== undefined ? default_agent_cli : null,
     default_model !== undefined ? default_model : null,
@@ -1030,8 +1024,25 @@ app.post('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(chatSessionId, id, 'Chat 1', defaultCli, defaultModel, defaultEffort, 'idle', now, now);
 
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
-    res.json(task);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+
+    // Auto-install project dependencies in the new worktree
+    const installCmd = (project.install_cmd && project.install_cmd.trim()) || detectInstallCommand(worktreePath);
+    if (installCmd && installCmd.trim()) {
+      try {
+        scriptManager.startExecution({
+          taskId: id,
+          projectId: project.id,
+          scriptName: 'Install Dependencies',
+          command: installCmd.trim(),
+          worktreePath,
+        });
+      } catch (err: any) {
+        console.warn(`Failed to auto-start dependency install for task ${id}:`, err);
+      }
+    }
+
+    res.json({ ...task, project: formatProject(project) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1173,7 +1184,6 @@ app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
   const devCmd = project?.dev_cmd || 'npm run dev';
   const port = project?.dev_port || 5173;
   const state = devServerManager.startServer(task.id, task.worktree_path, devCmd, port);
-  warmupScreenshotWorker();
   res.json(state);
 });
 
@@ -1187,32 +1197,6 @@ app.post('/api/tasks/:id/dev-server/restart', (req: Request, res: Response) => {
   const taskId = req.params.id as string;
   const state = devServerManager.restartServer(taskId);
   res.json(state);
-});
-
-app.post('/api/tasks/:id/dev-server/screenshot', async (req: Request, res: Response) => {
-  const taskId = req.params.id as string;
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-
-  const state = devServerManager.getServerState(taskId);
-  if (state.status !== 'running' && state.status !== 'starting') {
-    return res.status(400).json({ error: 'Dev server is not running for this task' });
-  }
-
-  const port = state.port || 5173;
-  const rawPath = typeof req.body?.path === 'string' ? req.body.path : '/';
-  const targetPath = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
-  const targetUrl = `http://localhost:${port}${targetPath}`;
-  const width = typeof req.body?.width === 'number' && req.body.width > 0 ? Math.min(3840, Math.max(320, req.body.width)) : 1280;
-  const height = typeof req.body?.height === 'number' && req.body.height > 0 ? Math.min(2160, Math.max(240, req.body.height)) : 800;
-
-  try {
-    const screenshot = await captureUrlScreenshot(targetUrl, width, height);
-    res.json(screenshot);
-  } catch (err: any) {
-    console.error(`[raft-server] Failed to capture dev server screenshot for task ${taskId}:`, err);
-    res.status(500).json({ error: err?.message || 'Failed to capture dev server screenshot' });
-  }
 });
 
 // Attachments
@@ -1501,6 +1485,17 @@ wss.on('connection', (ws: WebSocket) => {
   let devStateListener: ((state: any) => void) | null = null;
   let currentTaskId: string | null = null;
 
+  const cleanupDevServerListeners = () => {
+    if (devLogListener && currentTaskId) {
+      devServerManager.off(`log:${currentTaskId}`, devLogListener);
+      devLogListener = null;
+    }
+    if (devStateListener && currentTaskId) {
+      devServerManager.off(`state:${currentTaskId}`, devStateListener);
+      devStateListener = null;
+    }
+  };
+
   const send = (data: any) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(data));
@@ -1532,14 +1527,11 @@ wss.on('connection', (ws: WebSocket) => {
       // 2. Dev server stream subscribe
       else if (msg.type === 'subscribe_dev_server') {
         const { taskId } = msg;
+        cleanupDevServerListeners();
+
         currentTaskId = taskId;
         const state = devServerManager.getServerState(taskId);
         send({ type: 'dev_server_state', state });
-
-        // Send existing logs
-        for (const log of state.logs) {
-          send({ type: 'dev_server_log', log });
-        }
 
         devLogListener = (log: string) => {
           send({ type: 'dev_server_log', log });
@@ -1550,6 +1542,12 @@ wss.on('connection', (ws: WebSocket) => {
 
         devServerManager.on(`log:${taskId}`, devLogListener);
         devServerManager.on(`state:${taskId}`, devStateListener);
+      }
+
+      // Dev server stream unsubscribe
+      else if (msg.type === 'unsubscribe_dev_server') {
+        cleanupDevServerListeners();
+        currentTaskId = null;
       }
 
       // Script executions subscribe
@@ -1930,12 +1928,7 @@ wss.on('connection', (ws: WebSocket) => {
   });
 
   ws.on('close', () => {
-    if (devLogListener && currentTaskId) {
-      devServerManager.off(`log:${currentTaskId}`, devLogListener);
-    }
-    if (devStateListener && currentTaskId) {
-      devServerManager.off(`state:${currentTaskId}`, devStateListener);
-    }
+    cleanupDevServerListeners();
     if (activeProc) {
       try {
         activeProc.kill('SIGTERM');
@@ -1977,7 +1970,6 @@ if (!isTestEnv) {
     if (isTailscale) {
       console.log(`[raft-server] also accessible locally at http://localhost:${PORT}`);
     }
-    warmupScreenshotWorker();
   });
 }
 
