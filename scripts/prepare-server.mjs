@@ -113,4 +113,18 @@ if (!fs.existsSync(nodeBinaryPath)) {
   console.log(`✓ Sidecar Node binary already present at ${nodeBinaryPath}`);
 }
 
+if (process.platform === 'darwin') {
+  const entitlementsPath = path.join(root, 'src-tauri', 'Entitlements.plist');
+  if (fs.existsSync(entitlementsPath)) {
+    try {
+      execSync(`codesign --force --options runtime --entitlements "${entitlementsPath}" --sign - "${nodeBinaryPath}"`, {
+        stdio: 'inherit',
+      });
+      console.log(`✓ Signed sidecar Node binary with entitlements: ${nodeBinaryName}`);
+    } catch (err) {
+      console.warn(`Warning: Failed to sign sidecar Node binary: ${err.message}`);
+    }
+  }
+}
+
 console.log('✓ Server preparation completed successfully!');
