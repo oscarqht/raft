@@ -1101,7 +1101,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
       props.onBack();
       return;
     }
-    if (window.history.length > 1) {
+    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
+      navigate(-1);
+    } else if (window.history.length > 1 && (!window.history.state || window.history.state.idx === undefined)) {
       navigate(-1);
     } else {
       navigate('/');

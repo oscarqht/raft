@@ -179,8 +179,13 @@ export default function App() {
                 clis={clis}
                 onRefreshClis={() => getClis().then(setClis).catch(() => {})}
                 onBack={() => {
-                  if (window.history.length > 1) navigate(-1);
-                  else navigate('/');
+                  if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
+                    navigate(-1);
+                  } else if (window.history.length > 1 && (!window.history.state || window.history.state.idx === undefined)) {
+                    navigate(-1);
+                  } else {
+                    navigate('/');
+                  }
                 }}
               />
             }

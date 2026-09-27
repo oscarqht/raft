@@ -50,7 +50,6 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center space-x-2 sm:space-x-3 text-sm min-w-0">
         <Link
           to="/"
-          onClick={() => onNavigate?.('home')}
           className="flex items-center space-x-2.5 text-cozy-text font-semibold hover:opacity-90 transition-all shrink-0 group"
         >
           <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-soft-sm group-hover:scale-105 transition-transform">
@@ -67,7 +66,6 @@ export const Header: React.FC<HeaderProps> = ({
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
             <Link
               to={`/projects/${currentPath.projectId}`}
-              onClick={() => onNavigate?.('project', { projectId: currentPath.projectId })}
               className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-all max-w-[120px] sm:max-w-[200px] truncate shadow-soft-sm text-xs font-medium"
             >
               {currentPath.projectIcon ? (
@@ -126,7 +124,6 @@ export const Header: React.FC<HeaderProps> = ({
         {settings && (
           <Link
             to="/settings"
-            onClick={() => onNavigate?.('settings')}
             className="hidden min-[920px]:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
             title="Active AI Agent CLI"
           >
@@ -139,7 +136,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         <Link
           to="/settings"
-          onClick={() => onNavigate?.('settings')}
           className="w-9 h-9 rounded-full bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/70 hover:border-teal-400/30 shadow-soft-sm flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all"
           title="Settings"
         >
