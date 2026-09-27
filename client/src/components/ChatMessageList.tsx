@@ -179,12 +179,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start space-x-3 min-w-0 w-full animate-in fade-in duration-200">
-          <div className="w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 flex items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
+        <div className="flex items-start justify-end min-[920px]:justify-start min-[920px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+          <div className="hidden min-[920px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
             <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
           </div>
-          <div className="flex-1 space-y-2 max-w-[90%] min-w-0">
-            <div className="glass-card border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm">
+          <div className="w-full max-w-full min-[920px]:max-w-[92%] min-[920px]:flex-1 space-y-2 min-w-0 flex flex-col items-end min-[920px]:items-start">
+            <div className="glass-card border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
               <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                 <Sparkles className="w-3.5 h-3.5" />
                 Thinking and exploring codebase...
@@ -356,10 +356,14 @@ const MessageItem: React.FC<{
       : '');
 
   return (
-    <div className={`flex items-start space-x-3 min-w-0 w-full ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
+    <div
+      className={`flex items-start justify-end min-[920px]:justify-start min-w-0 w-full min-[920px]:space-x-3 ${
+        isUser ? 'min-[920px]:flex-row-reverse min-[920px]:space-x-reverse' : ''
+      }`}
+    >
       {/* Avatar */}
       <div
-        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
+        className={`hidden min-[920px]:flex w-8 h-8 rounded-full items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
           isUser
             ? 'bg-gradient-to-tr from-teal-500 to-cyan-600 border-teal-400/30 text-white shadow-glow-ocean'
             : spendCapInfo.isSpendCap
@@ -371,10 +375,16 @@ const MessageItem: React.FC<{
       </div>
 
       {/* Bubble Content */}
-      <div className={`space-y-1.5 ${isUser ? 'max-w-[85%] sm:max-w-[78%] items-end' : 'w-full max-w-[96%] sm:max-w-[92%] items-start'} min-w-0 flex flex-col`}>
+      <div
+        className={`space-y-1.5 min-w-0 flex flex-col items-end max-w-full ${
+          isUser
+            ? 'min-[920px]:max-w-[78%] min-[920px]:items-end'
+            : 'w-full min-[920px]:max-w-[92%] min-[920px]:items-start'
+        }`}
+      >
         {/* Friendly Natural Summary Pill for Thoughts & Actions */}
         {thoughts && summaryBadge && !spendCapInfo.isSpendCap && (
-          <div className="mb-1 w-full min-w-0">
+          <div className="mb-1 w-full min-w-0 flex justify-end min-[920px]:justify-start">
             <button
               onClick={() => setShowThoughts(!showThoughts)}
               className="flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full"
@@ -410,7 +420,7 @@ const MessageItem: React.FC<{
         )}
 
         <div
-          className={`group relative rounded-2xl text-sm shadow-soft-sm transition-all min-w-0 ${
+          className={`group relative rounded-2xl text-sm shadow-soft-sm transition-all min-w-0 max-w-full ${
             isUser
               ? 'bg-teal-500 text-white rounded-tr-sm shadow-glow-ocean px-6 sm:px-7 py-3 sm:py-3.5 pr-11 sm:pr-12 break-words [overflow-wrap:anywhere] font-medium'
               : spendCapInfo.isSpendCap
@@ -639,7 +649,11 @@ const MessageItem: React.FC<{
           )}
         </div>
 
-        <div className={`text-[10px] text-cozy-muted/60 px-1 font-medium ${isUser ? 'text-right' : 'text-left'}`}>
+        <div
+          className={`text-[10px] text-cozy-muted/60 px-1 font-medium text-right min-[920px]:${
+            isUser ? 'text-right' : 'text-left'
+          }`}
+        >
           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
