@@ -3,21 +3,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+const isTestEnv =
+  process.env.NODE_ENV === 'test' ||
+  Boolean(process.env.NODE_TEST_CONTEXT) ||
+  process.execArgv.includes('--test') ||
+  process.argv.some((arg) => arg.includes('test'));
+
 const RAFT_DIR = path.join(os.homedir(), '.raft');
-if (!fs.existsSync(RAFT_DIR)) {
+if (!isTestEnv && !fs.existsSync(RAFT_DIR)) {
   fs.mkdirSync(RAFT_DIR, { recursive: true });
 }
 
-const DB_PATH = path.join(RAFT_DIR, 'raft.db');
+const DB_PATH = process.env.RAFT_DB_PATH
+  ? process.env.RAFT_DB_PATH
+  : isTestEnv
+  ? ':memory:'
+  : path.join(RAFT_DIR, 'raft.db');
 
 // Seamless migration from legacy .termai if applicable
-const LEGACY_DIR = path.join(os.homedir(), '.termai');
-const LEGACY_DB = path.join(LEGACY_DIR, 'termai.db');
-if (!fs.existsSync(DB_PATH) && fs.existsSync(LEGACY_DB)) {
-  try {
-    fs.copyFileSync(LEGACY_DB, DB_PATH);
-  } catch (err) {
-    console.error('Failed to migrate legacy termai database:', err);
+if (!isTestEnv && DB_PATH !== ':memory:') {
+  const LEGACY_DIR = path.join(os.homedir(), '.termai');
+  const LEGACY_DB = path.join(LEGACY_DIR, 'termai.db');
+  if (!fs.existsSync(DB_PATH) && fs.existsSync(LEGACY_DB)) {
+    try {
+      fs.copyFileSync(LEGACY_DB, DB_PATH);
+    } catch (err) {
+      console.error('Failed to migrate legacy termai database:', err);
+    }
   }
 }
 

@@ -72,38 +72,45 @@ test('attachments database table inserts and queries by task_id with cascade del
   const attachmentId2 = uuidv4();
   const now = Date.now();
 
-  // Create project and task
-  db.prepare(`
-    INSERT INTO projects (id, name, path, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(projectId, 'test-project', `/path/${projectId}`, now, now);
+  try {
+    // Create project and task
+    db.prepare(`
+      INSERT INTO projects (id, name, path, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(projectId, 'test-project', `/path/${projectId}`, now, now);
 
-  db.prepare(`
-    INSERT INTO tasks (id, project_id, name, branch, base_branch, worktree_path, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(taskId, projectId, 'test-task', 'branch', 'main', `/path/worktree/${taskId}`, 'active', now, now);
+    db.prepare(`
+      INSERT INTO tasks (id, project_id, name, branch, base_branch, worktree_path, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(taskId, projectId, 'test-task', 'branch', 'main', `/path/worktree/${taskId}`, 'active', now, now);
 
-  // Insert attachments
-  db.prepare(`
-    INSERT INTO attachments (id, task_id, name, size, mime_type, file_path, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(attachmentId1, taskId, 'screenshot.png', 12345, 'image/png', '.raft/attachments/1.png', now);
+    // Insert attachments
+    db.prepare(`
+      INSERT INTO attachments (id, task_id, name, size, mime_type, file_path, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(attachmentId1, taskId, 'screenshot.png', 12345, 'image/png', '.raft/attachments/1.png', now);
 
-  db.prepare(`
-    INSERT INTO attachments (id, task_id, name, size, mime_type, file_path, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(attachmentId2, taskId, 'config.json', 456, 'application/json', '.raft/attachments/2.json', now);
+    db.prepare(`
+      INSERT INTO attachments (id, task_id, name, size, mime_type, file_path, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(attachmentId2, taskId, 'config.json', 456, 'application/json', '.raft/attachments/2.json', now);
 
-  // Query attachments by task_id
-  const rows = db.prepare('SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at ASC').all(taskId) as any[];
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].name, 'screenshot.png');
-  assert.equal(rows[1].name, 'config.json');
+    // Query attachments by task_id
+    const rows = db.prepare('SELECT * FROM attachments WHERE task_id = ? ORDER BY created_at ASC').all(taskId) as any[];
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].name, 'screenshot.png');
+    assert.equal(rows[1].name, 'config.json');
 
-  // Verify CASCADE delete
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
-  const remaining = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(taskId) as any[];
-  assert.equal(remaining.length, 0, 'attachments should be deleted when parent task is deleted');
+    // Verify CASCADE delete
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+    const remaining = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(taskId) as any[];
+    assert.equal(remaining.length, 0, 'attachments should be deleted when parent task is deleted');
+  } finally {
+    try {
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+      db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+    } catch {}
+  }
 });
 
 test('chat message metadata parses attachments correctly', () => {
@@ -183,6 +190,11 @@ test('REST endpoints for attachment upload, content retrieval, and file streamin
     assert.equal(fileText, testContent);
   } finally {
     await new Promise<void>((resolve) => testServer.close(() => resolve()));
+    try {
+      db.prepare('DELETE FROM attachments WHERE task_id = ?').run(taskId);
+      db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+      db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+    } catch {}
     try {
       fs.rmSync(tmpWorktree, { recursive: true, force: true });
     } catch {}
