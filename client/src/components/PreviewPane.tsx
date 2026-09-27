@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2 } from 'lucide-react';
+import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2, AlertCircle } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
-import { getDevServerState, startDevServer, stopDevServer, restartDevServer, captureDevServerScreenshot } from '../api';
+import { getDevServerState, startDevServer, stopDevServer, restartDevServer, captureDevServerScreenshot, pingDevServer } from '../api';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
   import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
 );
+
+const MAX_RETRY_ATTEMPTS = 30; // 30 seconds
+const RETRY_INTERVAL_MS = 1000; // 1s
 
 interface PreviewPaneProps {
   task: Task;
@@ -37,6 +40,11 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     width: number;
     height: number;
   } | null>(null);
+
+  // Dev server connection readiness polling states
+  const [isServerReady, setIsServerReady] = useState(false);
+  const [attemptCount, setAttemptCount] = useState(0);
+  const [isTimedOut, setIsTimedOut] = useState(false);
 
   // Subscribe to dev server WebSocket events
   useEffect(() => {
@@ -78,6 +86,80 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
       .catch(() => {});
   }, [task.id]);
 
+  // Reset readiness when server stops or errors
+  useEffect(() => {
+    if (devState.status === 'stopped' || devState.status === 'error') {
+      setIsServerReady(false);
+      setAttemptCount(0);
+      setIsTimedOut(false);
+    }
+  }, [devState.status]);
+
+  // Polling readiness check effect
+  const activePort = devState.port || 5173;
+  useEffect(() => {
+    // Only poll when server is running or starting, and not yet marked ready or timed out
+    if (devState.status !== 'running' && devState.status !== 'starting') return;
+    if (isServerReady || isTimedOut) return;
+
+    let isMounted = true;
+    let timerId: any = null;
+
+    const checkReady = async () => {
+      let ready = false;
+
+      // 1. Backend ping probe (checks TCP/HTTP on host)
+      try {
+        const ping = await pingDevServer(task.id);
+        if (ping.ready) {
+          ready = true;
+        }
+      } catch {}
+
+      // 2. Direct browser fetch fallback probe
+      if (!ready) {
+        try {
+          const controller = new AbortController();
+          const abortTimer = setTimeout(() => controller.abort(), 800);
+          await fetch(`http://localhost:${activePort}/`, {
+            mode: 'no-cors',
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          clearTimeout(abortTimer);
+          ready = true;
+        } catch {}
+      }
+
+      if (!isMounted) return;
+
+      if (ready) {
+        setIsServerReady(true);
+        setIsTimedOut(false);
+        setAttemptCount(0);
+        return;
+      }
+
+      setAttemptCount((prev) => {
+        const next = prev + 1;
+        if (next >= MAX_RETRY_ATTEMPTS) {
+          setIsTimedOut(true);
+        } else {
+          timerId = setTimeout(checkReady, RETRY_INTERVAL_MS);
+        }
+        return next;
+      });
+    };
+
+    // Run first check immediately
+    checkReady();
+
+    return () => {
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [devState.status, isServerReady, isTimedOut, task.id, activePort]);
+
   // Auto scroll console logs
   useEffect(() => {
     if (showConsole) {
@@ -86,6 +168,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   }, [logs, showConsole]);
 
   const handleStart = async () => {
+    setIsServerReady(false);
+    setIsTimedOut(false);
+    setAttemptCount(0);
     const next = await startDevServer(task.id);
     setDevState(next);
   };
@@ -93,9 +178,15 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const handleStop = async () => {
     await stopDevServer(task.id);
     setDevState((prev) => ({ ...prev, status: 'stopped' }));
+    setIsServerReady(false);
+    setIsTimedOut(false);
+    setAttemptCount(0);
   };
 
   const handleRestart = async () => {
+    setIsServerReady(false);
+    setIsTimedOut(false);
+    setAttemptCount(0);
     const next = await restartDevServer(task.id);
     setDevState(next);
     setIframeKey((k) => k + 1);
@@ -299,7 +390,6 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const activePort = devState.port || 5173;
   const currentUrl = `http://localhost:${activePort}${pathInput.startsWith('/') ? pathInput : '/' + pathInput}`;
 
   return (
@@ -343,15 +433,19 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-xs shadow-soft-sm shrink-0">
           <span
             className={`w-2 h-2 rounded-full ${
-              devState.status === 'running'
+              devState.status === 'running' && isServerReady
                 ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
-                : devState.status === 'starting'
+                : devState.status === 'running' || devState.status === 'starting'
                 ? 'bg-amber-400 animate-ping'
                 : 'bg-cozy-muted/40'
             }`}
           />
           <span className="font-mono text-cozy-muted text-[11px] font-medium">
-            {devState.status === 'running' ? `:${activePort}` : 'offline'}
+            {devState.status === 'running' && isServerReady
+              ? `:${activePort}`
+              : devState.status === 'running' || devState.status === 'starting'
+              ? `starting :${activePort}`
+              : 'offline'}
           </span>
         </div>
 
@@ -373,7 +467,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         <div className="flex items-center space-x-1 shrink-0">
           <button
             onClick={handleReloadIframe}
-            disabled={devState.status !== 'running'}
+            disabled={devState.status !== 'running' || !isServerReady}
             className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
             title="Reload preview"
             aria-label="Reload preview"
@@ -384,7 +478,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           {/* Screenshot & Annotate Preview button */}
           <button
             onClick={handleCaptureScreenshot}
-            disabled={devState.status !== 'running' || isCapturing}
+            disabled={devState.status !== 'running' || !isServerReady || isCapturing}
             className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
               activeScreenshot
                 ? 'bg-rose-500/15 text-rose-500'
@@ -404,7 +498,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             target="_blank"
             rel="noopener noreferrer"
             className={`w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-rose-500 hover:bg-cozy-subtle transition-all ${
-              devState.status !== 'running' ? 'pointer-events-none opacity-30' : ''
+              devState.status !== 'running' || !isServerReady ? 'pointer-events-none opacity-30' : ''
             }`}
             title="Open in external browser window"
           >
@@ -445,14 +539,117 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </div>
         )}
 
-        {devState.status === 'running' ? (
-          <iframe
-            key={iframeKey}
-            src={currentUrl}
-            title="Task Dev Server Preview"
-            className="w-full h-full border-0"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-          />
+        {devState.status === 'running' || devState.status === 'starting' ? (
+          isServerReady ? (
+            <iframe
+              key={iframeKey}
+              src={currentUrl}
+              title="Task Dev Server Preview"
+              className="w-full h-full border-0"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+            />
+          ) : isTimedOut ? (
+            <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
+              <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-amber-500/15 via-rose-500/15 to-rose-600/10 border border-amber-400/30 flex items-center justify-center mb-4 shadow-soft-sm text-amber-500">
+                <AlertCircle className="w-7 h-7" />
+              </div>
+              <h3 className="text-base font-semibold text-cozy-text mb-1.5">
+                Dev Server Took Too Long to Respond
+              </h3>
+              <p className="text-xs max-w-md mb-2 text-cozy-muted leading-relaxed">
+                The dev server process is running, but no HTTP response was received at{' '}
+                <span className="font-mono text-cozy-text font-medium">{currentUrl}</span> after {MAX_RETRY_ATTEMPTS} seconds.
+              </p>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-500 mb-6">
+                <span>{MAX_RETRY_ATTEMPTS} retries reached</span>
+                <span>•</span>
+                <span>Port :{activePort}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTimedOut(false);
+                    setAttemptCount(0);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-glow-peach cursor-pointer"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Retry Connection</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowConsole(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium bg-cozy-surface/90 hover:bg-cozy-subtle text-cozy-text border border-cozy-border/80 transition-all shadow-soft-sm cursor-pointer"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                  <span>View Console Logs ({logs.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Stop Server</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
+              <div className="relative mb-5">
+                <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-rose-500/15 via-amber-500/15 to-emerald-500/15 border border-rose-400/25 flex items-center justify-center shadow-soft-sm relative">
+                  <Globe className="w-7 h-7 text-rose-500 animate-pulse" />
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cozy-surface border border-cozy-border/70 flex items-center justify-center shadow-sm">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-base font-semibold text-cozy-text mb-1">
+                Waiting for Dev Server...
+              </h3>
+              <p className="text-xs font-mono text-rose-500/90 dark:text-rose-400 mb-4 font-medium">
+                http://localhost:{activePort}
+              </p>
+
+              <div className="w-64 max-w-xs mb-3">
+                <div className="flex items-center justify-between text-[11px] font-mono text-cozy-muted mb-1.5">
+                  <span>Connecting...</span>
+                  <span>{attemptCount} / {MAX_RETRY_ATTEMPTS}s</span>
+                </div>
+                <div className="w-full h-1.5 bg-cozy-border/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-rose-500 to-amber-500 transition-all duration-300 rounded-full"
+                    style={{ width: `${Math.max(5, (attemptCount / MAX_RETRY_ATTEMPTS) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] text-cozy-muted max-w-xs mb-5 leading-relaxed">
+                Retrying every 1s. The preview will automatically appear as soon as the dev server is ready.
+              </p>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConsole(!showConsole)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-surface/90 hover:bg-cozy-subtle text-cozy-text border border-cozy-border/80 transition-all shadow-soft-sm cursor-pointer"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-rose-400" />
+                  <span>View Logs ({logs.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-all cursor-pointer"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Stop</span>
+                </button>
+              </div>
+            </div>
+          )
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted">
             <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-rose-500/10 via-amber-500/10 to-emerald-500/10 border border-rose-400/20 flex items-center justify-center mb-3.5 shadow-soft-sm">

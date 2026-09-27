@@ -224,6 +224,16 @@ export async function getDevServerState(taskId: string): Promise<DevServerState>
   return res.json();
 }
 
+export async function pingDevServer(taskId: string): Promise<{ ready: boolean; port: number }> {
+  try {
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/ping`);
+    if (!res.ok) return { ready: false, port: 5173 };
+    return await res.json();
+  } catch {
+    return { ready: false, port: 5173 };
+  }
+}
+
 export async function startDevServer(taskId: string): Promise<DevServerState> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/start`, { method: 'POST' });
   return res.json();

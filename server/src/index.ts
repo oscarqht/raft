@@ -1146,6 +1146,12 @@ app.get('/api/tasks/:id/dev-server', (req: Request, res: Response) => {
   res.json(state);
 });
 
+app.get('/api/tasks/:id/dev-server/ping', async (req: Request, res: Response) => {
+  const taskId = req.params.id as string;
+  const result = await devServerManager.checkServerReady(taskId);
+  res.json(result);
+});
+
 app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
   const taskId = req.params.id as string;
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;

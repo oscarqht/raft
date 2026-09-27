@@ -1,5 +1,6 @@
 import { spawn, execSync, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import http from 'node:http';
 import { getCrossPlatformEnv } from './agentRunner.js';
 
 export interface DevServerState {
@@ -147,6 +148,46 @@ class DevServerManager extends EventEmitter {
     const { worktreePath, devCmd, port } = entry.state;
     this.stopServer(taskId);
     return this.startServer(taskId, worktreePath, devCmd, defaultPort || port);
+  }
+
+  async checkServerReady(taskId: string): Promise<{ ready: boolean; port: number }> {
+    const entry = this.servers.get(taskId);
+    if (!entry || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
+      return { ready: false, port: entry?.state.port || 5173 };
+    }
+    const port = entry.state.port || 5173;
+
+    const probe = (hostname: string): Promise<boolean> => {
+      return new Promise((resolve) => {
+        const req = http.get(
+          {
+            hostname,
+            port,
+            path: '/',
+            timeout: 800,
+          },
+          (res) => {
+            res.resume();
+            resolve(true);
+          }
+        );
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(false);
+        });
+        req.on('error', () => {
+          req.destroy();
+          resolve(false);
+        });
+      });
+    };
+
+    const isReady127 = await probe('127.0.0.1');
+    if (isReady127) {
+      return { ready: true, port };
+    }
+    const isReadyIpv6 = await probe('::1');
+    return { ready: isReadyIpv6, port };
   }
 }
 
