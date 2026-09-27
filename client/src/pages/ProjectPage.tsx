@@ -13,6 +13,7 @@ import { Project, Task, Settings } from '../types';
 import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath } from '../api';
 import { setCachedTask } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
+import { formatRelativeTime } from '../utils/time';
 
 interface ProjectPageProps {
   projectId?: string;
@@ -55,6 +56,15 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     const handleOpenNewTask = () => setIsNewTaskOpen(true);
     window.addEventListener('open-new-task', handleOpenNewTask);
     return () => window.removeEventListener('open-new-task', handleOpenNewTask);
+  }, []);
+
+  // Refresh relative timestamps periodically
+  const [, setTimeTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeTick((prev) => prev + 1);
+    }, 30000);
+    return () => clearInterval(timer);
   }, []);
 
   const loadData = async () => {
@@ -211,9 +221,12 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
               </div>
 
               <div className="flex items-center space-x-2 shrink-0">
-                <div className="flex items-center gap-1.5 text-[11px] text-cozy-muted font-medium whitespace-nowrap shrink-0 mr-1">
+                <div
+                  className="flex items-center gap-1.5 text-[11px] text-cozy-muted font-medium whitespace-nowrap shrink-0 mr-1"
+                  title={t.created_at ? new Date(t.created_at).toLocaleString() : undefined}
+                >
                   <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span>{new Date(t.created_at).toLocaleDateString()}</span>
+                  <span>{formatRelativeTime(t.created_at)}</span>
                 </div>
 
                 <button
