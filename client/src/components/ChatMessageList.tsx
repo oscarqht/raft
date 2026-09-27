@@ -492,7 +492,7 @@ const MessageItem: React.FC<{
               </div>
             </div>
           ) : displayContent ? (
-            <MarkdownView content={displayContent} className="text-cozy-text font-sans min-w-0" />
+            <MarkdownView content={displayContent} isStreaming={isStreaming} className="text-cozy-text font-sans min-w-0" />
           ) : isStreaming ? (
             <div className="flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400 font-medium py-1 animate-pulse">
               <Cpu className="w-4 h-4 text-teal-500 shrink-0" />

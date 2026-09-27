@@ -13,9 +13,13 @@
     "ansi-to-react": "^6.2.6",
     "frimousse": "^0.4.0",
     "lucide-react": "^0.475.0",
+    "mermaid": "^11.17.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.4"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.4",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
