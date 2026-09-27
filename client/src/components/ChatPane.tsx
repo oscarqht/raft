@@ -98,6 +98,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showMobileActionsMenu]);
 
+  // Listen for externally added pending attachments (e.g. from Preview Annotation)
+  useEffect(() => {
+    const handleExternalAttachments = (e: Event) => {
+      const customEvent = e as CustomEvent<FileAttachment[]>;
+      if (customEvent.detail && Array.isArray(customEvent.detail) && customEvent.detail.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...customEvent.detail]);
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 80);
+      }
+    };
+    window.addEventListener('add-pending-attachments', handleExternalAttachments);
+    return () => window.removeEventListener('add-pending-attachments', handleExternalAttachments);
+  }, []);
+
   // Skills autocompletion state
   const [skills, setSkills] = useState<AgentSkill[]>([]);
   const [showSkillsPopup, setShowSkillsPopup] = useState(false);

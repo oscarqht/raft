@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2 } from 'lucide-react';
-import { Task, DevServerState } from '../types';
+import { Play, Square, RotateCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2 } from 'lucide-react';
+import { Task, DevServerState, FileAttachment } from '../types';
 import { getDevServerState, startDevServer, stopDevServer, restartDevServer } from '../api';
+
+const PreviewAnnotationOverlay = React.lazy(() =>
+  import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
+);
 
 interface PreviewPaneProps {
   task: Task;
   ws: WebSocket | null;
+  onAttachToChat?: (attachments: FileAttachment[]) => void;
 }
 
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToChat }) => {
   const [devState, setDevState] = useState<DevServerState>({
     taskId: task.id,
     status: 'stopped',
@@ -23,6 +28,14 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
   const [showConsole, setShowConsole] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const consoleEndRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [activeScreenshot, setActiveScreenshot] = useState<{
+    dataUrl: string;
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Subscribe to dev server WebSocket events
   useEffect(() => {
@@ -89,6 +102,94 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
 
   const handleReloadIframe = () => {
     setIframeKey((k) => k + 1);
+  };
+
+  const handleCaptureScreenshot = async () => {
+    if (isCapturing || !previewContainerRef.current) return;
+    try {
+      setIsCapturing(true);
+      const container = previewContainerRef.current;
+      const rect = container.getBoundingClientRect();
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: 'browser',
+        } as any,
+        audio: false,
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+        surfaceSwitching: 'include',
+        systemAudio: 'exclude',
+      } as any);
+
+      const track = stream.getVideoTracks()[0];
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      await video.play();
+
+      await new Promise<void>((resolve) => {
+        if (video.readyState >= 2) return resolve();
+        video.onloadeddata = () => resolve();
+      });
+
+      // Brief delay for video frame rendering
+      await new Promise((r) => setTimeout(r, 120));
+
+      const videoW = video.videoWidth;
+      const videoH = video.videoHeight;
+      const windowW = window.innerWidth;
+      const windowH = window.innerHeight;
+
+      const scaleX = videoW / windowW;
+      const scaleY = videoH / windowH;
+
+      let cropX = Math.max(0, Math.round(rect.left * scaleX));
+      let cropY = Math.max(0, Math.round(rect.top * scaleY));
+      let cropW = Math.min(videoW - cropX, Math.round(rect.width * scaleX));
+      let cropH = Math.min(videoH - cropY, Math.round(rect.height * scaleY));
+
+      if (cropW <= 0 || cropH <= 0) {
+        cropX = 0;
+        cropY = 0;
+        cropW = videoW;
+        cropH = videoH;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = cropW;
+      canvas.height = cropH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to create 2d canvas context');
+
+      ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+      track.stop();
+      stream.getTracks().forEach((t) => t.stop());
+
+      const dataUrl = canvas.toDataURL('image/png');
+      setActiveScreenshot({
+        dataUrl,
+        width: cropW,
+        height: cropH,
+      });
+    } catch (err: any) {
+      if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+        console.error('Failed to capture preview screenshot:', err);
+      }
+    } finally {
+      setIsCapturing(false);
+    }
+  };
+
+  const handleAttachToChat = (attachments: FileAttachment[]) => {
+    setActiveScreenshot(null);
+    if (onAttachToChat) {
+      onAttachToChat(attachments);
+    } else {
+      window.dispatchEvent(new CustomEvent('add-pending-attachments', { detail: attachments }));
+    }
   };
 
   const activePort = devState.port || 5173;
@@ -171,6 +272,24 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
             <RotateCw className="w-3.5 h-3.5" />
           </button>
 
+          {/* Screenshot & Annotate Preview button */}
+          <button
+            onClick={handleCaptureScreenshot}
+            disabled={devState.status !== 'running' || isCapturing}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+              activeScreenshot
+                ? 'bg-rose-500/15 text-rose-500'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30'
+            }`}
+            title="Take Screenshot & Annotate Preview"
+          >
+            {isCapturing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+            ) : (
+              <Camera className="w-3.5 h-3.5" />
+            )}
+          </button>
+
           <a
             href={currentUrl}
             target="_blank"
@@ -200,7 +319,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
       </div>
 
       {/* Main Preview Frame / Placeholder */}
-      <div className="flex-1 relative w-full h-full bg-white dark:bg-[#0e1017] overflow-hidden">
+      <div
+        ref={previewContainerRef}
+        className="flex-1 relative w-full h-full bg-white dark:bg-[#0e1017] overflow-hidden"
+      >
         {devState.status === 'running' ? (
           <iframe
             key={iframeKey}
@@ -226,6 +348,26 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws }) => {
               <span>Launch Dev Server</span>
             </button>
           </div>
+        )}
+
+        {/* Live Annotation Overlay */}
+        {activeScreenshot && (
+          <React.Suspense
+            fallback={
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/80">
+                <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+              </div>
+            }
+          >
+            <PreviewAnnotationOverlay
+              screenshotDataUrl={activeScreenshot.dataUrl}
+              screenshotWidth={activeScreenshot.width}
+              screenshotHeight={activeScreenshot.height}
+              taskId={task.id}
+              onAttachToChat={handleAttachToChat}
+              onClose={() => setActiveScreenshot(null)}
+            />
+          </React.Suspense>
         )}
       </div>
 
