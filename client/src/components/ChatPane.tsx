@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
@@ -161,8 +161,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       editInputRef.current.select();
     }
   }, [editingChatId]);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load chat sessions
   const loadChats = async () => {
@@ -513,11 +511,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     return () => ws.removeEventListener('message', handleMessage);
   }, [ws, activeChatId]);
 
-  // Auto scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingChunk]);
-
   const handleCreateChat = async () => {
     const newTitle = `Chat ${chats.length + 1}`;
     const cliToUse = tabCli || settings?.agent_cli || 'agy';
@@ -837,7 +830,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setStreamingChunk('');
   };
 
-  const handleSwitchCliAndRetry = async (targetCli: string, userPrompt: string, failedAssistantMsgId: string) => {
+  const handleSwitchCliAndRetry = useCallback(async (targetCli: string, userPrompt: string, failedAssistantMsgId: string) => {
     if (!activeChatId || !ws || isStreaming) return;
 
     // 1. Remove the failed assistant message from DB and local state
@@ -909,7 +902,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         thinkingEffort: newEffort,
       })
     );
-  };
+  }, [activeChatId, ws, isStreaming, messages]);
+
+  const handleOpenSettings = useCallback(() => {
+    navigate('/settings');
+  }, [navigate]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (showSkillsPopup && filteredSkills.length > 0) {
@@ -1117,9 +1114,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         clis={clis}
         currentCli={tabCli || settings?.agent_cli || 'codex'}
         onSwitchCliAndRetry={handleSwitchCliAndRetry}
-        onOpenSettings={() => navigate('/settings')}
+        onOpenSettings={handleOpenSettings}
       />
-      <div ref={messagesEndRef} />
       {/* Input Area */}
       <div
         className="relative p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-surface/50 backdrop-blur-md"

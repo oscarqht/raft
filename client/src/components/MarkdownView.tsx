@@ -23,26 +23,36 @@ interface MarkdownViewProps {
   className?: string;
 }
 
-// Hook to track whether dark mode is currently active
-function useIsDarkMode() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof document === 'undefined') return false;
-    return document.documentElement.classList.contains('dark');
+// Shared singleton hook to track whether dark mode is currently active
+let isDarkShared = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false;
+const darkListeners = new Set<() => void>();
+
+if (typeof document !== 'undefined') {
+  const observer = new MutationObserver(() => {
+    const next = document.documentElement.classList.contains('dark');
+    if (next !== isDarkShared) {
+      isDarkShared = next;
+      darkListeners.forEach((l) => l());
+    }
   });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+}
+
+function useIsDarkMode() {
+  const [isDark, setIsDark] = useState(isDarkShared);
 
   useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const observer = new MutationObserver(() => {
-      setIsDark(document.documentElement.classList.contains('dark'));
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
+    const listener = () => setIsDark(isDarkShared);
+    darkListeners.add(listener);
+    return () => {
+      darkListeners.delete(listener);
+    };
   }, []);
 
   return isDark;
 }
 
-export const MarkdownView: React.FC<MarkdownViewProps> = ({
+export const MarkdownView: React.FC<MarkdownViewProps> = React.memo(({
   content,
   isStreaming = false,
   className = '',
@@ -253,13 +263,13 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({
       </ReactMarkdown>
     </div>
   );
-};
+});
 
 export const CodeBlockItem: React.FC<{
   language: string;
   code: string;
   isStreaming?: boolean;
-}> = ({ language, code, isStreaming }) => {
+}> = React.memo(({ language, code, isStreaming }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -301,12 +311,12 @@ export const CodeBlockItem: React.FC<{
       </div>
     </div>
   );
-};
+});
 
 export const MermaidBlock: React.FC<{
   code: string;
   isStreaming?: boolean;
-}> = ({ code, isStreaming }) => {
+}> = React.memo(({ code, isStreaming }) => {
   const isDark = useIsDarkMode();
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -563,4 +573,4 @@ export const MermaidBlock: React.FC<{
       )}
     </>
   );
-};
+});

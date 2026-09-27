@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
   FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap
@@ -100,7 +100,7 @@ interface ChatMessageListProps {
   onOpenSettings?: () => void;
 }
 
-export const ChatMessageList: React.FC<ChatMessageListProps> = ({
+export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   messages,
   liveStreamingChunk,
   isStreaming,
@@ -110,24 +110,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
   onSwitchCliAndRetry,
   onOpenSettings,
 }) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
+  const isFirstRender = useRef(true);
 
-  const handleCopy = (id: string, text: string) => {
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).catch(() => {
-        fallbackCopy(text);
-      });
-    } else {
-      fallbackCopy(text);
-    }
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const fallbackCopy = (text: string) => {
+  const fallbackCopy = useCallback((text: string) => {
     try {
       const textArea = document.createElement('textarea');
       textArea.value = text;
@@ -140,17 +128,52 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       document.execCommand('copy');
       document.body.removeChild(textArea);
     } catch {}
-  };
+  }, []);
+
+  const handleCopy = useCallback((text: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).catch(() => {
+        fallbackCopy(text);
+      });
+    } else {
+      fallbackCopy(text);
+    }
+  }, [fallbackCopy]);
+
+  const handlePreviewImage = useCallback((att: FileAttachment) => {
+    setPreviewImage(att);
+  }, []);
+
+  const handlePreviewFile = useCallback((att: FileAttachment) => {
+    setPreviewFile(att);
+  }, []);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isAutoScrollEnabled = useRef(true);
+  const scrollRafRef = useRef<number | null>(null);
 
-  const handleScroll = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    isAutoScrollEnabled.current = isNearBottom;
-  };
+  const handleScroll = useCallback(() => {
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      isAutoScrollEnabled.current = isNearBottom;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    isFirstRender.current = true;
+  }, [taskId]);
 
   useEffect(() => {
     if (!isAutoScrollEnabled.current && isStreaming) return;
@@ -163,7 +186,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       });
       return () => cancelAnimationFrame(raf);
     } else {
-      listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const behavior = isFirstRender.current ? 'auto' : 'smooth';
+      isFirstRender.current = false;
+      listEndRef.current?.scrollIntoView({ behavior });
     }
   }, [messages, liveStreamingChunk, isStreaming]);
 
@@ -171,7 +196,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0"
+      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overscroll-y-contain [transform:translateZ(0)]"
     >
       {messages.length === 0 && !isStreaming && (
         <div className="h-full flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
@@ -190,10 +215,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
           key={msg.id}
           msg={msg}
           isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
-          copiedId={copiedId}
           onCopy={handleCopy}
-          onPreviewImage={(att) => setPreviewImage(att)}
-          onPreviewFile={(att) => setPreviewFile(att)}
+          onPreviewImage={handlePreviewImage}
+          onPreviewFile={handlePreviewFile}
           clis={clis}
           currentCli={currentCli}
           previousUserPrompt={index > 0 && messages[index - 1].role === 'user' ? messages[index - 1].content : ''}
@@ -209,7 +233,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
           </div>
           <div className="w-full max-w-full min-[920px]:max-w-[92%] min-[920px]:flex-1 space-y-2 min-w-0 flex flex-col items-end min-[920px]:items-start">
-            <div className="glass-card border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
+            <div className="bg-cozy-surface/90 dark:bg-slate-900/90 border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
               <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                 <Sparkles className="w-3.5 h-3.5" />
                 Thinking and exploring codebase...
@@ -234,13 +258,12 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
       />
     </div>
   );
-};
+});
 
 const MessageItem: React.FC<{
   msg: ChatMessage;
   isStreaming?: boolean;
-  copiedId: string | null;
-  onCopy: (id: string, text: string) => void;
+  onCopy: (text: string) => void;
   onPreviewImage: (att: FileAttachment) => void;
   onPreviewFile: (att: FileAttachment) => void;
   clis?: CliInfo[];
@@ -248,10 +271,9 @@ const MessageItem: React.FC<{
   previousUserPrompt?: string;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
-}> = ({
+}> = React.memo(({
   msg,
   isStreaming,
-  copiedId,
   onCopy,
   onPreviewImage,
   onPreviewFile,
@@ -263,6 +285,15 @@ const MessageItem: React.FC<{
 }) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<'msg' | 'thought' | null>(null);
+
+  const handleCopyText = useCallback((target: 'msg' | 'thought', text: string) => {
+    onCopy(text);
+    setCopiedTarget(target);
+    setTimeout(() => {
+      setCopiedTarget((prev) => (prev === target ? null : prev));
+    }, 2000);
+  }, [onCopy]);
 
   const spendCapInfo = useMemo(() => detectSpendCapInfo(msg, currentCli), [msg, currentCli]);
 
@@ -291,48 +322,51 @@ const MessageItem: React.FC<{
   const otherAttachments = useMemo(() => attachments.filter((att) => !isImageAttachment(att)), [attachments]);
 
   // Extract thoughts/actions vs clean response content
-  let thoughts: string | null = null;
-  let cleanContent = '';
+  const { thoughts, cleanContent } = useMemo(() => {
+    let t: string | null = null;
+    let c = '';
 
-  const thoughtMatch = msg.content.match(/<thought>([\s\S]*?)<\/thought>/);
-  if (thoughtMatch) {
-    thoughts = thoughtMatch[1].trim();
-    cleanContent = msg.content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
-  } else if (!isUser) {
-    const lines = msg.content.split('\n');
-    const thoughtLines: string[] = [];
-    const contentLines: string[] = [];
-    let inThoughts = true;
+    const thoughtMatch = msg.content.match(/<thought>([\s\S]*?)<\/thought>/);
+    if (thoughtMatch) {
+      t = thoughtMatch[1].trim();
+      c = msg.content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+    } else if (!isUser) {
+      const lines = msg.content.split('\n');
+      const thoughtLines: string[] = [];
+      const contentLines: string[] = [];
+      let inThoughts = true;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (
-        inThoughts &&
-        (trimmed.startsWith('→') ||
-          trimmed.startsWith('[') ||
-          trimmed.startsWith('Run:') ||
-          trimmed.startsWith('Search:'))
-      ) {
-        thoughtLines.push(line);
-      } else {
-        inThoughts = false;
-        contentLines.push(line);
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (
+          inThoughts &&
+          (trimmed.startsWith('→') ||
+            trimmed.startsWith('[') ||
+            trimmed.startsWith('Run:') ||
+            trimmed.startsWith('Search:'))
+        ) {
+          thoughtLines.push(line);
+        } else {
+          inThoughts = false;
+          contentLines.push(line);
+        }
       }
-    }
 
-    if (thoughtLines.length > 0) {
-      thoughts = thoughtLines.join('\n').trim();
-      cleanContent = contentLines.join('\n').trim();
+      if (thoughtLines.length > 0) {
+        t = thoughtLines.join('\n').trim();
+        c = contentLines.join('\n').trim();
+      } else {
+        c = msg.content.trim();
+      }
     } else {
-      cleanContent = msg.content.trim();
+      c = msg.content.trim();
     }
-  } else {
-    cleanContent = msg.content.trim();
-  }
 
-  // Strip ANSI escape codes from cleanContent and thoughts
-  cleanContent = stripAnsi(cleanContent);
-  if (thoughts) thoughts = stripAnsi(thoughts);
+    c = stripAnsi(c);
+    if (t) t = stripAnsi(t);
+
+    return { thoughts: t, cleanContent: c };
+  }, [msg.content, isUser]);
 
   // Friendly summary derivation
   const summaryBadge = useMemo(() => {
@@ -371,7 +405,6 @@ const MessageItem: React.FC<{
 
   // Text that should be copied when clicking copy
   const textToCopy = spendCapInfo.isSpendCap ? spendCapInfo.message : cleanContent || (thoughts ? thoughts : msg.content);
-  const isCopied = copiedId === msg.id;
 
   // Fallback friendly message if assistant completed actions with no explicit closing text
   const displayContent =
@@ -382,6 +415,7 @@ const MessageItem: React.FC<{
 
   return (
     <div
+      style={isStreaming ? undefined : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
       className={`flex items-start justify-end min-[920px]:justify-start min-w-0 w-full min-[920px]:space-x-3 ${
         isUser ? 'min-[920px]:flex-row-reverse min-[920px]:space-x-reverse' : ''
       }`}
@@ -429,11 +463,11 @@ const MessageItem: React.FC<{
               <div className="group/thought relative mt-2 p-4 sm:p-5 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-60 overflow-y-auto pr-10 shadow-soft-inner leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 animate-in fade-in duration-150">
                 {thoughts}
                 <button
-                  onClick={() => onCopy(`${msg.id}-thought`, thoughts!)}
+                  onClick={() => handleCopyText('thought', thoughts!)}
                   className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-cozy-subtle/90 hover:bg-cozy-surface text-cozy-muted opacity-0 group-hover/thought:opacity-100 transition-opacity hover:text-teal-500 shadow-soft-sm"
-                  title={copiedId === `${msg.id}-thought` ? 'Copied!' : 'Copy actions log'}
+                  title={copiedTarget === 'thought' ? 'Copied!' : 'Copy actions log'}
                 >
-                  {copiedId === `${msg.id}-thought` ? (
+                  {copiedTarget === 'thought' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
@@ -445,12 +479,12 @@ const MessageItem: React.FC<{
         )}
 
         <div
-          className={`group relative rounded-2xl text-sm shadow-soft-sm transition-all min-w-0 max-w-full ${
+          className={`group relative rounded-2xl text-sm shadow-soft-sm transition-colors duration-150 min-w-0 max-w-full ${
             isUser
               ? 'bg-teal-500 text-white rounded-tr-sm shadow-glow-ocean px-6 sm:px-7 py-3 sm:py-3.5 pr-11 sm:pr-12 break-words [overflow-wrap:anywhere] font-medium'
               : spendCapInfo.isSpendCap
               ? 'rounded-tl-sm w-full border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/5 p-5 sm:p-6 text-cozy-text shadow-soft-sm break-words [overflow-wrap:anywhere]'
-              : 'glass-card border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
+              : 'bg-cozy-surface/95 dark:bg-[#111b2e]/95 border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
           }`}
         >
           {isUser ? (
@@ -657,15 +691,15 @@ const MessageItem: React.FC<{
           {/* Copy Button (Both User & Assistant) */}
           {textToCopy && (
             <button
-              onClick={() => onCopy(msg.id, textToCopy)}
+              onClick={() => handleCopyText('msg', textToCopy)}
               className={`absolute top-3.5 right-3.5 p-1.5 rounded-xl transition-all opacity-0 group-hover:opacity-100 ${
                 isUser
                   ? 'bg-teal-600/80 hover:bg-teal-700 text-teal-100 hover:text-white'
                   : 'bg-cozy-subtle/80 hover:bg-cozy-surface text-cozy-muted hover:text-teal-500 shadow-soft-sm'
               }`}
-              title={isCopied ? 'Copied!' : isUser ? 'Copy message' : 'Copy response'}
+              title={copiedTarget === 'msg' ? 'Copied!' : isUser ? 'Copy message' : 'Copy response'}
             >
-              {isCopied ? (
+              {copiedTarget === 'msg' ? (
                 <Check className={`w-3.5 h-3.5 ${isUser ? 'text-emerald-300' : 'text-emerald-400'}`} />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
@@ -684,4 +718,4 @@ const MessageItem: React.FC<{
       </div>
     </div>
   );
-};
+});
