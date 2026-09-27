@@ -28,16 +28,28 @@ import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
 import { resolveHost } from './tailscale.js';
 import { captureUrlScreenshot, warmupScreenshotWorker } from './screenshotService.js';
+import { createPreviewProxyMiddleware, handlePreviewUpgrade } from './previewProxy.js';
 import multer from 'multer';
 
 const app = express();
 app.use(cors());
+// Mount preview proxy before express.json() to preserve raw request streaming
+app.use(createPreviewProxyMiddleware());
 app.use(express.json());
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3100;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  if (handlePreviewUpgrade(req, socket as any, head)) {
+    return;
+  }
+  wss.handleUpgrade(req, socket as any, head, (client) => {
+    wss.emit('connection', client, req);
+  });
+});
 
 const upload = multer({
   limits: {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2, AlertCircle } from 'lucide-react';
+import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
 import { getDevServerState, startDevServer, stopDevServer, restartDevServer, captureDevServerScreenshot, pingDevServer } from '../api';
 
@@ -32,6 +32,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [logs, setLogs] = useState<string[]>([]);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -75,6 +76,29 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     ws.addEventListener('message', handleMessage);
     return () => ws.removeEventListener('message', handleMessage);
   }, [ws, task.id]);
+
+  // Listen for in-flight injected tracking script URL updates from iframe
+  useEffect(() => {
+    const handleWindowMessage = (event: MessageEvent) => {
+      try {
+        const data = event.data;
+        if (!data || data.type !== 'TERMAI_PREVIEW_URL_CHANGED') return;
+        if (data.taskId && data.taskId !== task.id) return;
+
+        if (typeof data.pathname === 'string') {
+          let targetPath = data.pathname;
+          const prefix = `/api/preview/${task.id}`;
+          if (targetPath.startsWith(prefix)) {
+            targetPath = targetPath.slice(prefix.length) || '/';
+          }
+          setPathInput(targetPath);
+        }
+      } catch {}
+    };
+
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
+  }, [task.id]);
 
   // Initial fetch
   useEffect(() => {
@@ -193,7 +217,33 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleReloadIframe = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_RELOAD' }, '*');
+    }
     setIframeKey((k) => k + 1);
+  };
+
+  const handleGoBack = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_BACK' }, '*');
+    }
+  };
+
+  const handleGoForward = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_FORWARD' }, '*');
+    }
+  };
+
+  const handleNavigateToPath = (inputPath: string) => {
+    const formatted = inputPath.startsWith('/') ? inputPath : '/' + inputPath;
+    setPathInput(formatted);
+    const proxyTarget = `/api/preview/${task.id}${formatted}`;
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'TERMAI_PREVIEW_NAVIGATE_TO', url: proxyTarget }, '*');
+    } else {
+      setIframeKey((k) => k + 1);
+    }
   };
 
 // Draws a crisp 1px subtle border around the perimeter of the captured screenshot
@@ -390,7 +440,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const currentUrl = `http://localhost:${activePort}${pathInput.startsWith('/') ? pathInput : '/' + pathInput}`;
+  const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
+  const currentUrl = `http://localhost:${activePort}${currentPath}`;
+  const proxyUrl = `/api/preview/${task.id}${currentPath}`;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
@@ -457,7 +509,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             type="text"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
+            onKeyDown={(e) => e.key === 'Enter' && handleNavigateToPath(pathInput)}
             placeholder="/"
             className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
           />
@@ -465,6 +517,26 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
         {/* Action icons */}
         <div className="flex items-center space-x-1 shrink-0">
+          <button
+            onClick={handleGoBack}
+            disabled={devState.status !== 'running' || !isServerReady}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
+            title="Go back"
+            aria-label="Go back"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={handleGoForward}
+            disabled={devState.status !== 'running' || !isServerReady}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
+            title="Go forward"
+            aria-label="Go forward"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+
           <button
             onClick={handleReloadIframe}
             disabled={devState.status !== 'running' || !isServerReady}
@@ -542,8 +614,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         {devState.status === 'running' || devState.status === 'starting' ? (
           isServerReady ? (
             <iframe
+              ref={iframeRef}
               key={iframeKey}
-              src={currentUrl}
+              src={proxyUrl}
               title="Task Dev Server Preview"
               className="w-full h-full border-0"
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups"

@@ -63,6 +63,7 @@ export default defineConfig({
       '/api': {
         target: `http://${host}:3100`,
         changeOrigin: true,
+        ws: true,
       },
       '/ws': {
         target: `ws://${host}:3100`,
