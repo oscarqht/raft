@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -51,19 +51,16 @@ impl Default for UpdateManager {
     }
 }
 
-pub struct UpdateState(pub Arc<tokio::sync::Mutex<UpdateManager>>);
+pub struct UpdateState(pub Arc<Mutex<UpdateManager>>);
 
 pub fn init_state() -> UpdateState {
-    UpdateState(Arc::new(tokio::sync::Mutex::new(UpdateManager::default())))
+    UpdateState(Arc::new(Mutex::new(UpdateManager::default())))
 }
 
 pub fn register_tray_item(app: &AppHandle, item: MenuItem<Wry>) {
     let state = app.state::<UpdateState>();
-    let state_arc = state.0.clone();
-    tauri::async_runtime::spawn(async move {
-        let mut mgr = state_arc.lock().await;
-        mgr.tray_item = Some(item);
-    });
+    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    mgr.tray_item = Some(item);
 }
 
 pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
@@ -71,12 +68,9 @@ pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-        let state_arc = app.state::<UpdateState>().0.clone();
-        let handle = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let mgr = state_arc.lock().await;
-            let _ = handle.emit("raft://update-status", &mgr.status);
-        });
+        let state = app.state::<UpdateState>();
+        let status = state.0.lock().unwrap_or_else(|e| e.into_inner()).status.clone();
+        let _ = app.emit("raft://update-status", &status);
         return Ok(());
     }
 
@@ -106,7 +100,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
 
     let state = app.state::<UpdateState>();
     {
-        let mgr = state.0.lock().await;
+        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         if mgr.is_checking_or_downloading {
             let _ = app.emit("raft://update-status", &mgr.status);
             return;
@@ -114,10 +108,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
         if !is_manual && matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
             return;
         }
-    }
 
-    {
-        let mut mgr = state.0.lock().await;
         mgr.is_checking_or_downloading = true;
         mgr.status = UpdateStatus::Checking;
     }
@@ -129,9 +120,11 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let err_msg = format!("Failed to initialize updater: {e}");
             eprintln!("[raft] {err_msg}");
             let err_status = UpdateStatus::Error { message: err_msg };
-            let mut mgr = state.0.lock().await;
-            mgr.status = err_status.clone();
-            mgr.is_checking_or_downloading = false;
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = err_status.clone();
+                mgr.is_checking_or_downloading = false;
+            }
             let _ = app.emit("raft://update-status", &err_status);
             return;
         }
@@ -145,21 +138,19 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let current_version = update.current_version.clone();
             let body = update.body.clone();
 
+            let initial_status = UpdateStatus::Downloading {
+                version: version.clone(),
+                current_version: current_version.clone(),
+                body: body.clone(),
+                downloaded: 0,
+                total: None,
+                percent: 0,
+            };
             {
-                let mut mgr = state.0.lock().await;
-                mgr.status = UpdateStatus::Downloading {
-                    version: version.clone(),
-                    current_version: current_version.clone(),
-                    body: body.clone(),
-                    downloaded: 0,
-                    total: None,
-                    percent: 0,
-                };
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = initial_status.clone();
             }
-            let _ = app.emit("raft://update-status", {
-                let mgr = state.0.lock().await;
-                mgr.status.clone()
-            });
+            let _ = app.emit("raft://update-status", &initial_status);
 
             let mut downloaded = 0u64;
             let mut last_emit = std::time::Instant::now();
@@ -168,6 +159,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let version_for_cb = version.clone();
             let curr_for_cb = current_version.clone();
             let body_for_cb = body.clone();
+            let state_arc = state.0.clone();
 
             let res = update
                 .download(
@@ -183,7 +175,11 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                             0
                         };
 
-                        if pct != last_pct || last_emit.elapsed() >= Duration::from_millis(300) {
+                        let elapsed = last_emit.elapsed();
+                        if pct == 100
+                            || (elapsed >= Duration::from_millis(100)
+                                && (pct != last_pct || elapsed >= Duration::from_millis(300)))
+                        {
                             last_pct = pct;
                             last_emit = std::time::Instant::now();
                             let status = UpdateStatus::Downloading {
@@ -194,6 +190,9 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                                 total: content_length,
                                 percent: pct,
                             };
+                            if let Ok(mut mgr) = state_arc.lock() {
+                                mgr.status = status.clone();
+                            }
                             let _ = app_clone.emit("raft://update-status", &status);
                         }
                     },
@@ -213,7 +212,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                     };
 
                     {
-                        let mut mgr = state.0.lock().await;
+                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                         mgr.pending_update = Some(update);
                         mgr.downloaded_bytes = Some(bytes);
                         mgr.status = new_status.clone();
@@ -240,8 +239,10 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                     let err_status = UpdateStatus::Error {
                         message: format!("Download failed: {e}"),
                     };
-                    let mut mgr = state.0.lock().await;
-                    mgr.status = err_status.clone();
+                    {
+                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                        mgr.status = err_status.clone();
+                    }
                     let _ = app.emit("raft://update-status", &err_status);
                 }
             }
@@ -251,12 +252,14 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let status = UpdateStatus::UpToDate {
                 current_version: app.package_info().version.to_string(),
             };
-            let mut mgr = state.0.lock().await;
-            mgr.pending_update = None;
-            mgr.downloaded_bytes = None;
-            mgr.status = status.clone();
-            if let Some(tray_item) = &mgr.tray_item {
-                let _ = tray_item.set_text("Check for Updates...");
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.pending_update = None;
+                mgr.downloaded_bytes = None;
+                mgr.status = status.clone();
+                if let Some(tray_item) = &mgr.tray_item {
+                    let _ = tray_item.set_text("Check for Updates...");
+                }
             }
             let _ = app.emit("raft://update-status", &status);
         }
@@ -265,20 +268,22 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let err_status = UpdateStatus::Error {
                 message: format!("Check failed: {e}"),
             };
-            let mut mgr = state.0.lock().await;
-            mgr.status = err_status.clone();
+            {
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                mgr.status = err_status.clone();
+            }
             let _ = app.emit("raft://update-status", &err_status);
         }
     }
 
-    let mut mgr = state.0.lock().await;
+    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
     mgr.is_checking_or_downloading = false;
 }
 
 pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
     let (pending_update, downloaded_bytes) = {
         let state = app.state::<UpdateState>();
-        let mut mgr = state.0.lock().await;
+        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
         (mgr.pending_update.take(), mgr.downloaded_bytes.take())
     };
 
@@ -298,7 +303,7 @@ pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
                 let err_msg = format!("Failed to install update: {e}");
                 eprintln!("[raft] {err_msg}");
                 let state = app.state::<UpdateState>();
-                let mut mgr = state.0.lock().await;
+                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
                 mgr.status = UpdateStatus::Error {
                     message: err_msg.clone(),
                 };
@@ -336,7 +341,7 @@ pub async fn check_for_updates_manual(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn get_update_status(app: AppHandle) -> Result<UpdateStatus, String> {
     let state = app.state::<UpdateState>();
-    let mgr = state.0.lock().await;
+    let mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
     Ok(mgr.status.clone())
 }
 
