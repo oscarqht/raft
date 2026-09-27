@@ -204,6 +204,7 @@ If you need to configure or rotate `TAURI_SIGNING_PRIVATE_KEY`:
    Go to your GitHub repository:
    **Settings** > **Secrets and variables** > **Actions** > **New repository secret**
    - **`TAURI_SIGNING_PRIVATE_KEY`**: Paste the full private key output.
+   - **`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`**: (Optional) The password if your private key was created with one. If you passed `-p ""` when generating, leave unset.
    - **`GH_TOKEN`** (Optional): A Personal Access Token with `repo` scope if default `GITHUB_TOKEN` permissions are restricted.
 
 ---
