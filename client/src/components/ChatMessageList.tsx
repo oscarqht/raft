@@ -142,12 +142,37 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     } catch {}
   };
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabled = useRef(true);
+
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    isAutoScrollEnabled.current = isNearBottom;
+  };
+
   useEffect(() => {
-    listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!isAutoScrollEnabled.current && isStreaming) return;
+
+    if (isStreaming) {
+      const raf = requestAnimationFrame(() => {
+        if (listEndRef.current) {
+          listEndRef.current.scrollIntoView({ behavior: 'auto' });
+        }
+      });
+      return () => cancelAnimationFrame(raf);
+    } else {
+      listEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, liveStreamingChunk, isStreaming]);
 
   return (
-    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0">
+    <div
+      ref={scrollContainerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0"
+    >
       {messages.length === 0 && !isStreaming && (
         <div className="h-full flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
           <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center mb-3.5 shadow-soft-sm">

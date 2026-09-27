@@ -1870,6 +1870,39 @@ wss.on('connection', (ws: WebSocket) => {
 
         let assistantThoughts = '';
         let assistantResponse = '';
+        let persistedCliSessionId = cliSessionIdToResume || null;
+
+        let lastBroadcastTime = 0;
+        let broadcastTimer: NodeJS.Timeout | null = null;
+        let lastEventSent: StreamEvent | null = null;
+
+        const flushBroadcast = () => {
+          if (broadcastTimer) {
+            clearTimeout(broadcastTimer);
+            broadcastTimer = null;
+          }
+          lastBroadcastTime = Date.now();
+          broadcastWs({
+            type: 'chat_stream',
+            event: lastEventSent || { type: 'chunk', content: '' },
+            sessionId,
+            messageId: assistantMsgId,
+            fullContent: assistantContent,
+          });
+        };
+
+        const queueBroadcast = (ev: StreamEvent, immediate = false) => {
+          lastEventSent = ev;
+          const currentNow = Date.now();
+          if (immediate || currentNow - lastBroadcastTime >= 40) {
+            flushBroadcast();
+          } else if (!broadcastTimer) {
+            const delay = Math.max(10, 40 - (currentNow - lastBroadcastTime));
+            broadcastTimer = setTimeout(() => {
+              flushBroadcast();
+            }, delay);
+          }
+        };
 
         const compileAssistantContent = () => {
           const t = assistantThoughts.trim();
@@ -1896,17 +1929,20 @@ wss.on('connection', (ws: WebSocket) => {
         };
 
         const proc = spawnAgentCli(cliToUse, args, task.worktree_path, (ev: StreamEvent) => {
-          // If a conversation ID was detected from the CLI stream, persist it to chat_sessions
-          if (ev.conversationId) {
+          // If a conversation ID was detected from the CLI stream, persist it to chat_sessions once
+          if (ev.conversationId && ev.conversationId !== persistedCliSessionId) {
+            persistedCliSessionId = ev.conversationId;
             try {
               db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
                 .run(ev.conversationId, cliToUse, sessionId);
             } catch {}
           }
+
           if (ev.type === 'thought' && ev.content) {
             assistantThoughts += ev.content;
             assistantContent = compileAssistantContent();
             saveAssistantProgress(false);
+            queueBroadcast(ev, false);
           } else if (ev.type === 'chunk' && ev.content) {
             if (ev.metadata?.isFinalResult) {
               assistantResponse = ev.content;
@@ -1915,6 +1951,7 @@ wss.on('connection', (ws: WebSocket) => {
             }
             assistantContent = compileAssistantContent();
             saveAssistantProgress(false);
+            queueBroadcast(ev, false);
           } else if (ev.type === 'error' && ev.content) {
             const errContent = ev.content;
             const isSpendCap = ev.metadata?.isSpendCap || /spend cap|budget|quota exceeded|credit balance/i.test(errContent);
@@ -1931,17 +1968,13 @@ wss.on('connection', (ws: WebSocket) => {
                 }), assistantMsgId);
             } catch {}
             saveAssistantProgress(true);
+            queueBroadcast(ev, true);
+          } else if (ev.type === 'status' && ev.content) {
+            queueBroadcast(ev, false);
           }
 
-          broadcastWs({
-            type: 'chat_stream',
-            event: ev,
-            sessionId,
-            messageId: assistantMsgId,
-            fullContent: assistantContent,
-          });
-
           if (ev.type === 'done' || ev.type === 'error') {
+            flushBroadcast();
             const finishedAt = Date.now();
             if (cliSessionIdToResume && ev.metadata?.code && ev.metadata.code !== 0) {
               try {
@@ -1992,6 +2025,10 @@ wss.on('connection', (ws: WebSocket) => {
         });
 
         const abortSession = () => {
+          if (broadcastTimer) {
+            clearTimeout(broadcastTimer);
+            broadcastTimer = null;
+          }
           try {
             proc.kill('SIGINT');
           } catch {}
