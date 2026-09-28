@@ -252,3 +252,50 @@ export interface VerifyGitAccountResult {
   error?: string;
 }
 
+export interface AgentRateWindow {
+  usedPercent: number;
+  remainingPercent: number;
+  windowMinutes?: number | null;
+  resetsAt?: string | null;
+  resetDescription?: string | null;
+}
+
+export interface AgentQuotaBucket {
+  id: string;
+  name: string;
+  remainingFraction: number;
+  usedPercent: number;
+  remainingPercent: number;
+  resetTime?: string | null;
+  resetDescription?: string | null;
+  groupName?: string;
+}
+
+export interface AgentCostLimit {
+  limit?: number | null;
+  used?: number | null;
+  remaining?: number | null;
+  usedPercent?: number | null;
+  remainingPercent?: number | null;
+  currency?: string | null;
+  period?: string | null;
+  resetsAt?: string | null;
+  resetDescription?: string | null;
+}
+
+export interface AgentUsageSnapshot {
+  cli: string;
+  providerName: string;
+  accountEmail?: string | null;
+  accountPlan?: string | null;
+  organization?: string | null;
+  statusMessage?: string | null;
+  primaryWindow?: AgentRateWindow | null;
+  secondaryWindow?: AgentRateWindow | null;
+  buckets?: AgentQuotaBucket[];
+  costLimit?: AgentCostLimit | null;
+  updatedAt: number;
+  isAvailable: boolean;
+  error?: string | null;
+}
+

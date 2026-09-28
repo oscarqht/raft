@@ -43,6 +43,7 @@ import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills, installSkillWithNpxProcess } from './skillService.js';
 import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
+import { getAgentUsage, getAllAgentUsages } from './usageService.js';
 import multer from 'multer';
 
 const app = express();
@@ -154,6 +155,33 @@ app.put('/api/settings', (req: Request, res: Response) => {
   if (thinking_effort !== undefined) setSetting('thinking_effort', thinking_effort);
   if (theme !== undefined) setSetting('theme', theme);
   res.json({ success: true });
+});
+
+// AI Agent Usage & Quotas
+app.get('/api/agent-usage', async (req: Request, res: Response) => {
+  const cli = typeof req.query.cli === 'string' ? req.query.cli.trim() : '';
+  const refresh = req.query.refresh === 'true';
+  try {
+    if (cli) {
+      const usage = await getAgentUsage(cli, refresh);
+      return res.json(usage);
+    }
+    const usages = await getAllAgentUsages(refresh);
+    return res.json(usages);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to retrieve agent usage' });
+  }
+});
+
+app.get('/api/agent-usage/:cli', async (req: Request, res: Response) => {
+  const cli = (Array.isArray(req.params.cli) ? req.params.cli[0] : req.params.cli || '').trim();
+  const refresh = req.query.refresh === 'true';
+  try {
+    const usage = await getAgentUsage(cli, refresh);
+    return res.json(usage);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to retrieve agent usage' });
+  }
 });
 
 // CLIs & Models
