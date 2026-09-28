@@ -364,8 +364,8 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     })?);
 
     let host = resolve_host();
-    let port = find_available_port(3100, 20, &host)
-        .ok_or_else(|| "No available port found between 3100 and 3120.".to_string())?;
+    let port = find_available_port(3301, 20, &host)
+        .ok_or_else(|| "No available port found between 3301 and 3321.".to_string())?;
 
     let mut entry = resolve_server_script(&app)?;
     entry.app_root = clean_path(entry.app_root);

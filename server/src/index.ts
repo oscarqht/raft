@@ -34,7 +34,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3100;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3301;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });

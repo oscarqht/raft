@@ -67,7 +67,7 @@ raft/
 │   │   │   └── SettingsPage.tsx      # CLI agents, Git accounts, models & themes
 │   │   ├── api.ts                    # REST client and WebSocket helpers
 │   │   └── types.ts                  # Shared TypeScript interfaces
-│   └── vite.config.ts                # Proxies /api and /ws to port 3100
+│   └── vite.config.ts                # Proxies /api and /ws to port 3301
 │
 ├── server/                           # Node.js + Express + WebSocket + SQLite Backend
 │   ├── src/
@@ -124,8 +124,8 @@ npm install
 ```bash
 npm run dev
 ```
-- **Frontend Web UI**: http://localhost:5180
-- **Backend API & WebSocket**: http://localhost:3100
+- **Frontend Web UI**: http://localhost:3300
+- **Backend API & WebSocket**: http://localhost:3301
 
 #### Option B: Native Desktop Mode (Tauri)
 ```bash

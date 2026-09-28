@@ -58,15 +58,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true,
-    port: 5180,
+    port: 3300,
     proxy: {
       '/api': {
-        target: `http://${host}:3100`,
+        target: `http://${host}:3301`,
         changeOrigin: true,
         ws: true,
       },
       '/ws': {
-        target: `ws://${host}:3100`,
+        target: `ws://${host}:3301`,
         ws: true,
       },
     },

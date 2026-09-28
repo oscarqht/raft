@@ -238,7 +238,7 @@ pub fn setup_tray(
         .rsplit(':')
         .next()
         .and_then(|p| p.split('/').next())
-        .unwrap_or("3100");
+        .unwrap_or("3301");
     let local_url = format!("http://localhost:{port_part}");
     let url_for_browser = if is_tailscale { local_url } else { server_url.clone() };
 
