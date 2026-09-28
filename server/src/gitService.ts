@@ -9,6 +9,194 @@ export interface WorktreeInfo {
   isMain: boolean;
 }
 
+export interface TaskPrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'merged' | 'closed';
+  mergedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface TaskGitStatus {
+  staged: string[];
+  unstaged: string[];
+  untracked: string[];
+  hasLocalChanges: boolean;
+  unpushedCount: number;
+  unpushedCommits: { hash: string; message: string }[];
+  behindCount: number;
+  aheadCount: number;
+  isMerged: boolean;
+  pr: TaskPrInfo | null;
+  createPrUrl: string | null;
+  baseBranch: string;
+  branch: string;
+  lifecycleStage: 'in_progress' | 'pr_open' | 'merged' | 'clean';
+  remoteUrl?: string;
+  checkedAt: number;
+}
+
+export interface RemoteRepoDetails {
+  provider: 'github' | 'gitlab' | 'other';
+  host: string;
+  owner: string;
+  repo: string;
+  projectPath: string;
+  remoteUrl: string;
+}
+
+export function parseRemoteUrl(remoteUrl: string): RemoteRepoDetails | null {
+  if (!remoteUrl) return null;
+  const cleanUrl = remoteUrl.trim();
+  let host = '';
+  let projectPath = '';
+
+  if (cleanUrl.startsWith('git@')) {
+    const match = cleanUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+    if (match) {
+      host = match[1].toLowerCase();
+      projectPath = match[2].replace(/\.git$/, '');
+    }
+  } else if (cleanUrl.includes('://')) {
+    try {
+      const parsed = new URL(cleanUrl);
+      host = parsed.hostname.toLowerCase();
+      projectPath = parsed.pathname.replace(/^\/+/, '').replace(/\.git$/, '');
+    } catch {}
+  }
+
+  if (!host || !projectPath) return null;
+
+  let provider: 'github' | 'gitlab' | 'other' = 'other';
+  if (host.includes('github')) provider = 'github';
+  else if (host.includes('gitlab')) provider = 'gitlab';
+
+  const parts = projectPath.split('/');
+  const owner = parts[0] || '';
+  const repo = parts[parts.length - 1] || '';
+
+  return {
+    provider,
+    host,
+    owner,
+    repo,
+    projectPath,
+    remoteUrl: cleanUrl,
+  };
+}
+
+export function getCreatePrUrl(remoteInfo: RemoteRepoDetails | null, branch: string, baseBranch: string): string | null {
+  if (!remoteInfo || !branch || !baseBranch) return null;
+  const { provider, host, projectPath } = remoteInfo;
+  if (provider === 'github') {
+    return `https://${host}/${projectPath}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}?expand=1`;
+  }
+  if (provider === 'gitlab') {
+    return `https://${host}/${projectPath}/-/merge_requests/new?merge_request%5Bsource_branch%5D=${encodeURIComponent(branch)}&merge_request%5Btarget_branch%5D=${encodeURIComponent(baseBranch)}`;
+  }
+  return null;
+}
+
+export async function fetchRemotePrInfo(
+  remoteInfo: RemoteRepoDetails,
+  branch: string,
+  token?: string
+): Promise<TaskPrInfo | null> {
+  const { provider, host, projectPath, owner, repo } = remoteInfo;
+  try {
+    if (provider === 'github') {
+      const apiUrl = host === 'github.com'
+        ? `https://api.github.com/repos/${owner}/${repo}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=all`
+        : `https://${host}/api/v3/repos/${owner}/${repo}/pulls?head=${encodeURIComponent(`${owner}:${branch}`)}&state=all`;
+
+      const headers: Record<string, string> = {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Raft-App',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(apiUrl, { headers, signal: controller.signal });
+        if (!res.ok) return null;
+        const prs = (await res.json()) as any[];
+        if (!Array.isArray(prs) || prs.length === 0) return null;
+
+        const openPr = prs.find((p) => p.state === 'open');
+        const targetPr = openPr || prs[0];
+        const isMerged = Boolean(targetPr.merged_at);
+        const state: 'open' | 'merged' | 'closed' = isMerged ? 'merged' : targetPr.state === 'open' ? 'open' : 'closed';
+
+        return {
+          number: targetPr.number,
+          title: targetPr.title || '',
+          url: targetPr.html_url || '',
+          state,
+          mergedAt: targetPr.merged_at || null,
+          createdAt: targetPr.created_at || null,
+          updatedAt: targetPr.updated_at || null,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+
+    if (provider === 'gitlab') {
+      const encodedId = encodeURIComponent(projectPath);
+      const apiUrl = `https://${host}/api/v4/projects/${encodedId}/merge_requests?source_branch=${encodeURIComponent(branch)}&state=all`;
+
+      const headers: Record<string, string> = {
+        'User-Agent': 'Raft-App',
+      };
+      if (token) {
+        headers['PRIVATE-TOKEN'] = token;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(apiUrl, { headers, signal: controller.signal });
+        if (!res.ok) return null;
+        const mrs = (await res.json()) as any[];
+        if (!Array.isArray(mrs) || mrs.length === 0) return null;
+
+        const openMr = mrs.find((m) => m.state === 'opened');
+        const targetMr = openMr || mrs[0];
+        let state: 'open' | 'merged' | 'closed' = 'closed';
+        if (targetMr.state === 'opened') state = 'open';
+        else if (targetMr.state === 'merged') state = 'merged';
+
+        return {
+          number: targetMr.iid,
+          title: targetMr.title || '',
+          url: targetMr.web_url || '',
+          state,
+          mergedAt: targetMr.merged_at || null,
+          createdAt: targetMr.created_at || null,
+          updatedAt: targetMr.updated_at || null,
+        };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+interface CachedStatusEntry {
+  status: TaskGitStatus;
+  timestamp: number;
+}
+const statusCache = new Map<string, CachedStatusEntry>();
+const CACHE_TTL_MS = 25000;
+
 export interface RepoInfo {
   isRepo: boolean;
   repoRoot: string;
@@ -556,6 +744,242 @@ export class GitService {
     } catch {
       return { staged: [], unstaged: [], untracked: [], unpushedCount: 0, unpushedCommits: [] };
     }
+  }
+
+  static getRemoteUrl(cwd: string): string {
+    if (!cwd || !fs.existsSync(cwd)) return '';
+    try {
+      const url = execSync('git config --get remote.origin.url', {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      if (url) return url;
+    } catch {}
+
+    try {
+      const remotes = execSync('git remote', {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+      if (remotes.length > 0) {
+        return execSync(`git config --get remote.${remotes[0]}.url`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+      }
+    } catch {}
+
+    return '';
+  }
+
+  static getDivergence(
+    cwd: string,
+    branch: string,
+    baseBranch: string,
+    options?: { forceFetch?: boolean }
+  ): { behindCount: number; aheadCount: number; targetRef: string } {
+    if (!cwd || !fs.existsSync(cwd)) {
+      return { behindCount: 0, aheadCount: 0, targetRef: '' };
+    }
+
+    const safeBaseBranch = baseBranch || 'main';
+
+    if (options?.forceFetch) {
+      try {
+        execSync(`git fetch origin ${safeBaseBranch}`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+          timeout: 4000,
+        });
+      } catch {}
+    }
+
+    let targetRef = '';
+    try {
+      execSync(`git rev-parse --verify refs/remotes/origin/${safeBaseBranch}`, {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      targetRef = `refs/remotes/origin/${safeBaseBranch}`;
+    } catch {
+      try {
+        execSync(`git rev-parse --verify refs/heads/${safeBaseBranch}`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        targetRef = `refs/heads/${safeBaseBranch}`;
+      } catch {
+        targetRef = safeBaseBranch;
+      }
+    }
+
+    let behindCount = 0;
+    let aheadCount = 0;
+
+    try {
+      const revListOutput = execSync(`git rev-list --left-right --count ${targetRef}...HEAD`, {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+
+      const [behindStr, aheadStr] = revListOutput.split(/\s+/);
+      behindCount = parseInt(behindStr, 10) || 0;
+      aheadCount = parseInt(aheadStr, 10) || 0;
+    } catch {}
+
+    return { behindCount, aheadCount, targetRef };
+  }
+
+  static invalidateTaskStatus(worktreePath?: string): void {
+    if (!worktreePath) {
+      statusCache.clear();
+      return;
+    }
+    for (const key of statusCache.keys()) {
+      if (key.startsWith(worktreePath)) {
+        statusCache.delete(key);
+      }
+    }
+  }
+
+  static async getDetailedTaskStatus(
+    worktreePath: string,
+    branch: string,
+    baseBranch: string,
+    options?: { token?: string; forceRefresh?: boolean; taskCreatedAt?: number }
+  ): Promise<TaskGitStatus> {
+    const safeBaseBranch = baseBranch || 'main';
+    const cacheKey = `${worktreePath}:::${branch}`;
+
+    if (!options?.forceRefresh) {
+      const cached = statusCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return cached.status;
+      }
+    }
+
+    if (!worktreePath || !fs.existsSync(worktreePath)) {
+      return {
+        staged: [],
+        unstaged: [],
+        untracked: [],
+        hasLocalChanges: false,
+        unpushedCount: 0,
+        unpushedCommits: [],
+        behindCount: 0,
+        aheadCount: 0,
+        isMerged: false,
+        pr: null,
+        createPrUrl: null,
+        baseBranch: safeBaseBranch,
+        branch,
+        lifecycleStage: 'clean',
+        checkedAt: Date.now(),
+      };
+    }
+
+    const basic = GitService.getGitStatus(worktreePath, branch, safeBaseBranch);
+    const hasLocalChanges = basic.staged.length > 0 || basic.unstaged.length > 0 || basic.untracked.length > 0;
+
+    const remoteUrl = GitService.getRemoteUrl(worktreePath);
+    const remoteInfo = parseRemoteUrl(remoteUrl);
+
+    const { behindCount, aheadCount, targetRef } = GitService.getDivergence(
+      worktreePath,
+      branch,
+      safeBaseBranch,
+      { forceFetch: options?.forceRefresh }
+    );
+
+    let pr: TaskPrInfo | null = null;
+    if (remoteInfo && (remoteInfo.provider === 'github' || remoteInfo.provider === 'gitlab')) {
+      pr = await fetchRemotePrInfo(remoteInfo, branch, options?.token);
+    }
+
+    const createPrUrl = getCreatePrUrl(remoteInfo, branch, safeBaseBranch);
+
+    let isMerged = false;
+    if (pr && pr.state === 'merged') {
+      isMerged = true;
+    } else if (targetRef && aheadCount === 0) {
+      let isAncestor = false;
+      try {
+        execSync(`git merge-base --is-ancestor HEAD "${targetRef}"`, { cwd: worktreePath, stdio: 'ignore' });
+        isAncestor = true;
+      } catch {}
+
+      if (isAncestor) {
+        let headCommitTime = 0;
+        try {
+          headCommitTime =
+            parseInt(
+              execSync('git log -1 --format="%ct" HEAD', {
+                cwd: worktreePath,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'ignore'],
+              }).trim(),
+              10
+            ) * 1000;
+        } catch {}
+
+        let branchMentionedInTarget = false;
+        try {
+          const out = execSync(`git log "${targetRef}" -n 25 --grep="${branch}" --format="%h"`, {
+            cwd: worktreePath,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim();
+          branchMentionedInTarget = out.length > 0;
+        } catch {}
+
+        if (
+          branchMentionedInTarget ||
+          (options?.taskCreatedAt && headCommitTime && headCommitTime >= options.taskCreatedAt - 60000)
+        ) {
+          isMerged = true;
+        }
+      }
+    }
+
+    let lifecycleStage: 'in_progress' | 'pr_open' | 'merged' | 'clean' = 'clean';
+    if (isMerged) {
+      lifecycleStage = 'merged';
+    } else if (pr && pr.state === 'open') {
+      lifecycleStage = 'pr_open';
+    } else if (hasLocalChanges || basic.unpushedCount > 0 || aheadCount > 0) {
+      lifecycleStage = 'in_progress';
+    } else {
+      lifecycleStage = 'clean';
+    }
+
+    const detailedStatus: TaskGitStatus = {
+      staged: basic.staged,
+      unstaged: basic.unstaged,
+      untracked: basic.untracked,
+      hasLocalChanges,
+      unpushedCount: basic.unpushedCount,
+      unpushedCommits: basic.unpushedCommits,
+      behindCount,
+      aheadCount,
+      isMerged,
+      pr,
+      createPrUrl,
+      baseBranch: safeBaseBranch,
+      branch,
+      lifecycleStage,
+      remoteUrl,
+      checkedAt: Date.now(),
+    };
+
+    statusCache.set(cacheKey, { status: detailedStatus, timestamp: Date.now() });
+    return detailedStatus;
   }
 
   static getGitDiff(cwd: string): string {

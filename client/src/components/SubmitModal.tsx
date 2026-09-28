@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit } from 'lucide-react';
+import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 
@@ -88,7 +88,8 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           if (ev.type === 'done') {
             setIsSubmitting(false);
             setIsSuccess(true);
-            getTaskGitStatus(task.id).then(setGitStatus).catch(() => {});
+            getTaskGitStatus(task.id, true).then(setGitStatus).catch(() => {});
+            window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id } }));
           } else if (ev.type === 'error') {
             setIsSubmitting(false);
             setIsSuccess(false);
@@ -327,6 +328,42 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
                   <span>Failed to push changes. Check the agent log above.</span>
                 </>
               )}
+            </div>
+          )}
+
+          {isSuccess && gitStatus?.createPrUrl && (!gitStatus.pr || gitStatus.pr.state === 'closed') && (
+            <div className="p-3.5 rounded-xl bg-teal-500/10 border border-teal-500/25 flex items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-teal-700 dark:text-teal-300 font-medium">
+                <GitPullRequest className="w-4 h-4 text-teal-500 shrink-0" />
+                <span>Ready to request a code review?</span>
+              </div>
+              <a
+                href={gitStatus.createPrUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white shadow-soft-sm transition-all"
+              >
+                <span>Create PR</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          )}
+
+          {isSuccess && gitStatus?.pr && gitStatus.pr.state === 'open' && (
+            <div className="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/25 flex items-center justify-between gap-3 text-xs animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-sky-700 dark:text-sky-300 font-medium truncate">
+                <GitPullRequest className="w-4 h-4 text-sky-500 shrink-0" />
+                <span className="truncate">PR #{gitStatus.pr.number} is open: {gitStatus.pr.title}</span>
+              </div>
+              <a
+                href={gitStatus.pr.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-sky-500 hover:bg-sky-600 text-white shadow-soft-sm transition-all shrink-0"
+              >
+                <span>View PR</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
           )}
         </div>

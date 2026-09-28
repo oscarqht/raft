@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2 } from 'lucide-react';
-import { Settings } from '../types';
+import { Settings, TaskGitStatus } from '../types';
+import { getTaskGitStatus, updateTask } from '../api';
 import { TaskQuickSwitcher } from './TaskQuickSwitcher';
+import { TaskStatusBadges } from './TaskStatusBadges';
 
 interface HeaderProps {
   currentPath?: {
@@ -46,6 +48,61 @@ export const Header: React.FC<HeaderProps> = ({
         navigate(`/tasks/${params.taskId}`);
       }
     }
+  };
+
+  const [taskStatus, setTaskStatus] = useState<TaskGitStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  const fetchTaskStatus = useCallback(async (force = false) => {
+    if (!currentPath?.taskId) {
+      setTaskStatus(null);
+      return;
+    }
+    setLoadingStatus(true);
+    try {
+      const s = await getTaskGitStatus(currentPath.taskId, force);
+      setTaskStatus(s);
+    } catch {}
+    finally {
+      setLoadingStatus(false);
+    }
+  }, [currentPath?.taskId]);
+
+  useEffect(() => {
+    fetchTaskStatus(false);
+  }, [fetchTaskStatus]);
+
+  useEffect(() => {
+    const handleFocus = () => fetchTaskStatus(false);
+    const handleStatusUpdate = (e: any) => {
+      if (!e.detail?.taskId || e.detail.taskId === currentPath?.taskId) {
+        fetchTaskStatus(true);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('task-status-updated', handleStatusUpdate);
+
+    const interval = setInterval(() => {
+      fetchTaskStatus(false);
+    }, 60000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('task-status-updated', handleStatusUpdate);
+      clearInterval(interval);
+    };
+  }, [fetchTaskStatus, currentPath?.taskId]);
+
+  const handleCompleteTask = async () => {
+    if (!currentPath?.taskId) return;
+    try {
+      await updateTask(currentPath.taskId, { status: 'completed' });
+      fetchTaskStatus(true);
+      if (currentPath.projectId) {
+        navigate(`/projects/${currentPath.projectId}`);
+      }
+    } catch {}
   };
 
   return (
@@ -103,6 +160,16 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
+              <TaskStatusBadges
+                status={taskStatus}
+                loading={loadingStatus}
+                compact={false}
+                onOpenRebase={() => window.dispatchEvent(new CustomEvent('open-rebase-drawer'))}
+                onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
+                onRefresh={() => fetchTaskStatus(true)}
+                onCompleteTask={handleCompleteTask}
+              />
+
               {onDeleteTask && (
                 <button
                   type="button"
@@ -125,6 +192,18 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Task Switcher, Agent Status & Controls */}
       <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+        {currentPath?.taskId && taskStatus && (
+          <div className="min-[920px]:hidden flex items-center">
+            <TaskStatusBadges
+              status={taskStatus}
+              loading={loadingStatus}
+              compact={true}
+              onOpenRebase={() => window.dispatchEvent(new CustomEvent('open-rebase-drawer'))}
+              onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
+            />
+          </div>
+        )}
+
         {onNewTask && (
           <button
             type="button"

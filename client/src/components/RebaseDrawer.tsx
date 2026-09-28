@@ -38,6 +38,7 @@ export const RebaseDrawer: React.FC<RebaseDrawerProps> = ({
             setIsRunning(false);
             setIsSuccess(true);
             setStatusText(ev.content || 'Rebase and sync complete!');
+            window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id } }));
           } else if (ev.type === 'error') {
             setIsRunning(false);
             setIsSuccess(false);

@@ -190,8 +190,13 @@ export async function updateTask(id: string, data: Partial<Task>): Promise<Task>
   return res.json();
 }
 
-export async function getTaskGitStatus(taskId: string): Promise<GitStatus> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/git/status`);
+export async function getTaskGitStatus(taskId: string, force = false): Promise<GitStatus> {
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/git/status${force ? '?force=1' : ''}`);
+  return res.json();
+}
+
+export async function getProjectTasksGitStatus(projectId: string, force = false): Promise<Record<string, GitStatus>> {
+  const res = await fetch(`${API_BASE}/projects/${projectId}/tasks-status${force ? '?force=1' : ''}`);
   return res.json();
 }
 

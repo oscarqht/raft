@@ -144,13 +144,36 @@ export interface GitCommitItem {
   message: string;
 }
 
-export interface GitStatus {
+export interface TaskPrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'merged' | 'closed';
+  mergedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface TaskGitStatus {
   staged: string[];
   unstaged: string[];
   untracked: string[];
+  hasLocalChanges?: boolean;
   unpushedCount?: number;
   unpushedCommits?: GitCommitItem[];
+  behindCount?: number;
+  aheadCount?: number;
+  isMerged?: boolean;
+  pr?: TaskPrInfo | null;
+  createPrUrl?: string | null;
+  baseBranch?: string;
+  branch?: string;
+  lifecycleStage?: 'in_progress' | 'pr_open' | 'merged' | 'clean';
+  remoteUrl?: string;
+  checkedAt?: number;
 }
+
+export type GitStatus = TaskGitStatus;
 
 export interface FSItem {
   name: string;

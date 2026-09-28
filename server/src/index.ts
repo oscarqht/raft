@@ -1182,11 +1182,60 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
 });
 
 // Git status & diff for task
-app.get('/api/tasks/:id/git/status', (req: Request, res: Response) => {
+app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  const status = GitService.getGitStatus(task.worktree_path, task.branch, task.base_branch);
+  const force = req.query.force === '1' || req.query.force === 'true';
+  const remoteUrl = GitService.getRemoteUrl(task.worktree_path);
+  const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
+  const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
+    token: account?.token,
+    forceRefresh: force,
+    taskCreatedAt: task.created_at,
+  });
   res.json(status);
+});
+
+// Batch Git status for all tasks in a project
+app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) => {
+  const tasks = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(req.params.id) as any[];
+  const force = req.query.force === '1' || req.query.force === 'true';
+  const results: Record<string, any> = {};
+
+  await Promise.all(
+    tasks.map(async (task) => {
+      try {
+        const remoteUrl = GitService.getRemoteUrl(task.worktree_path);
+        const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
+        const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
+          token: account?.token,
+          forceRefresh: force,
+          taskCreatedAt: task.created_at,
+        });
+        results[task.id] = status;
+      } catch {
+        results[task.id] = {
+          staged: [],
+          unstaged: [],
+          untracked: [],
+          hasLocalChanges: false,
+          unpushedCount: 0,
+          unpushedCommits: [],
+          behindCount: 0,
+          aheadCount: 0,
+          isMerged: false,
+          pr: null,
+          createPrUrl: null,
+          baseBranch: task.base_branch || 'main',
+          branch: task.branch,
+          lifecycleStage: 'clean',
+          checkedAt: Date.now(),
+        };
+      }
+    })
+  );
+
+  res.json(results);
 });
 
 app.get('/api/tasks/:id/git/diff', (req: Request, res: Response) => {
@@ -1682,6 +1731,9 @@ wss.on('connection', (ws: WebSocket) => {
           defaultModel,
           defaultEffort,
           (ev) => {
+            if (ev.type === 'done') {
+              GitService.invalidateTaskStatus(task.worktree_path);
+            }
             send({ type: 'rebase_event', event: ev });
           },
           project?.path,
@@ -1700,6 +1752,9 @@ wss.on('connection', (ws: WebSocket) => {
         const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
         activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, defaultEffort, (ev) => {
+          if (ev.type === 'done') {
+            GitService.invalidateTaskStatus(task.worktree_path);
+          }
           send({ type: 'submit_event', event: ev });
         });
       }

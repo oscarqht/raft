@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -10,10 +10,11 @@ import {
   Pencil,
   Loader2,
 } from 'lucide-react';
-import { Project, Task, Settings } from '../types';
-import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath } from '../api';
+import { Project, Task, Settings, TaskGitStatus } from '../types';
+import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath, getProjectTasksGitStatus } from '../api';
 import { setCachedTask, deleteCachedTask } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
+import { TaskStatusBadges } from '../components/TaskStatusBadges';
 import { formatRelativeTime } from '../utils/time';
 
 interface ProjectPageProps {
@@ -54,11 +55,45 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
+  const [tasksStatus, setTasksStatus] = useState<Record<string, TaskGitStatus>>({});
+  const [loadingStatus, setLoadingStatus] = useState(false);
+
+  const loadTasksStatus = useCallback(async (force = false) => {
+    if (!projectId) return;
+    setLoadingStatus(true);
+    try {
+      const statuses = await getProjectTasksGitStatus(projectId, force);
+      setTasksStatus((prev) => ({ ...prev, ...statuses }));
+    } catch {}
+    finally {
+      setLoadingStatus(false);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     const handleOpenNewTask = () => setIsNewTaskOpen(true);
     window.addEventListener('open-new-task', handleOpenNewTask);
     return () => window.removeEventListener('open-new-task', handleOpenNewTask);
   }, []);
+
+  // Auto-refresh task status on tab focus, event broadcast, and gentle 60s interval
+  useEffect(() => {
+    const handleFocus = () => loadTasksStatus(false);
+    const handleStatusUpdate = () => loadTasksStatus(true);
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('task-status-updated', handleStatusUpdate);
+
+    const interval = setInterval(() => {
+      loadTasksStatus(false);
+    }, 60000);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('task-status-updated', handleStatusUpdate);
+      clearInterval(interval);
+    };
+  }, [loadTasksStatus]);
 
   // Refresh relative timestamps periodically
   const [, setTimeTick] = useState(0);
@@ -86,6 +121,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       setBaseBranch(p.branch_convention || 'main');
       setTasks(t);
       t.forEach((taskItem) => setCachedTask(taskItem));
+      loadTasksStatus(false);
 
       // Fetch repo branches
       try {
@@ -263,6 +299,13 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                       <span>Based on {t.base_branch}</span>
                       <span className="hidden sm:inline"> &bull; {t.worktree_path}</span>
                     </p>
+                    <div className="mt-2.5">
+                      <TaskStatusBadges
+                        status={tasksStatus[t.id]}
+                        loading={loadingStatus && !tasksStatus[t.id]}
+                        compact={true}
+                      />
+                    </div>
                   </div>
                 </div>
 

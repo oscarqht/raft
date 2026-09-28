@@ -128,6 +128,19 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     return () => window.removeEventListener('task-updated', handleTaskUpdated);
   }, [taskId]);
 
+  useEffect(() => {
+    const handleOpenRebase = () => setIsRebaseOpen(true);
+    const handleOpenSubmit = () => setIsSubmitOpen(true);
+
+    window.addEventListener('open-rebase-drawer', handleOpenRebase);
+    window.addEventListener('open-submit-modal', handleOpenSubmit);
+
+    return () => {
+      window.removeEventListener('open-rebase-drawer', handleOpenRebase);
+      window.removeEventListener('open-submit-modal', handleOpenSubmit);
+    };
+  }, []);
+
   if (error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
