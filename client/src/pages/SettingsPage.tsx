@@ -44,6 +44,7 @@ import {
   deleteSkill,
   installSkillStream,
 } from '../api';
+import { AgentUsageCard } from '../components/AgentUsageCard';
 
 import {
   getCachedModels,
@@ -742,7 +743,14 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
           </div>
         </div>
 
-        {/* 2. Installation Guide (if selected CLI is NOT available) */}
+        {/* 2. AI Agent Usage & Remaining Quotas (CodexBar Engine) */}
+        <AgentUsageCard
+          activeCli={agentCli}
+          clis={localClis}
+          onSelectCli={handleSelectCli}
+        />
+
+        {/* 3. Installation Guide (if selected CLI is NOT available) */}
         {!isCliReady ? (
           <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-5 animate-in fade-in duration-200">
             <div className="flex items-start gap-3">

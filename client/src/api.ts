@@ -17,6 +17,7 @@ import {
   RemoteRepoItem,
   VerifyGitAccountResult,
   FileAttachment,
+  AgentUsageSnapshot,
 } from './types';
 
 const API_BASE = '/api';
@@ -651,4 +652,25 @@ export async function createNewProject(params: {
     throw new Error(data.error || 'Failed to create new project');
   }
   return data;
+}
+
+export async function getAgentUsage(cli?: string, refresh = false): Promise<AgentUsageSnapshot> {
+  const params = new URLSearchParams();
+  if (cli) params.set('cli', cli);
+  if (refresh) params.set('refresh', 'true');
+  const res = await fetch(`${API_BASE}/agent-usage?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error('Failed to load AI agent usage');
+  }
+  return res.json();
+}
+
+export async function getAllAgentUsages(refresh = false): Promise<Record<string, AgentUsageSnapshot>> {
+  const params = new URLSearchParams();
+  if (refresh) params.set('refresh', 'true');
+  const res = await fetch(`${API_BASE}/agent-usage?${params.toString()}`);
+  if (!res.ok) {
+    throw new Error('Failed to load AI agent usages');
+  }
+  return res.json();
 }
