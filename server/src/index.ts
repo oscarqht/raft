@@ -38,6 +38,7 @@ import {
   buildConversationContextFallback,
   CommitMessageResult,
   StreamEvent,
+  AgentStep,
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
@@ -2219,6 +2220,7 @@ wss.on('connection', (ws: WebSocket) => {
 
         let assistantThoughts = '';
         let assistantResponse = '';
+        const assistantSteps: AgentStep[] = [];
         let persistedCliSessionId = cliSessionIdToResume || null;
 
         let lastBroadcastTime = 0;
@@ -2237,6 +2239,7 @@ wss.on('connection', (ws: WebSocket) => {
             sessionId,
             messageId: assistantMsgId,
             fullContent: assistantContent,
+            steps: assistantSteps,
           });
         };
 
@@ -2265,14 +2268,20 @@ wss.on('connection', (ws: WebSocket) => {
           return r;
         };
 
-        const saveAssistantProgress = (force = false) => {
+        const saveAssistantProgress = (force = false, isSpendCap = false) => {
           const currentNow = Date.now();
           if (force || currentNow - lastDbSaveTime > 300) {
             lastDbSaveTime = currentNow;
             try {
+              const metaObj = {
+                cli: cliToUse,
+                model: modelToUse,
+                steps: assistantSteps,
+                ...(isSpendCap ? { error: true, errorType: 'spend_cap', errorMessage: assistantResponse } : {}),
+              };
               db.prepare(`
-                UPDATE chat_messages SET content = ?, timestamp = ? WHERE id = ?
-              `).run(assistantContent, currentNow, assistantMsgId);
+                UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?
+              `).run(assistantContent, JSON.stringify(metaObj), currentNow, assistantMsgId);
             } catch {}
           }
         };
@@ -2287,7 +2296,17 @@ wss.on('connection', (ws: WebSocket) => {
             } catch {}
           }
 
-          if (ev.type === 'thought' && ev.content) {
+          if (ev.type === 'step' && ev.step) {
+            const step = ev.step;
+            const idx = assistantSteps.findIndex((s) => s.id === step.id);
+            if (idx >= 0) {
+              assistantSteps[idx] = { ...assistantSteps[idx], ...step };
+            } else {
+              assistantSteps.push(step);
+            }
+            saveAssistantProgress(false);
+            queueBroadcast(ev, false);
+          } else if (ev.type === 'thought' && ev.content) {
             assistantThoughts += ev.content;
             assistantContent = compileAssistantContent();
             saveAssistantProgress(false);
@@ -2311,12 +2330,13 @@ wss.on('connection', (ws: WebSocket) => {
                 .run(JSON.stringify({
                   cli: cliToUse,
                   model: modelToUse,
+                  steps: assistantSteps,
                   error: true,
                   errorType: isSpendCap ? 'spend_cap' : 'agent_error',
                   errorMessage: errContent,
                 }), assistantMsgId);
             } catch {}
-            saveAssistantProgress(true);
+            saveAssistantProgress(true, isSpendCap);
             queueBroadcast(ev, true);
           } else if (ev.type === 'status' && ev.content) {
             queueBroadcast(ev, false);
@@ -2332,6 +2352,17 @@ wss.on('connection', (ws: WebSocket) => {
               } catch {}
             }
 
+            // Mark any in-flight steps as finished
+            for (const s of assistantSteps) {
+              if (s.status === 'running') {
+                s.status = ev.type === 'error' ? 'failed' : 'completed';
+                s.endTime = finishedAt;
+                if (s.startTime && !s.duration) {
+                  s.duration = Math.round(((finishedAt - s.startTime) / 1000) * 10) / 10;
+                }
+              }
+            }
+
             const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(assistantResponse) || ev.metadata?.isSpendCap;
             if (isSpendCap) {
               try {
@@ -2339,6 +2370,7 @@ wss.on('connection', (ws: WebSocket) => {
                   .run(JSON.stringify({
                     cli: cliToUse,
                     model: modelToUse,
+                    steps: assistantSteps,
                     error: true,
                     errorType: 'spend_cap',
                     errorMessage: assistantResponse || 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.',
@@ -2346,7 +2378,7 @@ wss.on('connection', (ws: WebSocket) => {
               } catch {}
             } else if (!assistantResponse.trim() && ev.type === 'done') {
               if (assistantThoughts.trim()) {
-                const actionCount = (assistantThoughts.match(/→/g) || []).length;
+                const actionCount = assistantSteps.length || (assistantThoughts.match(/→/g) || []).length;
                 assistantResponse = `Completed ${actionCount > 0 ? `${actionCount} ` : ''}workspace actions and finished tasks.`;
               } else {
                 assistantResponse = 'Task completed.';
@@ -2354,9 +2386,27 @@ wss.on('connection', (ws: WebSocket) => {
               assistantContent = compileAssistantContent();
             }
 
-            saveAssistantProgress(true);
-            activeChatSessions.delete(sessionId);
+            const metaObj = {
+              cli: cliToUse,
+              model: modelToUse,
+              steps: assistantSteps,
+              ...(isSpendCap ? {
+                error: true,
+                errorType: 'spend_cap',
+                errorMessage: assistantResponse || 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.',
+              } : (ev.type === 'error' ? {
+                error: true,
+                errorType: 'agent_error',
+                errorMessage: ev.content || 'Error during execution',
+              } : {})),
+            };
 
+            try {
+              db.prepare('UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?')
+                .run(assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'), JSON.stringify(metaObj), finishedAt, assistantMsgId);
+            } catch {}
+
+            activeChatSessions.delete(sessionId);
             db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', finishedAt, sessionId);
 
             broadcastWs({
@@ -2367,8 +2417,10 @@ wss.on('connection', (ws: WebSocket) => {
                 session_id: sessionId,
                 role: 'assistant',
                 content: assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'),
+                metadata: JSON.stringify(metaObj),
                 timestamp: finishedAt,
               },
+              steps: assistantSteps,
             });
           }
         });
@@ -2381,9 +2433,17 @@ wss.on('connection', (ws: WebSocket) => {
           try {
             proc.kill('SIGINT');
           } catch {}
+          const currentNow = Date.now();
+          for (const s of assistantSteps) {
+            if (s.status === 'running') {
+              s.status = 'failed';
+              s.error = 'Canceled by user';
+              s.endTime = currentNow;
+            }
+          }
           saveAssistantProgress(true);
           activeChatSessions.delete(sessionId);
-          db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', Date.now(), sessionId);
+          db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', currentNow, sessionId);
           broadcastWs({ type: 'aborted', sessionId });
         };
 

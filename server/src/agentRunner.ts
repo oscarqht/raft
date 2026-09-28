@@ -925,11 +925,155 @@ export function stripAnsi(text: string): string {
   return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 }
 
+export interface AgentStep {
+  id: string;
+  type: 'tool' | 'thought';
+  toolName?: string;
+  category: 'command' | 'file_read' | 'file_write' | 'search' | 'browser' | 'other';
+  title: string;
+  detail?: string;
+  status: 'running' | 'completed' | 'failed';
+  duration?: number;
+  output?: string;
+  error?: string;
+  thought?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
+export function truncateOutput(output: any, maxBytes = 100 * 1024): string {
+  if (!output) return '';
+  let str = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+  str = stripAnsi(str);
+  if (str.length > maxBytes) {
+    str = str.slice(0, maxBytes) + `\n... [Output truncated (exceeded ${Math.round(maxBytes / 1024)}KB)]`;
+  }
+  return str;
+}
+
+export function parseLegacyActionLine(line: string, index = 0): AgentStep | null {
+  const clean = stripAnsi(line).trim();
+  if (!clean) return null;
+  const isArrow = clean.startsWith('→');
+  const text = clean.replace(/^[→\s]+/, '').trim();
+  if (!text) return null;
+
+  if (text.startsWith('Run:')) {
+    const cmd = text.slice(4).trim();
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'run_command',
+      category: 'command',
+      title: `Run: ${cmd}`,
+      detail: cmd,
+      status: 'completed',
+    };
+  }
+  if (text.toLowerCase().startsWith('view file:') || text.toLowerCase().startsWith('view:')) {
+    const file = text.split(':')[1]?.trim() || '';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'view_file',
+      category: 'file_read',
+      title: `View: ${path.basename(file) || file}`,
+      detail: file,
+      status: 'completed',
+    };
+  }
+  if (text.toLowerCase().startsWith('edit file:') || text.toLowerCase().startsWith('edit:') || text.toLowerCase().startsWith('replace file:')) {
+    const file = text.split(':')[1]?.trim() || '';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'replace_file_content',
+      category: 'file_write',
+      title: `Edit: ${path.basename(file) || file}`,
+      detail: file,
+      status: 'completed',
+    };
+  }
+  if (text.startsWith('Search:')) {
+    const q = text.slice(7).trim().replace(/^["']|["']$/g, '');
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'search',
+      category: 'search',
+      title: `Search: "${q}"`,
+      detail: q,
+      status: 'completed',
+    };
+  }
+  if (isArrow) {
+    const category = /grep|find|search/i.test(text)
+      ? 'search'
+      : /git|npm|cargo|bun|pnpm|python|yarn|docker|sh|bash/i.test(text)
+      ? 'command'
+      : /file|types\.|service\./i.test(text)
+      ? 'file_read'
+      : 'other';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: text.split(' ')[0] || 'action',
+      category,
+      title: text,
+      detail: text,
+      status: 'completed',
+    };
+  }
+  return null;
+}
+
+export function parseLegacyThoughtToSteps(thoughtText: string): AgentStep[] {
+  if (!thoughtText) return [];
+  const lines = thoughtText.split('\n');
+  const steps: AgentStep[] = [];
+  let currentThought = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const parsedStep = parseLegacyActionLine(line, i);
+    if (parsedStep) {
+      if (currentThought.trim()) {
+        steps.push({
+          id: `thought-${steps.length}`,
+          type: 'thought',
+          category: 'other',
+          title: 'Reasoning',
+          status: 'completed',
+          thought: currentThought.trim(),
+        });
+        currentThought = '';
+      }
+      steps.push(parsedStep);
+    } else if (line.trim()) {
+      currentThought += (currentThought ? '\n' : '') + line;
+    }
+  }
+
+  if (currentThought.trim()) {
+    steps.push({
+      id: `thought-${steps.length}`,
+      type: 'thought',
+      category: 'other',
+      title: 'Reasoning',
+      status: 'completed',
+      thought: currentThought.trim(),
+    });
+  }
+
+  return steps;
+}
+
 export interface StreamEvent {
-  type: 'chunk' | 'thought' | 'tool' | 'status' | 'error' | 'done';
+  type: 'chunk' | 'thought' | 'tool' | 'status' | 'error' | 'done' | 'step';
   content?: string;
   metadata?: any;
   conversationId?: string;
+  step?: AgentStep;
 }
 
 // Builds a clean previous conversation context block when no native CLI session can be resumed
@@ -1090,30 +1234,117 @@ export function spawnAgentCli(
           } else if (parsed.event === 'step_update') {
             const step = parsed.step_update;
             if (step) {
-              if (step.step_type === 'tool' && step.state === 'ACTIVE') {
+              const stepId = step.step_index !== undefined ? `agy-step-${step.step_index}` : `agy-step-${Date.now()}`;
+              if (step.step_type === 'tool') {
                 const toolName = step.tool_name || step.tool_info?.name || 'tool';
                 const params = step.tool_info?.parameters || {};
                 let desc = '';
+                let category: AgentStep['category'] = 'other';
+                let detail = '';
+
                 if (params.CommandLine) {
+                  category = 'command';
+                  detail = params.CommandLine;
                   desc = `Run: ${params.CommandLine}`;
                 } else if (params.AbsolutePath || params.TargetFile) {
                   const target = params.AbsolutePath || params.TargetFile;
                   const basename = path.basename(target) || target;
-                  desc = `${toolName.replace(/_/g, ' ')}: ${basename}`;
+                  detail = target;
+                  if (toolName.includes('write') || toolName.includes('replace') || toolName.includes('edit') || toolName.includes('sed')) {
+                    category = 'file_write';
+                    desc = `Edit: ${basename}`;
+                  } else {
+                    category = 'file_read';
+                    desc = `${toolName.replace(/_/g, ' ')}: ${basename}`;
+                  }
                 } else if (params.query) {
+                  category = 'search';
+                  detail = params.query;
                   desc = `Search: "${params.query}"`;
                 } else if (params.Url) {
+                  category = toolName.startsWith('browser') ? 'browser' : 'file_read';
+                  detail = params.Url;
                   desc = `Fetch: ${params.Url}`;
+                } else if (toolName.startsWith('browser')) {
+                  category = 'browser';
+                  detail = JSON.stringify(params);
+                  desc = `Browser: ${toolName.replace(/^browser_/, '').replace(/_/g, ' ')}`;
                 } else {
+                  category = 'other';
+                  detail = JSON.stringify(params);
                   desc = toolName.replace(/_/g, ' ');
                 }
 
-                onEvent({
-                  type: 'thought',
-                  content: `→ ${desc}\n`,
-                  metadata: parsed,
-                  conversationId: detectedConversationId,
-                });
+                if (step.state === 'ACTIVE') {
+                  const agentStep: AgentStep = {
+                    id: stepId,
+                    type: 'tool',
+                    toolName,
+                    category,
+                    title: desc,
+                    detail,
+                    status: 'running',
+                    startTime: Date.now(),
+                  };
+
+                  onEvent({
+                    type: 'step',
+                    step: agentStep,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+
+                  onEvent({
+                    type: 'thought',
+                    content: `→ ${desc}\n`,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+                } else if (step.state === 'DONE' || step.state === 'ERROR') {
+                  const rawOutput = step.tool_info?.output || '';
+                  const cleanOut = truncateOutput(rawOutput);
+                  const isErr = step.state === 'ERROR' || Boolean(step.tool_info?.error) || /command failed|exit code [1-9]|error:/i.test(cleanOut);
+
+                  const agentStep: AgentStep = {
+                    id: stepId,
+                    type: 'tool',
+                    toolName,
+                    category,
+                    title: desc,
+                    detail,
+                    status: isErr ? 'failed' : 'completed',
+                    duration: typeof step.duration_seconds === 'number' ? Math.round(step.duration_seconds * 10) / 10 : undefined,
+                    output: cleanOut,
+                    error: step.tool_info?.error,
+                    endTime: Date.now(),
+                  };
+
+                  onEvent({
+                    type: 'step',
+                    step: agentStep,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+                }
+              } else if (step.step_type === 'thought' || step.thought || step.reasoning) {
+                const thoughtText = step.thought || step.reasoning || step.text || '';
+                if (thoughtText) {
+                  const agentStep: AgentStep = {
+                    id: `agy-thought-${step.step_index ?? Date.now()}`,
+                    type: 'thought',
+                    category: 'other',
+                    title: 'Reasoning',
+                    thought: thoughtText,
+                    status: step.state === 'DONE' ? 'completed' : 'running',
+                    startTime: Date.now(),
+                  };
+                  onEvent({
+                    type: 'step',
+                    step: agentStep,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+                }
               } else if (step.step_type === 'agent_response' && step.text_delta) {
                 hasStreamedDeltas = true;
                 onEvent({
@@ -1136,19 +1367,138 @@ export function spawnAgentCli(
             }
           } else if (parsed.type || parsed.role) {
             // General JSON event (Claude, Codex, etc.)
-            const content =
-              parsed.content ||
-              parsed.text ||
-              parsed.delta?.text ||
-              parsed.item?.text ||
-              (parsed.item?.message ? parsed.item.message : undefined);
-            if (content) {
-              onEvent({
-                type: parsed.type === 'thought' ? 'thought' : 'chunk',
-                content: typeof content === 'string' ? content : JSON.stringify(content),
-                metadata: parsed,
-                conversationId: detectedConversationId,
-              });
+            if (parsed.type === 'item.started' && parsed.item) {
+              const item = parsed.item;
+              if (item.type === 'command_execution') {
+                const cmd = item.command || '';
+                const agentStep: AgentStep = {
+                  id: item.id || `codex-cmd-${Date.now()}`,
+                  type: 'tool',
+                  toolName: 'command_execution',
+                  category: 'command',
+                  title: `Run: ${cmd}`,
+                  detail: cmd,
+                  status: 'running',
+                  startTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                onEvent({ type: 'thought', content: `→ Run: ${cmd}\n`, metadata: parsed, conversationId: detectedConversationId });
+              } else if (item.type === 'reasoning') {
+                const agentStep: AgentStep = {
+                  id: item.id || `codex-reason-${Date.now()}`,
+                  type: 'thought',
+                  category: 'other',
+                  title: 'Reasoning',
+                  status: 'running',
+                  startTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+              }
+            } else if (parsed.type === 'item.completed' && parsed.item) {
+              const item = parsed.item;
+              if (item.type === 'command_execution') {
+                const cmd = item.command || '';
+                const isErr = item.exit_code !== undefined && item.exit_code !== 0;
+                const agentStep: AgentStep = {
+                  id: item.id || `codex-cmd-${Date.now()}`,
+                  type: 'tool',
+                  toolName: 'command_execution',
+                  category: 'command',
+                  title: `Run: ${cmd}`,
+                  detail: cmd,
+                  status: isErr ? 'failed' : 'completed',
+                  duration: item.duration_ms ? Math.round((item.duration_ms / 1000) * 10) / 10 : undefined,
+                  output: truncateOutput(item.output || ''),
+                  endTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+              } else if (item.type === 'file_change') {
+                const filePath = item.path || 'file';
+                const basename = path.basename(filePath);
+                const agentStep: AgentStep = {
+                  id: item.id || `codex-file-${Date.now()}`,
+                  type: 'tool',
+                  toolName: 'file_change',
+                  category: 'file_write',
+                  title: `Edit: ${basename}`,
+                  detail: filePath,
+                  status: 'completed',
+                  output: truncateOutput(item.diff || ''),
+                  endTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                onEvent({ type: 'thought', content: `→ edit file: ${basename}\n`, metadata: parsed, conversationId: detectedConversationId });
+              } else if (item.type === 'reasoning') {
+                const agentStep: AgentStep = {
+                  id: item.id || `codex-reason-${Date.now()}`,
+                  type: 'thought',
+                  category: 'other',
+                  title: 'Reasoning',
+                  thought: item.text || '',
+                  status: 'completed',
+                  endTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+              } else if (item.type === 'message' && item.text) {
+                onEvent({
+                  type: 'chunk',
+                  content: item.text,
+                  metadata: parsed,
+                  conversationId: detectedConversationId,
+                });
+              }
+            } else if (parsed.type === 'item.delta' && parsed.delta) {
+              const text = parsed.delta.text;
+              if (text) {
+                onEvent({
+                  type: 'chunk',
+                  content: text,
+                  metadata: parsed,
+                  conversationId: detectedConversationId,
+                });
+              }
+            } else if (parsed.type === 'tool_use') {
+              const toolName = parsed.name || 'tool';
+              const params = parsed.input || {};
+              const title = params.CommandLine ? `Run: ${params.CommandLine}` : params.path || params.file ? `File: ${path.basename(params.path || params.file)}` : toolName;
+              const agentStep: AgentStep = {
+                id: parsed.id || `claude-tool-${Date.now()}`,
+                type: 'tool',
+                toolName,
+                category: params.CommandLine ? 'command' : 'other',
+                title,
+                detail: params.CommandLine || JSON.stringify(params),
+                status: 'running',
+                startTime: Date.now(),
+              };
+              onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+              onEvent({ type: 'thought', content: `→ ${title}\n`, metadata: parsed, conversationId: detectedConversationId });
+            } else if (parsed.type === 'tool_result') {
+              const agentStep: AgentStep = {
+                id: parsed.tool_use_id || parsed.id || `claude-tool-${Date.now()}`,
+                type: 'tool',
+                category: 'other',
+                title: 'Tool execution',
+                status: parsed.is_error ? 'failed' : 'completed',
+                output: truncateOutput(parsed.content || parsed.output || ''),
+                endTime: Date.now(),
+              };
+              onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+            } else {
+              const content =
+                parsed.content ||
+                parsed.text ||
+                parsed.delta?.text ||
+                parsed.item?.text ||
+                (parsed.item?.message ? parsed.item.message : undefined);
+              if (content) {
+                onEvent({
+                  type: parsed.type === 'thought' ? 'thought' : 'chunk',
+                  content: typeof content === 'string' ? content : JSON.stringify(content),
+                  metadata: parsed,
+                  conversationId: detectedConversationId,
+                });
+              }
             }
           }
         }
@@ -1159,6 +1509,24 @@ export function spawnAgentCli(
       if (!handled) {
         const cleanLine = stripAnsi(line).trim();
         if (!cleanLine) continue;
+
+        // Check if line is an action/step line (e.g. `→ Run: ...`)
+        const parsedLegacy = parseLegacyActionLine(cleanLine);
+        if (parsedLegacy) {
+          onEvent({
+            type: 'step',
+            step: parsedLegacy,
+            metadata: { legacy: true },
+            conversationId: lastReportedConversationId || undefined,
+          });
+          onEvent({
+            type: 'thought',
+            content: cleanLine + '\n',
+            metadata: { legacy: true },
+            conversationId: lastReportedConversationId || undefined,
+          });
+          continue;
+        }
 
         // Filter out CLI startup banners and headers (e.g. Codex / Claude terminal headers)
         if (

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
-  FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap
+  FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap,
+  CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp
 } from 'lucide-react';
-import { ChatMessage, FileAttachment, CliInfo } from '../types';
+import { ChatMessage, FileAttachment, CliInfo, AgentStep } from '../types';
 import { MarkdownView } from './MarkdownView';
 import {
   isImageAttachment,
@@ -17,6 +18,127 @@ import {
 export function stripAnsi(text: string): string {
   if (!text) return '';
   return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+}
+
+export function parseLegacyActionLine(line: string, index = 0): AgentStep | null {
+  const clean = stripAnsi(line).trim();
+  if (!clean) return null;
+  const isArrow = clean.startsWith('→') || clean.startsWith('->');
+  const text = clean.replace(/^(?:→|->)\s*/, '').trim();
+  if (!text) return null;
+
+  if (text.startsWith('Run:')) {
+    const cmd = text.slice(4).trim();
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'run_command',
+      category: 'command',
+      title: `Run: ${cmd}`,
+      detail: cmd,
+      status: 'completed',
+    };
+  }
+  if (text.toLowerCase().startsWith('view file:') || text.toLowerCase().startsWith('view:')) {
+    const file = text.split(':')[1]?.trim() || '';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'view_file',
+      category: 'file_read',
+      title: `View: ${file.split('/').pop() || file}`,
+      detail: file,
+      status: 'completed',
+    };
+  }
+  if (
+    text.toLowerCase().startsWith('edit file:') ||
+    text.toLowerCase().startsWith('edit:') ||
+    text.toLowerCase().startsWith('replace file:')
+  ) {
+    const file = text.split(':')[1]?.trim() || '';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'replace_file_content',
+      category: 'file_write',
+      title: `Edit: ${file.split('/').pop() || file}`,
+      detail: file,
+      status: 'completed',
+    };
+  }
+  if (text.startsWith('Search:')) {
+    const q = text.slice(7).trim().replace(/^["']|["']$/g, '');
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: 'search',
+      category: 'search',
+      title: `Search: "${q}"`,
+      detail: q,
+      status: 'completed',
+    };
+  }
+  if (isArrow) {
+    const category = /grep|find|search/i.test(text)
+      ? 'search'
+      : /git|npm|cargo|bun|pnpm|python|yarn|docker|sh|bash/i.test(text)
+      ? 'command'
+      : /file|types\.|service\./i.test(text)
+      ? 'file_read'
+      : 'other';
+    return {
+      id: `legacy-${index}`,
+      type: 'tool',
+      toolName: text.split(' ')[0] || 'action',
+      category,
+      title: text,
+      detail: text,
+      status: 'completed',
+    };
+  }
+  return null;
+}
+
+export function parseLegacyThoughtToSteps(thoughtText: string): AgentStep[] {
+  if (!thoughtText) return [];
+  const lines = thoughtText.split('\n');
+  const steps: AgentStep[] = [];
+  let currentThought = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const parsedStep = parseLegacyActionLine(line, i);
+    if (parsedStep) {
+      if (currentThought.trim()) {
+        steps.push({
+          id: `thought-${steps.length}`,
+          type: 'thought',
+          category: 'other',
+          title: 'Reasoning',
+          status: 'completed',
+          thought: currentThought.trim(),
+        });
+        currentThought = '';
+      }
+      steps.push(parsedStep);
+    } else if (line.trim()) {
+      currentThought += (currentThought ? '\n' : '') + line;
+    }
+  }
+
+  if (currentThought.trim()) {
+    steps.push({
+      id: `thought-${steps.length}`,
+      type: 'thought',
+      category: 'other',
+      title: 'Reasoning',
+      status: 'completed',
+      thought: currentThought.trim(),
+    });
+  }
+
+  return steps;
 }
 
 export interface DetectedSkillChip {
@@ -161,6 +283,341 @@ export function detectSpendCapInfo(msg: ChatMessage, fallbackCli?: string): Spen
   return { isSpendCap: false, title: '', message: '' };
 }
 
+const LiveElapsedTimer: React.FC<{ startTime?: number }> = ({ startTime }) => {
+  const [elapsed, setElapsed] = useState(() => (startTime ? Math.max(0, (Date.now() - startTime) / 1000) : 0));
+  useEffect(() => {
+    if (!startTime) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.max(0, (Date.now() - startTime) / 1000));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [startTime]);
+  return <span>{elapsed.toFixed(1)}s</span>;
+};
+
+const StepOutputDrawer: React.FC<{
+  output?: string;
+  error?: string;
+  status: 'running' | 'completed' | 'failed';
+}> = ({ output, error, status }) => {
+  const [copied, setCopied] = useState(false);
+  const [expandedFull, setExpandedFull] = useState(false);
+  const text = error || output || '';
+
+  const lines = useMemo(() => text.split('\n'), [text]);
+  const isTruncated = lines.length > 25;
+  const displayLines = expandedFull || !isTruncated ? lines : lines.slice(0, 20);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!text) {
+    return (
+      <div className="mt-1.5 px-3 py-2 rounded-lg bg-black/10 dark:bg-black/30 text-[11px] text-cozy-muted font-mono italic">
+        (No output recorded)
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className={`mt-2 rounded-xl overflow-hidden border text-left shadow-soft-inner transition-all ${
+        status === 'failed'
+          ? 'border-rose-500/30 bg-rose-950/20'
+          : 'border-cozy-border/60 bg-[#090d16] dark:bg-[#070b12]'
+      }`}
+    >
+      <div className="flex items-center justify-between px-3 py-1.5 bg-black/40 border-b border-white/5 text-[10px] text-cozy-muted select-none">
+        <span className="font-mono">
+          {lines.length} {lines.length === 1 ? 'line' : 'lines'} • {Math.round((text.length / 1024) * 10) / 10} KB
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-cozy-muted hover:text-cozy-text transition-all cursor-pointer"
+          title="Copy output"
+        >
+          {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+      <div className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto text-slate-300 select-text">
+        <pre className="whitespace-pre-wrap break-all font-mono">
+          {displayLines.join('\n')}
+        </pre>
+        {isTruncated && !expandedFull && (
+          <div className="mt-2 pt-2 border-t border-white/10 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setExpandedFull(true)}
+              className="text-[10px] text-teal-400 hover:text-teal-300 font-sans font-medium px-2 py-0.5 rounded hover:bg-teal-500/10 transition-colors cursor-pointer"
+            >
+              Show all {lines.length} lines ({lines.length - 20} more)
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const StepCard: React.FC<{
+  step: AgentStep;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onAbort?: () => void;
+}> = ({ step, isExpanded, onToggleExpand, onAbort }) => {
+  const isRunning = step.status === 'running';
+  const isFailed = step.status === 'failed';
+  const hasDetails = Boolean(step.output || step.error);
+
+  const getCategoryIcon = () => {
+    switch (step.category) {
+      case 'command':
+        return <Terminal className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+      case 'file_read':
+        return <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />;
+      case 'file_write':
+        return <Edit3 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+      case 'search':
+        return <Search className="w-3.5 h-3.5 text-teal-400 shrink-0" />;
+      case 'browser':
+        return <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />;
+      default:
+        return <Cpu className="w-3.5 h-3.5 text-violet-400 shrink-0" />;
+    }
+  };
+
+  if (step.type === 'thought') {
+    return (
+      <div className="p-2.5 rounded-xl bg-indigo-500/5 dark:bg-indigo-500/10 border border-indigo-500/20 text-xs text-cozy-text leading-relaxed font-sans">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 mb-1 select-none">
+          <Brain className="w-3 h-3" />
+          <span>Reasoning</span>
+        </div>
+        <div className="italic text-cozy-muted text-xs whitespace-pre-wrap">
+          {step.thought || step.title}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={() => hasDetails && onToggleExpand()}
+      className={`group rounded-xl border p-2.5 transition-all text-xs ${
+        isRunning
+          ? 'border-teal-500/40 bg-teal-500/5 dark:bg-teal-950/20 shadow-glow-sm ring-1 ring-teal-500/30'
+          : isFailed
+          ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50 cursor-pointer'
+          : hasDetails
+          ? 'border-cozy-border/70 bg-cozy-surface/60 hover:bg-cozy-surface hover:border-teal-400/30 cursor-pointer'
+          : 'border-cozy-border/50 bg-cozy-surface/40'
+      }`}
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="p-1 rounded-md bg-black/5 dark:bg-white/5 shrink-0">
+          {getCategoryIcon()}
+        </div>
+
+        <span className="font-mono text-xs text-cozy-text truncate select-text flex-1">
+          {step.title}
+        </span>
+
+        {/* Live Elapsed / Duration */}
+        {isRunning ? (
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="flex items-center gap-1 text-[11px] font-mono text-teal-500 font-semibold">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <LiveElapsedTimer startTime={step.startTime} />
+            </span>
+            {onAbort && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAbort();
+                }}
+                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold text-rose-500 hover:text-white hover:bg-rose-500/80 border border-rose-500/30 transition-all cursor-pointer"
+                title="Stop current execution"
+              >
+                <Square className="w-2.5 h-2.5 fill-current" />
+                Stop
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {step.duration !== undefined && (
+              <span className="text-[10px] text-cozy-muted font-mono px-1.5 py-0.5 rounded bg-black/5 dark:bg-white/5">
+                {step.duration}s
+              </span>
+            )}
+            {isFailed ? (
+              <span title="Step failed" className="flex items-center">
+                <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+              </span>
+            ) : (
+              <span title="Step completed" className="flex items-center">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              </span>
+            )}
+            {hasDetails && (
+              <span className="text-cozy-muted group-hover:text-cozy-text ml-0.5">
+                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Output preview drawer */}
+      {isExpanded && hasDetails && (
+        <StepOutputDrawer output={step.output} error={step.error} status={step.status} />
+      )}
+    </div>
+  );
+};
+
+const AgentActivityView: React.FC<{
+  steps: AgentStep[];
+  isStreaming?: boolean;
+  onAbort?: () => void;
+  onCopyAll: (text: string) => void;
+}> = ({ steps, isStreaming, onAbort, onCopyAll }) => {
+  const [isManuallyToggled, setIsManuallyToggled] = useState<boolean | null>(null);
+  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
+  const [copiedAll, setCopiedAll] = useState(false);
+
+  // Default open while streaming; auto-collapse when completed
+  const isExpanded = isManuallyToggled !== null ? isManuallyToggled : Boolean(isStreaming);
+
+  const toggleStepExpand = useCallback((id: string) => {
+    setExpandedStepIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const totalDuration = useMemo(() => {
+    return steps.reduce((sum, s) => sum + (s.duration || 0), 0);
+  }, [steps]);
+
+  const summary = useMemo(() => {
+    const files = steps.filter((s) => s.category === 'file_read' || s.category === 'file_write').length;
+    const commands = steps.filter((s) => s.category === 'command').length;
+    const count = steps.length;
+
+    let label = '';
+    let icon = <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />;
+
+    if (files > 0 && commands > 0) {
+      label = `Inspected ${files} ${files === 1 ? 'file' : 'files'} & executed ${commands} ${commands === 1 ? 'command' : 'commands'}`;
+    } else if (commands > 0) {
+      label = `Executed ${commands} terminal ${commands === 1 ? 'command' : 'commands'}`;
+      icon = <Terminal className="w-3.5 h-3.5 text-amber-500 shrink-0" />;
+    } else if (files > 0) {
+      label = `Checked ${files} ${files === 1 ? 'file' : 'files'}`;
+      icon = <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />;
+    } else {
+      label = `Explored ${count} ${count === 1 ? 'action' : 'actions'}`;
+    }
+
+    return { label, count, icon };
+  }, [steps]);
+
+  const handleCopyActions = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const formatted = steps
+      .map((s) => {
+        let line = `[${s.status.toUpperCase()}] ${s.title}`;
+        if (s.duration) line += ` (${s.duration}s)`;
+        if (s.output) line += `\nOutput:\n${s.output}\n`;
+        return line;
+      })
+      .join('\n---\n');
+    onCopyAll(formatted);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2000);
+  };
+
+  const activeStep = useMemo(() => {
+    return steps.find((s) => s.status === 'running');
+  }, [steps]);
+
+  return (
+    <div className="mb-2 w-full min-w-0 flex flex-col items-start animate-in fade-in duration-150">
+      {/* Summary Pill Button */}
+      <button
+        type="button"
+        onClick={() => setIsManuallyToggled(!isExpanded)}
+        className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
+      >
+        {isStreaming && activeStep ? (
+          <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin shrink-0" />
+        ) : (
+          summary.icon
+        )}
+        <span className="text-cozy-text truncate">{summary.label}</span>
+        {totalDuration > 0 && (
+          <span className="text-cozy-muted font-mono text-[10px]">
+            • {totalDuration.toFixed(1)}s
+          </span>
+        )}
+        <span className="px-2 py-0.2 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[10px] font-semibold shrink-0">
+          {summary.count} {summary.count === 1 ? 'step' : 'steps'}
+        </span>
+        {isExpanded ? (
+          <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
+        )}
+      </button>
+
+      {/* Expanded Interactive Activity Container */}
+      {isExpanded && (
+        <div className="mt-2 w-full p-3.5 sm:p-4 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 shadow-soft-inner flex flex-col gap-2 max-h-96 overflow-y-auto animate-in fade-in duration-200">
+          <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
+            <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
+              Agent Activity Timeline ({steps.length} {steps.length === 1 ? 'step' : 'steps'})
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleCopyActions}
+                className="flex items-center gap-1 text-[11px] text-cozy-muted hover:text-teal-500 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
+                title="Copy all actions and outputs"
+              >
+                {copiedAll ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedAll ? 'Copied' : 'Copy log'}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            {steps.map((step) => (
+              <StepCard
+                key={step.id}
+                step={step}
+                isExpanded={expandedStepIds.has(step.id)}
+                onToggleExpand={() => toggleStepExpand(step.id)}
+                onAbort={onAbort}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface ChatMessageListProps {
   messages: ChatMessage[];
   liveStreamingChunk?: string;
@@ -170,6 +627,7 @@ interface ChatMessageListProps {
   currentCli?: string;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
+  onAbort?: () => void;
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
@@ -181,6 +639,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   currentCli,
   onSwitchCliAndRetry,
   onOpenSettings,
+  onAbort,
 }) => {
   const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
@@ -295,6 +754,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
           previousUserPrompt={index > 0 && messages[index - 1].role === 'user' ? messages[index - 1].content : ''}
           onSwitchCliAndRetry={onSwitchCliAndRetry}
           onOpenSettings={onOpenSettings}
+          onAbort={onAbort}
         />
       ))}
 
@@ -343,6 +803,7 @@ const MessageItem: React.FC<{
   previousUserPrompt?: string;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
+  onAbort?: () => void;
 }> = React.memo(({
   msg,
   isStreaming,
@@ -354,6 +815,7 @@ const MessageItem: React.FC<{
   previousUserPrompt = '',
   onSwitchCliAndRetry,
   onOpenSettings,
+  onAbort,
 }) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
@@ -502,40 +964,28 @@ const MessageItem: React.FC<{
     return { thoughts: t, cleanContent: c, detectedSkills: skillsList };
   }, [msg.content, msg.metadata, isUser]);
 
-  // Friendly summary derivation
-  const summaryBadge = useMemo(() => {
-    if (!thoughts) return null;
-    const filesCount = (thoughts.match(/view_file|edit_file|write_to_file|replace_file/gi) || []).length;
-    const cmdCount = (thoughts.match(/run_command|exec/gi) || []).length;
-    const actionCount = (thoughts.match(/→/g) || []).length || thoughts.split('\n').filter(Boolean).length;
+  // Derive structured steps: from msg.steps, metadata, or legacy thoughts
+  const steps: AgentStep[] = useMemo(() => {
+    if (msg.steps && msg.steps.length > 0) {
+      return msg.steps;
+    }
+    if (msg.metadata) {
+      try {
+        const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+        if (parsed && Array.isArray(parsed.steps) && parsed.steps.length > 0) {
+          return parsed.steps;
+        }
+      } catch {}
+    }
+    if (thoughts) {
+      return parseLegacyThoughtToSteps(thoughts);
+    }
+    return [];
+  }, [msg.steps, msg.metadata, thoughts]);
 
-    if (filesCount > 0 && cmdCount > 0) {
-      return {
-        label: `Inspected ${filesCount} ${filesCount === 1 ? 'file' : 'files'} & executed ${cmdCount} ${cmdCount === 1 ? 'command' : 'commands'}`,
-        count: actionCount,
-        icon: <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />,
-      };
-    }
-    if (filesCount > 0) {
-      return {
-        label: `Checked ${filesCount} ${filesCount === 1 ? 'file' : 'files'}`,
-        count: actionCount,
-        icon: <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />,
-      };
-    }
-    if (cmdCount > 0) {
-      return {
-        label: `Executed ${cmdCount} terminal ${cmdCount === 1 ? 'command' : 'commands'}`,
-        count: actionCount,
-        icon: <Play className="w-3.5 h-3.5 text-amber-400 shrink-0" />,
-      };
-    }
-    return {
-      label: `Explored ${actionCount} ${actionCount === 1 ? 'action' : 'actions'}`,
-      count: actionCount,
-      icon: <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />,
-    };
-  }, [thoughts]);
+  const activeStep = useMemo(() => {
+    return steps.find((s) => s.status === 'running') || null;
+  }, [steps]);
 
   // Text that should be copied when clicking copy
   const textToCopy = spendCapInfo.isSpendCap ? spendCapInfo.message : cleanContent || (thoughts ? thoughts : msg.content);
@@ -543,8 +993,8 @@ const MessageItem: React.FC<{
   // Fallback friendly message if assistant completed actions with no explicit closing text
   const displayContent =
     cleanContent ||
-    (!isStreaming && !isUser && thoughts
-      ? `Completed workspace steps and prepared updates.`
+    (!isStreaming && !isUser && (steps.length > 0 || thoughts)
+      ? `Completed ${steps.length > 0 ? `${steps.length} ` : ''}workspace actions and finished tasks.`
       : '');
 
   return (
@@ -577,43 +1027,14 @@ const MessageItem: React.FC<{
             : 'items-start w-full min-[1200px]:max-w-[92%]'
         }`}
       >
-        {/* Friendly Natural Summary Pill for Thoughts & Actions */}
-        {thoughts && summaryBadge && !spendCapInfo.isSpendCap && (
-          <div className="mb-1 w-full min-w-0 flex flex-col items-start">
-            <button
-              type="button"
-              onClick={() => setShowThoughts(!showThoughts)}
-              className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
-            >
-              {summaryBadge.icon}
-              <span className="text-cozy-text truncate">{summaryBadge.label}</span>
-              <span className="px-2 py-0.2 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[10px] font-semibold shrink-0">
-                {summaryBadge.count} {summaryBadge.count === 1 ? 'step' : 'steps'}
-              </span>
-              {showThoughts ? (
-                <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
-              )}
-            </button>
-            {showThoughts && (
-              <div className="group/thought relative mt-2 w-full p-4 sm:p-5 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 text-xs font-mono text-cozy-muted whitespace-pre-wrap max-h-60 overflow-y-auto pr-10 shadow-soft-inner leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 animate-in fade-in duration-150">
-                {thoughts}
-                <button
-                  type="button"
-                  onClick={() => handleCopyText('thought', thoughts!)}
-                  className="absolute top-2.5 right-2.5 p-1 rounded-lg bg-cozy-subtle/90 hover:bg-cozy-surface text-cozy-muted opacity-0 group-hover/thought:opacity-100 transition-opacity hover:text-teal-500 shadow-soft-sm cursor-pointer"
-                  title={copiedTarget === 'thought' ? 'Copied!' : 'Copy actions log'}
-                >
-                  {copiedTarget === 'thought' ? (
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
+        {/* Agent Activity Timeline & Steps (Both streaming & completed) */}
+        {!isUser && steps.length > 0 && !spendCapInfo.isSpendCap && (
+          <AgentActivityView
+            steps={steps}
+            isStreaming={isStreaming}
+            onAbort={onAbort}
+            onCopyAll={(text) => handleCopyText('thought', text)}
+          />
         )}
 
         <div
@@ -782,13 +1203,22 @@ const MessageItem: React.FC<{
           ) : displayContent ? (
             <MarkdownView content={displayContent} isStreaming={isStreaming} className="text-cozy-text font-sans min-w-0" />
           ) : isStreaming ? (
-            <div className="flex items-center gap-2 text-xs text-teal-600 dark:text-teal-400 font-medium py-1 animate-pulse">
-              <Cpu className="w-4 h-4 text-teal-500 shrink-0" />
-              <span>
-                {summaryBadge
-                  ? `Executing actions... (${summaryBadge.count} completed)`
-                  : 'Inspecting repository and planning actions...'}
-              </span>
+            <div className="flex items-center justify-between gap-2 text-xs text-teal-600 dark:text-teal-400 font-medium py-1">
+              <div className="flex items-center gap-2 min-w-0 animate-pulse">
+                <Loader2 className="w-4 h-4 text-teal-500 animate-spin shrink-0" />
+                <span className="truncate">
+                  {activeStep
+                    ? `Running: ${activeStep.title}`
+                    : steps.length > 0
+                    ? `Completed ${steps.length} actions, finalizing response...`
+                    : 'Inspecting workspace and planning actions...'}
+                </span>
+              </div>
+              {activeStep?.startTime && (
+                <span className="font-mono text-[11px] text-teal-500/80 shrink-0">
+                  <LiveElapsedTimer startTime={activeStep.startTime} />
+                </span>
+              )}
             </div>
           ) : null}
 
