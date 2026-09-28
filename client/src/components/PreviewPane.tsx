@@ -394,8 +394,14 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
   const handleCaptureScreenshot = async () => {
     if (isCapturing || !previewContainerRef.current) return;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      setCaptureError('Screen capture is not supported in this browser environment.');
-      setTimeout(() => setCaptureError(null), 5000);
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        setCaptureError(
+          'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
+        );
+      } else {
+        setCaptureError('Screen capture is not supported in this browser environment.');
+      }
+      setTimeout(() => setCaptureError(null), 6000);
       return;
     }
 
