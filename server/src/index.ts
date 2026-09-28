@@ -36,7 +36,12 @@ app.use(express.json());
 
 let tailscaleServeInfo: TailscaleServeResult | null = null;
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3301;
+const isDev =
+  process.env.NODE_ENV !== 'production' &&
+  !process.env.RAFT_PRODUCTION &&
+  process.env.npm_lifecycle_event !== 'start';
+const defaultPort = isDev ? 3301 : 3300;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : defaultPort;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -2265,9 +2270,8 @@ if (!isTestEnv) {
 
       const enableServe = process.env.RAFT_TAILSCALE_SERVE !== '0' && process.env.RAFT_TAILSCALE_SERVE !== 'false';
       if (enableServe) {
-        const isDev = process.env.NODE_ENV !== 'production' && !process.env.RAFT_PRODUCTION;
         const envPort = process.env.RAFT_TAILSCALE_PORT ? parseInt(process.env.RAFT_TAILSCALE_PORT, 10) : undefined;
-        // In dev mode, client runs on port 3300; in production, server serves client on PORT (3301)
+        // In dev mode, client runs on port 3300; in production, server serves client on PORT (3300)
         const targetPort = envPort || (isDev ? 3300 : PORT);
         tailscaleServeInfo = setupTailscaleServe(targetPort);
         if (tailscaleServeInfo.enabled && tailscaleServeInfo.httpsUrl) {

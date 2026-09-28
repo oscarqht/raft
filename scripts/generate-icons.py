@@ -38,7 +38,6 @@ def generate():
         (64, 64, 'src-tauri/icons/64x64.png'),
         (128, 128, 'src-tauri/icons/128x128.png'),
         (256, 256, 'src-tauri/icons/128x128@2x.png'),
-        (44, 44, 'src-tauri/icons/tray-icon.png'),
         (30, 30, 'src-tauri/icons/Square30x30Logo.png'),
         (44, 44, 'src-tauri/icons/Square44x44Logo.png'),
         (71, 71, 'src-tauri/icons/Square71x71Logo.png'),
@@ -54,6 +53,16 @@ def generate():
     for tw, th, out in png_sizes:
         scaled = master.resize((tw, th), Image.Resampling.LANCZOS)
         scaled.save(out)
+
+    # Tray icon (prefer dedicated assets/tray-icon.png if present)
+    tray_src_path = 'assets/tray-icon.png'
+    if os.path.exists(tray_src_path):
+        tray_src = Image.open(tray_src_path).convert('RGBA')
+        tray_scaled = tray_src.resize((44, 44), Image.Resampling.LANCZOS)
+        tray_scaled.save('src-tauri/icons/tray-icon.png')
+    else:
+        scaled = master.resize((44, 44), Image.Resampling.LANCZOS)
+        scaled.save('src-tauri/icons/tray-icon.png')
 
     # Windows ICO
     ico_sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]

@@ -238,7 +238,7 @@ pub fn setup_tray(
         .rsplit(':')
         .next()
         .and_then(|p| p.split('/').next())
-        .unwrap_or("3301");
+        .unwrap_or("3300");
     let local_url = format!("http://localhost:{port_part}");
     let url_for_browser = if is_tailscale { local_url } else { server_url.clone() };
 
@@ -247,7 +247,8 @@ pub fn setup_tray(
     let url_for_copy = server_url.clone();
     let autostart_item_clone = autostart_item.clone();
 
-    let icon_image = app.default_window_icon().cloned().unwrap();
+    let icon_image = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
+        .unwrap_or_else(|_| app.default_window_icon().cloned().unwrap());
 
     #[allow(unused_mut)]
     let mut tray_builder = TrayIconBuilder::new()
