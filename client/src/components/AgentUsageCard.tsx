@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AgentUsageSnapshot, CliInfo } from '../types';
 import { getAllAgentUsages } from '../api';
+import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
 
 interface AgentUsageCardProps {
   activeCli: string;
@@ -23,24 +24,54 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
   activeCli,
   clis,
 }) => {
-  const [usages, setUsages] = useState<Record<string, AgentUsageSnapshot>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [usages, setUsages] = useState<Record<string, AgentUsageSnapshot>>(() => {
+    return getCachedAgentUsages() || {};
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    const cached = getCachedAgentUsages();
+    return !cached || Object.keys(cached).length === 0;
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedBrew, setCopiedBrew] = useState(false);
+  const isMountedRef = React.useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const loadAllUsages = useCallback(async (refresh = false) => {
     try {
-      if (refresh) setIsRefreshing(true);
-      else setIsLoading(true);
+      if (refresh) {
+        setIsRefreshing(true);
+      } else {
+        const cached = getCachedAgentUsages();
+        if (!cached || Object.keys(cached).length === 0) {
+          setIsLoading(true);
+        } else {
+          setIsRefreshing(true);
+        }
+      }
       setError(null);
       const data = await getAllAgentUsages(refresh);
-      setUsages(data);
+      if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+        setCachedAgentUsages(data);
+        if (isMountedRef.current) {
+          setUsages(data);
+        }
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch AI agent usage');
+      if (isMountedRef.current) {
+        setError(err.message || 'Failed to fetch AI agent usage');
+      }
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, []);
 
@@ -109,7 +140,7 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
   return (
     <div className="space-y-4 pt-1">
       {/* Loading state */}
-      {isLoading && !currentSnapshot && (
+      {(isLoading || isRefreshing) && !currentSnapshot && (
         <div className="p-6 rounded-2xl bg-cozy-subtle/30 border border-cozy-border/70 flex flex-col items-center justify-center gap-2.5 text-center">
           <RefreshCw className="w-5 h-5 text-teal-500 animate-spin" />
           <div className="text-xs font-medium text-cozy-muted">
@@ -207,7 +238,14 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
               </button>
 
               <span className="text-[11px] text-cozy-muted/80">
-                Updated {new Date(currentSnapshot.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {isRefreshing ? (
+                  <span className="text-teal-500 flex items-center gap-1 font-medium">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                    Fetching latest...
+                  </span>
+                ) : (
+                  `Updated ${new Date(currentSnapshot.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                )}
               </span>
 
               {isSelectedCliReady ? (
