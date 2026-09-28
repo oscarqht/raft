@@ -6,9 +6,9 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 
-import { db, getSetting, setSetting, getAllGitAccounts, getGitAccountById, insertGitAccount, deleteGitAccountById } from './db.js';
+import { db, getSetting, setSetting, getAllGitAccounts, getGitAccountById, insertGitAccount, deleteGitAccountById, findGitAccountForRemote } from './db.js';
 import { GitService } from './gitService.js';
 import {
   getAvailableClis,
@@ -299,6 +299,27 @@ app.post('/api/git-accounts', (req: Request, res: Response) => {
     host: accountHost,
     created_at,
   });
+
+  try {
+    const projects = db.prepare('SELECT path FROM projects').all() as { path: string }[];
+    for (const proj of projects) {
+      if (fs.existsSync(proj.path)) {
+        try {
+          const remoteUrl = execSync('git config --get remote.origin.url', {
+            cwd: proj.path,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim();
+          if (remoteUrl) {
+            const matched = findGitAccountForRemote(remoteUrl, username);
+            if (matched && matched.token) {
+              GitService.configureRepoCredentials(proj.path, remoteUrl, matched.token, matched.username);
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
 
   res.json({
     id,
@@ -634,6 +655,21 @@ app.post('/api/projects', (req: Request, res: Response) => {
     );
 
     const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
+
+    try {
+      const remoteUrl = execSync('git config --get remote.origin.url', {
+        cwd: projectPath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      if (remoteUrl) {
+        const account = findGitAccountForRemote(remoteUrl);
+        if (account && account.token) {
+          GitService.configureRepoCredentials(projectPath, remoteUrl, account.token, account.username);
+        }
+      }
+    } catch {}
+
     res.json(formatProject(project));
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -637,9 +637,24 @@ export class GitService {
 
   static configureRepoCredentials(repoPath: string, remoteUrl: string, token: string, username = 'git'): void {
     try {
-      const parsed = new URL(remoteUrl);
+      let origin = '';
+      if (remoteUrl.startsWith('http://') || remoteUrl.startsWith('https://')) {
+        const parsed = new URL(remoteUrl);
+        origin = parsed.origin;
+      } else if (remoteUrl.includes('@') && remoteUrl.includes(':')) {
+        const match = remoteUrl.match(/@([^:]+):/);
+        if (match) {
+          origin = `https://${match[1]}`;
+        }
+      }
+      if (!origin) return;
+
       const authBasic = Buffer.from(`${username}:${token}`).toString('base64');
-      execSync(`git config --local http.${parsed.origin}.extraheader "AUTHORIZATION: basic ${authBasic}"`, {
+      try {
+        execSync(`git config --local --unset-all "http.${origin}.extraheader"`, { cwd: repoPath, stdio: 'ignore' });
+        execSync(`git config --local --unset-all "http.${origin}/.extraheader"`, { cwd: repoPath, stdio: 'ignore' });
+      } catch {}
+      execSync(`git config --local "http.${origin}.extraheader" "AUTHORIZATION: basic ${authBasic}"`, {
         cwd: repoPath,
         stdio: ['pipe', 'pipe', 'ignore'],
       });

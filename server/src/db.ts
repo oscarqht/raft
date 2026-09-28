@@ -226,3 +226,96 @@ export function deleteGitAccountById(id: string): boolean {
   return info.changes > 0;
 }
 
+export function getGitAccountsWithTokens(): GitAccountRow[] {
+  return db.prepare('SELECT id, provider, name, username, avatar_url, token, host, created_at FROM git_accounts ORDER BY created_at ASC').all() as GitAccountRow[];
+}
+
+export function findGitAccountForRemote(remoteUrl: string, detectedUsername?: string): GitAccountRow | undefined {
+  if (!remoteUrl) return undefined;
+  const accounts = getGitAccountsWithTokens();
+  if (accounts.length === 0) return undefined;
+
+  let remoteHost = '';
+  let remoteUserInUrl = '';
+  let remoteOwner = '';
+
+  if (remoteUrl.includes('://')) {
+    try {
+      const parsed = new URL(remoteUrl);
+      remoteHost = parsed.hostname.toLowerCase();
+      remoteUserInUrl = parsed.username || '';
+      const pathParts = parsed.pathname.split('/').filter(Boolean);
+      if (pathParts.length > 0) {
+        remoteOwner = pathParts[0];
+      }
+    } catch {}
+  } else if (remoteUrl.includes('@') && remoteUrl.includes(':')) {
+    const match = remoteUrl.match(/@([^:]+):([^/]+)/);
+    if (match) {
+      remoteHost = match[1].toLowerCase();
+      remoteOwner = match[2];
+    }
+  }
+
+  const extractHost = (hostOrUrl: string, defaultHost: string): string => {
+    if (!hostOrUrl) return defaultHost;
+    try {
+      const withProto = hostOrUrl.includes('://') ? hostOrUrl : `https://${hostOrUrl}`;
+      return new URL(withProto).hostname.toLowerCase();
+    } catch {
+      return hostOrUrl.toLowerCase().trim();
+    }
+  };
+
+  let bestMatch: GitAccountRow | undefined;
+  let bestScore = -1;
+
+  for (const account of accounts) {
+    if (!account.token) continue;
+    const defaultHost = account.provider === 'github' ? 'github.com' : 'gitlab.com';
+    const accHost = extractHost(account.host, defaultHost);
+
+    let hostMatches = false;
+    if (remoteHost && accHost) {
+      hostMatches = remoteHost === accHost || remoteHost.endsWith('.' + accHost) || accHost.endsWith('.' + remoteHost);
+    } else if (account.provider === 'github' && remoteUrl.toLowerCase().includes('github.com')) {
+      hostMatches = true;
+    } else if (account.provider === 'gitlab' && remoteUrl.toLowerCase().includes('gitlab.com')) {
+      hostMatches = true;
+    }
+
+    if (!hostMatches) continue;
+
+    let score = 10;
+    const accUser = account.username?.toLowerCase() || '';
+
+    if (detectedUsername && accUser === detectedUsername.toLowerCase()) {
+      score += 100;
+    }
+    if (remoteUserInUrl && accUser === remoteUserInUrl.toLowerCase()) {
+      score += 60;
+    }
+    if (remoteOwner && accUser === remoteOwner.toLowerCase()) {
+      score += 40;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = account;
+    }
+  }
+
+  // Fallback: If only 1 account exists with a token and remote host matches provider
+  if (!bestMatch && accounts.length === 1 && accounts[0].token) {
+    const single = accounts[0];
+    if (single.provider === 'github' && remoteUrl.toLowerCase().includes('github.com')) {
+      return single;
+    }
+    if (single.provider === 'gitlab' && remoteUrl.toLowerCase().includes('gitlab.com')) {
+      return single;
+    }
+  }
+
+  return bestMatch;
+}
+

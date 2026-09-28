@@ -2,7 +2,7 @@ import { spawn, execSync, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { db } from './db.js';
+import { db, findGitAccountForRemote } from './db.js';
 import { GitService, sanitizeBranchName } from './gitService.js';
 
 export interface CliInstallGuide {
@@ -1818,24 +1818,85 @@ export function runSubmitAgent(
       if (isKilled) return;
 
       // 3. Push branch to remote origin
+      let remoteUrl = '';
+      try {
+        remoteUrl = execSync('git config --get remote.origin.url', {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+      } catch {}
+
+      if (!remoteUrl) {
+        try {
+          const remotes = execSync('git remote', {
+            cwd: worktreePath,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+          if (remotes.length > 0) {
+            remoteUrl = execSync(`git config --get remote.${remotes[0]}.url`, {
+              cwd: worktreePath,
+              encoding: 'utf-8',
+              stdio: ['pipe', 'pipe', 'ignore'],
+            }).trim();
+          }
+        } catch {}
+      }
+
       const detectedUser = detectGitUsername(worktreePath);
+      let gitAccount: any;
+      try {
+        gitAccount = findGitAccountForRemote(remoteUrl, detectedUser);
+      } catch {}
+
       const pushArgs = ['push'];
-      if (detectedUser) {
+      let tokenToMask = '';
+
+      if (gitAccount && gitAccount.token) {
+        tokenToMask = gitAccount.token;
+        const userToAuth = gitAccount.username || detectedUser || 'git';
+        const authBasic = Buffer.from(`${userToAuth}:${gitAccount.token}`).toString('base64');
+        pushArgs.unshift('-c', `http.extraheader=AUTHORIZATION: basic ${authBasic}`);
+        if (userToAuth) {
+          pushArgs.unshift('-c', `credential.username=${userToAuth}`);
+        }
+        if (remoteUrl) {
+          GitService.configureRepoCredentials(worktreePath, remoteUrl, gitAccount.token, userToAuth);
+        }
+      } else if (detectedUser) {
         pushArgs.unshift('-c', `credential.username=${detectedUser}`);
       }
+
       pushArgs.push('-u', 'origin', branchName);
 
-      emit({ type: 'thought', content: `→ Run: git ${pushArgs.join(' ')}\n` });
+      // Safe display command omitting authorization headers
+      const displayArgs = pushArgs.filter((arg, idx, arr) => {
+        if (arg.startsWith('http.extraheader=')) return false;
+        if (idx > 0 && arr[idx - 1] === '-c' && arg.startsWith('http.extraheader=')) return false;
+        if (arg === '-c' && idx + 1 < arr.length && arr[idx + 1].startsWith('http.extraheader=')) return false;
+        return true;
+      });
+
+      emit({ type: 'thought', content: `→ Run: git ${displayArgs.join(' ')}\n` });
+
+      const sanitize = (text: string) => {
+        if (!tokenToMask) return text;
+        return text.replaceAll(tokenToMask, '***');
+      };
 
       await new Promise<void>((resolve, reject) => {
         const proc = spawn('git', pushArgs, {
           cwd: worktreePath,
-          env: getCrossPlatformEnv(),
+          env: {
+            ...getCrossPlatformEnv(),
+            GIT_TERMINAL_PROMPT: '0',
+          },
           shell: false,
         });
         currentChild = proc;
-        proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: d.toString('utf-8') }));
-        proc.stderr?.on('data', (d) => emit({ type: 'chunk', content: d.toString('utf-8') }));
+        proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
+        proc.stderr?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
         proc.on('close', (code) => {
           if (code === 0) resolve();
           else reject(new Error(`git push failed with exit code ${code}`));
@@ -1848,7 +1909,17 @@ export function runSubmitAgent(
       emit({ type: 'status', content: `\n✓ Successfully pushed branch "${branchName}" to origin!\n` });
       emit({ type: 'done', content: `\nSubmission completed successfully.\n` });
     } catch (err: any) {
-      emit({ type: 'error', content: `\n${err?.message || String(err)}\n` });
+      let errorMsg = err?.message || String(err);
+      if (
+        errorMsg.includes('Authentication failed') ||
+        errorMsg.includes('could not read') ||
+        errorMsg.includes('Password') ||
+        errorMsg.includes('terminal prompts disabled') ||
+        errorMsg.includes('Device not configured')
+      ) {
+        errorMsg += '\nTip: Please verify that a valid Personal Access Token (PAT) with repo/write permissions is configured in Settings > Linked Git Accounts.';
+      }
+      emit({ type: 'error', content: `\n${errorMsg}\n` });
     }
   })();
 
