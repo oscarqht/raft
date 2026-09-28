@@ -112,13 +112,49 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   // Listen for externally added pending attachments (e.g. from Preview Annotation)
   useEffect(() => {
     const handleExternalAttachments = (e: Event) => {
-      const customEvent = e as CustomEvent<FileAttachment[]>;
-      if (customEvent.detail && Array.isArray(customEvent.detail) && customEvent.detail.length > 0) {
-        setPendingAttachments((prev) => [...prev, ...customEvent.detail]);
-        setTimeout(() => {
-          textareaRef.current?.focus();
-        }, 80);
+      const customEvent = e as CustomEvent<
+        FileAttachment[] | { attachments?: FileAttachment[]; url?: string }
+      >;
+      let incomingAttachments: FileAttachment[] = [];
+      let url: string | undefined;
+
+      if (Array.isArray(customEvent.detail)) {
+        incomingAttachments = customEvent.detail;
+      } else if (customEvent.detail && typeof customEvent.detail === 'object') {
+        if (Array.isArray(customEvent.detail.attachments)) {
+          incomingAttachments = customEvent.detail.attachments;
+        }
+        if (typeof customEvent.detail.url === 'string') {
+          url = customEvent.detail.url;
+        }
       }
+
+      if (incomingAttachments.length > 0) {
+        setPendingAttachments((prev) => [...prev, ...incomingAttachments]);
+      }
+
+      if (url) {
+        const targetUrl = url.trim();
+        if (targetUrl) {
+          setInputPrompt((prev) => {
+            if (prev.includes(targetUrl)) {
+              return prev;
+            }
+            if (!prev || !prev.trim()) {
+              return `${targetUrl}\n`;
+            }
+            return `${prev.trimEnd()}\n${targetUrl}`;
+          });
+        }
+      }
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const length = textareaRef.current.value.length;
+          textareaRef.current.setSelectionRange(length, length);
+        }
+      }, 80);
     };
     window.addEventListener('add-pending-attachments', handleExternalAttachments);
     return () => window.removeEventListener('add-pending-attachments', handleExternalAttachments);

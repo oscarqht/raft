@@ -15,7 +15,7 @@ const RETRY_INTERVAL_MS = 1000; // 1s
 interface PreviewPaneProps {
   task: Task;
   ws: WebSocket | null;
-  onAttachToChat?: (attachments: FileAttachment[]) => void;
+  onAttachToChat?: (attachments: FileAttachment[], url?: string) => void;
 }
 
 export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToChat }) => {
@@ -81,6 +81,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     dataUrl: string;
     width: number;
     height: number;
+    url?: string;
   } | null>(null);
 
   // Dev server connection readiness polling states
@@ -535,12 +536,14 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
       // NOTE: Intentionally keep track and stream active in captureStreamRef for persistent session reuse!
 
+      const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
       const rawDataUrl = canvas.toDataURL('image/png');
       const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
       setActiveScreenshot({
         dataUrl: borderedDataUrl,
         width: cropW,
         height: cropH,
+        url: currentPath,
       });
     } catch (err: any) {
       if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
@@ -553,12 +556,22 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
+  const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
+
   const handleAttachToChat = (attachments: FileAttachment[]) => {
+    const screenshotUrl = activeScreenshot?.url || currentPath;
     setActiveScreenshot(null);
     if (onAttachToChat) {
-      onAttachToChat(attachments);
+      onAttachToChat(attachments, screenshotUrl);
     } else {
-      window.dispatchEvent(new CustomEvent('add-pending-attachments', { detail: attachments }));
+      window.dispatchEvent(
+        new CustomEvent('add-pending-attachments', {
+          detail: {
+            attachments,
+            url: screenshotUrl,
+          },
+        })
+      );
     }
   };
 
@@ -567,7 +580,6 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
   const previewHostname = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? window.location.hostname
     : 'localhost';
-  const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
   const iframeSrc = `http://${previewHostname}:${activeProxyPort}${currentPath}`;
   const externalUrl = `http://${previewHostname}:${activeDevPort}${currentPath}`;
 

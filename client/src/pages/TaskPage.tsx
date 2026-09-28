@@ -227,8 +227,12 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             <PreviewPane
               task={task}
               ws={ws}
-              onAttachToChat={(attachments) => {
-                window.dispatchEvent(new CustomEvent('add-pending-attachments', { detail: attachments }));
+              onAttachToChat={(attachments, url) => {
+                window.dispatchEvent(
+                  new CustomEvent('add-pending-attachments', {
+                    detail: { attachments, url },
+                  })
+                );
                 setMobileTab('chat');
               }}
             />
