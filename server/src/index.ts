@@ -1060,7 +1060,14 @@ app.post('/api/tasks/:taskId/scripts/run', (req: Request, res: Response) => {
 
   const trimmedCmd = command.trim();
   const scriptName = name?.trim() || trimmedCmd;
-  const worktreePath = task.worktree_path || project?.path;
+  const worktreePath = project?.path
+    ? GitService.ensureWorktree(
+        project.path,
+        task.worktree_path,
+        task.branch,
+        task.base_branch || project.branch_convention || 'main'
+      )
+    : (task.worktree_path || project?.path);
 
   // Optionally save to project custom scripts
   if (saveToProject && project) {
@@ -1288,6 +1295,24 @@ app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const force = req.query.force === '1' || req.query.force === 'true';
+
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+  const effectiveWorktreePath = project?.path
+    ? GitService.ensureWorktree(
+        project.path,
+        task.worktree_path,
+        task.branch,
+        task.base_branch || project.branch_convention || 'main'
+      )
+    : task.worktree_path;
+
+  if (effectiveWorktreePath && effectiveWorktreePath !== task.worktree_path) {
+    try {
+      db.prepare('UPDATE tasks SET worktree_path = ? WHERE id = ?').run(effectiveWorktreePath, task.id);
+      task.worktree_path = effectiveWorktreePath;
+    } catch {}
+  }
+
   const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
   const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
   const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
@@ -2007,7 +2032,24 @@ wss.on('connection', (ws: WebSocket) => {
           effectiveAgentPrompt = `${prompt}\n\n[Attached files in workspace:\n${attachmentLines.join('\n')}\nYou can inspect, read, or process these files directly in the repository workspace.]`;
         }
 
-        let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, task.worktree_path);
+        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+        const effectiveWorktreePath = project?.path
+          ? GitService.ensureWorktree(
+              project.path,
+              task.worktree_path,
+              task.branch,
+              task.base_branch || project.branch_convention || 'main'
+            )
+          : task.worktree_path;
+
+        if (effectiveWorktreePath && effectiveWorktreePath !== task.worktree_path) {
+          try {
+            db.prepare('UPDATE tasks SET worktree_path = ? WHERE id = ?').run(effectiveWorktreePath, task.id);
+            task.worktree_path = effectiveWorktreePath;
+          } catch {}
+        }
+
+        let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, effectiveWorktreePath);
         let promptForAgy = effectivePrompt;
 
         // If not resuming a native CLI session, provide conversational history fallback
@@ -2145,7 +2187,7 @@ wss.on('connection', (ws: WebSocket) => {
           }
         };
 
-        const proc = spawnAgentCli(cliToUse, args, task.worktree_path, (ev: StreamEvent) => {
+        const proc = spawnAgentCli(cliToUse, args, effectiveWorktreePath, (ev: StreamEvent) => {
           // If a conversation ID was detected from the CLI stream, persist it to chat_sessions once
           if (ev.conversationId && ev.conversationId !== persistedCliSessionId) {
             persistedCliSessionId = ev.conversationId;

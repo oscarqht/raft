@@ -1,4 +1,5 @@
 import { spawn, execSync, ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -980,6 +981,24 @@ export function spawnAgentCli(
   const isWin = process.platform === 'win32';
   const isScript = cliPath.endsWith('.cmd') || cliPath.endsWith('.bat');
 
+  if (!cwd || !fs.existsSync(cwd)) {
+    const errorMsg = `Cannot start ${cliName}: working directory "${cwd}" does not exist on disk.`;
+    const dummyProc = new EventEmitter() as ChildProcess;
+    (dummyProc as any).stdin = { end: () => {} };
+    (dummyProc as any).stdout = new EventEmitter();
+    (dummyProc as any).stderr = new EventEmitter();
+    (dummyProc as any).kill = () => false;
+
+    setImmediate(() => {
+      onEvent({ type: 'error', content: errorMsg });
+      onEvent({ type: 'done', content: `\nProcess aborted: ${errorMsg}\n`, metadata: { code: 1 } });
+      dummyProc.emit('error', new Error(errorMsg));
+      dummyProc.emit('close', 1);
+    });
+
+    return dummyProc;
+  }
+
   const proc = spawn(cliPath, args, {
     cwd,
     env,
@@ -1233,7 +1252,15 @@ export function spawnAgentCli(
   });
 
   proc.on('error', (err) => {
-    onEvent({ type: 'error', content: err.message });
+    let msg = err.message;
+    if ((err as any).code === 'ENOENT' || msg.includes('ENOENT')) {
+      if (!fs.existsSync(cwd)) {
+        msg = `Working directory "${cwd}" does not exist on disk.`;
+      } else if (!fs.existsSync(cliPath)) {
+        msg = `Agent CLI "${cliName}" binary not found at "${cliPath}".`;
+      }
+    }
+    onEvent({ type: 'error', content: msg });
   });
 
   return proc;

@@ -658,6 +658,73 @@ export class GitService {
     }
   }
 
+  /**
+   * Ensures that a task's worktree exists on disk.
+   * If it was pruned or deleted, attempts to recreate it from git.
+   * Falls back to repoRoot if recreation is not possible.
+   */
+  static ensureWorktree(repoRoot: string, worktreePath: string, branch: string, baseBranch?: string): string {
+    if (worktreePath && fs.existsSync(worktreePath)) {
+      return worktreePath;
+    }
+
+    if (!repoRoot || !fs.existsSync(repoRoot)) {
+      return worktreePath;
+    }
+
+    const safeBaseBranch = baseBranch || 'main';
+    const safeBranch = branch || sanitizeBranchName(path.basename(worktreePath));
+    const targetPath = worktreePath || path.resolve(repoRoot, '.worktrees', safeBranch);
+    const gitPath = targetPath.replace(/\\/g, '/');
+
+    try {
+      // 1. Prune any stale worktree registrations
+      try {
+        execSync('git worktree prune', { cwd: repoRoot, stdio: 'ignore' });
+      } catch {}
+
+      // 2. Ensure parent directory exists
+      const parentDir = path.dirname(targetPath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+
+      // 3. Check if the branch exists locally in git
+      let branchExists = false;
+      try {
+        execSync(`git show-ref --verify --quiet "refs/heads/${safeBranch}"`, {
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+        branchExists = true;
+      } catch {}
+
+      if (branchExists) {
+        // Worktree checkout existing branch
+        execSync(`git worktree add "${gitPath}" "${safeBranch}"`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      } else {
+        // Create new branch from baseBranch
+        execSync(`git worktree add -b "${safeBranch}" "${gitPath}" "${safeBaseBranch}"`, {
+          cwd: repoRoot,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+        });
+      }
+
+      if (fs.existsSync(targetPath)) {
+        return targetPath;
+      }
+    } catch (err: any) {
+      console.warn(`[GitService] Notice: Could not restore worktree "${targetPath}": ${err?.message || err}`);
+    }
+
+    return fs.existsSync(targetPath) ? targetPath : repoRoot;
+  }
+
   static getUnpushedCommits(cwd: string, branch?: string, baseBranch?: string): { hash: string; message: string }[] {
     const getLog = (revRange: string) => {
       try {
