@@ -182,6 +182,7 @@ export interface AgentSkill {
   source: 'workspace' | 'global' | 'built-in';
   cli: string;
   filePath?: string;
+  content?: string;
 }
 
 export interface GitAccount {

@@ -771,11 +771,30 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
     const currentAttachments = [...pendingAttachments];
 
+    const matchedActiveSkills = skills.filter((s) => {
+      const textWithoutUrls = prompt.replace(/https?:\/\/[^\s]+/g, ' ');
+      const regex = new RegExp(`/(?:^|[^\\w/])/${s.name}(?=[^\\w]|$)`, 'i');
+      return regex.test(textWithoutUrls) || textWithoutUrls.toLowerCase().includes(`/${s.name.toLowerCase()}`);
+    });
+
+    const optimisticMetadata =
+      matchedActiveSkills.length > 0 || currentAttachments.length > 0
+        ? JSON.stringify({
+            attachments: currentAttachments,
+            skills: matchedActiveSkills.map((s) => ({
+              name: s.name,
+              description: s.description,
+              content: s.content,
+            })),
+          })
+        : undefined;
+
     const optimisticUserMessage: ChatMessage = {
       id: newMsgId,
       session_id: activeChatId,
       role: 'user',
       content: prompt,
+      metadata: optimisticMetadata,
       attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
       timestamp: now,
     };

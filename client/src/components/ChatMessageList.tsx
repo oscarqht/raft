@@ -19,6 +19,78 @@ export function stripAnsi(text: string): string {
   return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
 }
 
+export interface DetectedSkillChip {
+  name: string;
+  description?: string;
+  content?: string;
+}
+
+export const KNOWN_SKILL_DETAILS: Record<string, { description?: string; content?: string }> = {
+  'grill-me': {
+    description: 'Interview me to align on a plan.',
+    content: `<GRILL_ME>
+The user has requested that you interview them about every aspect of their task until you've reached a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
+
+Guidelines:
+- Ask the questions one at a time.
+- If a question can be answered by exploring the codebase, explore the codebase instead.
+- If an ask_question tool is available, use it; otherwise ask directly in your response.
+</GRILL_ME>`,
+  },
+  'plan': {
+    description: 'Plan carefully before executing a task.',
+    content: `<PLAN>
+The user has requested that you create a structured, step-by-step implementation plan before modifying any code.
+Inspect the relevant files, identify dependencies, evaluate potential risks, and design the solution. Present the plan clearly with phases and verification steps before proceeding.
+</PLAN>`,
+  },
+  'goal': {
+    description: 'Run until the specified goal is completely finished.',
+    content: `<GOAL>
+The user has marked this task with /goal, indicating that this task is intended to run until the specified goal is completely fulfilled.
+Be extra thorough, verify every step, run all relevant tests, and only stop when you are confident the goal has been fully achieved.
+</GOAL>`,
+  },
+  'schedule': {
+    description: 'Run an instruction on a recurring schedule or as a one-time timer.',
+    content: `<SCHEDULE>
+The user has requested that you run an instruction on a recurring schedule or as a one-time timer.
+Use available scheduling or timer tools to configure the desired schedule or timer.
+</SCHEDULE>`,
+  },
+  'browser': {
+    description: 'Invoke a browser agent for web tasks.',
+    content: `<BROWSER>
+The user has requested to invoke a browser agent or web automation tools. Use browser navigation tools to inspect pages, extract web content, or test web applications.
+</BROWSER>`,
+  },
+  'learn': {
+    description: 'Reflect on recent successes or corrections to capture reusable skills or rules.',
+    content: `<LEARN>
+Reflect on recent interactions, successes, errors, or corrections in this session to capture reusable skills, conventions, or rules for future tasks.
+</LEARN>`,
+  },
+  'btw': {
+    description: 'Ask a quick question without interrupting the main conversation.',
+    content: `<BTW>
+The user is asking a quick side question without wanting to interrupt or derail the main conversation. Provide a direct, concise answer.
+</BTW>`,
+  },
+  'review': {
+    description: 'Review staged or working tree changes with automated feedback.',
+  },
+  'init': {
+    description: 'Initialize configuration and guidelines for this repository.',
+  },
+  'doctor': {
+    description: 'Diagnose installation, configuration, and environment.',
+  },
+  'commit': {
+    description: 'Generate high-quality commit message and commit changes.',
+  },
+};
+
+
 export interface SpendCapInfo {
   isSpendCap: boolean;
   title: string;
@@ -285,6 +357,7 @@ const MessageItem: React.FC<{
 }) => {
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
+  const [expandedSkillName, setExpandedSkillName] = useState<string | null>(null);
   const [copiedTarget, setCopiedTarget] = useState<'msg' | 'thought' | null>(null);
 
   const handleCopyText = useCallback((target: 'msg' | 'thought', text: string) => {
@@ -321,8 +394,8 @@ const MessageItem: React.FC<{
   const imageAttachments = useMemo(() => attachments.filter(isImageAttachment), [attachments]);
   const otherAttachments = useMemo(() => attachments.filter((att) => !isImageAttachment(att)), [attachments]);
 
-  // Extract thoughts/actions vs clean response content
-  const { thoughts, cleanContent } = useMemo(() => {
+  // Extract thoughts/actions vs clean response content and skills
+  const { thoughts, cleanContent, detectedSkills } = useMemo(() => {
     let t: string | null = null;
     let c = '';
 
@@ -365,8 +438,69 @@ const MessageItem: React.FC<{
     c = stripAnsi(c);
     if (t) t = stripAnsi(t);
 
-    return { thoughts: t, cleanContent: c };
-  }, [msg.content, isUser]);
+    const skillsList: DetectedSkillChip[] = [];
+    const seen = new Set<string>();
+
+    const addSkill = (name: string, desc?: string, cont?: string) => {
+      const lower = name.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        const fallback = KNOWN_SKILL_DETAILS[lower];
+        skillsList.push({
+          name,
+          description: desc || fallback?.description,
+          content: cont || fallback?.content,
+        });
+      }
+    };
+
+    // 1. From metadata if available
+    if (msg.metadata) {
+      try {
+        const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+        if (parsed && Array.isArray(parsed.skills)) {
+          for (const s of parsed.skills) {
+            if (s && s.name) {
+              addSkill(s.name, s.description, s.content);
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 2. From [Skill Instructions: /<name>]... blocks in c
+    const blockRegex = /\[Skill Instructions:\s*\/([a-zA-Z0-9_\-]+)\]([\s\S]*?)\[End of Skill Instructions\]/g;
+    let bm: RegExpExecArray | null;
+    while ((bm = blockRegex.exec(c)) !== null) {
+      addSkill(bm[1], undefined, bm[2].trim());
+    }
+
+    // 3. From [Skill: /<name> - <desc>] in c
+    const shortRegex = /\[Skill:\s*\/([a-zA-Z0-9_\-]+)(?:\s*-\s*([^\]]+))?\]/g;
+    let sm: RegExpExecArray | null;
+    while ((sm = shortRegex.exec(c)) !== null) {
+      addSkill(sm[1], sm[2]?.trim());
+    }
+
+    // Strip out expanded skill instruction blocks from displayed text content
+    c = c.replace(/\[Skill Instructions:\s*\/[a-zA-Z0-9_\-]+\][\s\S]*?\[End of Skill Instructions\]/g, '').trim();
+    c = c.replace(/\[Skill:\s*\/[a-zA-Z0-9_\-]+(?:\s*-[^\]]*)?\]/g, '').trim();
+
+    // 4. If no skills found yet from metadata or instruction blocks, check for slash commands in content (e.g. /grill-me)
+    if (skillsList.length === 0) {
+      const textWithoutUrls = c.replace(/https?:\/\/[^\s]+/g, ' ');
+      const slashRegex = /\/([a-zA-Z0-9_\-]+)/g;
+      let m: RegExpExecArray | null;
+      while ((m = slashRegex.exec(textWithoutUrls)) !== null) {
+        const name = m[1].toLowerCase();
+        if (KNOWN_SKILL_DETAILS[name]) {
+          addSkill(name, KNOWN_SKILL_DETAILS[name].description, KNOWN_SKILL_DETAILS[name].content);
+        }
+      }
+    }
+
+    return { thoughts: t, cleanContent: c, detectedSkills: skillsList };
+  }, [msg.content, msg.metadata, isUser]);
 
   // Friendly summary derivation
   const summaryBadge = useMemo(() => {
@@ -489,6 +623,97 @@ const MessageItem: React.FC<{
               : 'bg-cozy-surface/95 dark:bg-[#111b2e]/95 border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
           }`}
         >
+          {/* Active Skills Chips */}
+          {detectedSkills.length > 0 && (
+            <div className="mb-2 w-full">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {detectedSkills.map((skill) => {
+                  const isExpanded = expandedSkillName === skill.name;
+                  const hasDetails = Boolean(skill.content || skill.description);
+                  return (
+                    <button
+                      key={skill.name}
+                      type="button"
+                      onClick={() => {
+                        if (hasDetails) {
+                          setExpandedSkillName(isExpanded ? null : skill.name);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-all shadow-soft-sm select-none ${
+                        isUser
+                          ? isExpanded
+                            ? 'bg-white/30 text-white border border-white/40 ring-1 ring-white/30'
+                            : 'bg-white/15 hover:bg-white/25 text-white border border-white/25'
+                          : isExpanded
+                          ? 'bg-teal-500/20 text-teal-600 dark:text-teal-300 border border-teal-400/50'
+                          : 'bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border/70 hover:border-teal-400/40'
+                      } ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
+                      title={hasDetails ? `Click to ${isExpanded ? 'collapse' : 'inspect'} /${skill.name} instructions` : `/${skill.name}`}
+                    >
+                      <Zap className={`w-3 h-3 ${isUser ? 'text-amber-300' : 'text-amber-500'} shrink-0`} />
+                      <span>/{skill.name}</span>
+                      {hasDetails && (
+                        isExpanded ? (
+                          <ChevronDown className="w-3 h-3 ml-0.5 opacity-80 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3 ml-0.5 opacity-80 shrink-0" />
+                        )
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Collapsible Expanded Skill Instructions Panel */}
+              {expandedSkillName && (() => {
+                const activeSkill = detectedSkills.find((s) => s.name === expandedSkillName);
+                if (!activeSkill) return null;
+                const instructionText = activeSkill.content || activeSkill.description || '';
+                return (
+                  <div
+                    className={`mt-2 rounded-xl p-3 text-xs border shadow-soft-sm leading-relaxed animate-in fade-in duration-150 ${
+                      isUser
+                        ? 'bg-teal-900/80 border-white/20 text-teal-50 shadow-inner'
+                        : 'bg-cozy-subtle/95 border-cozy-border/70 text-cozy-text'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-current/15 mb-2">
+                      <div className="flex items-center gap-1.5 font-semibold min-w-0">
+                        <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span className="shrink-0">/{activeSkill.name}</span>
+                        {activeSkill.description && (
+                          <span className="font-normal opacity-80 text-[11px] truncate">
+                            • {activeSkill.description}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText('thought', instructionText)}
+                          className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 opacity-80 hover:opacity-100 transition-opacity cursor-pointer"
+                          title={copiedTarget === 'thought' ? 'Copied!' : 'Copy instructions'}
+                        >
+                          {copiedTarget === 'thought' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedSkillName(null)}
+                          className="text-[11px] underline opacity-70 hover:opacity-100 cursor-pointer ml-1"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed break-words [overflow-wrap:anywhere] pr-2">
+                      {instructionText}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {isUser ? (
             <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">{displayContent}</div>
           ) : spendCapInfo.isSpendCap ? (

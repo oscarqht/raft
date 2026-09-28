@@ -26,7 +26,7 @@ import {
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
-import { getSkillsForCli, resolveSkillPrompt } from './skillService.js';
+import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
 import { resolveHost } from './tailscale.js';
 import multer from 'multer';
 
@@ -1709,12 +1709,26 @@ wss.on('connection', (ws: WebSocket) => {
           activeChatSessions.get(sessionId)?.abort();
         }
 
+        const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
+
+        // Extract any skills or slash commands present in prompt
+        const matchedSkills = extractMatchedSkills(cliToUse, prompt, task?.worktree_path);
+        const metadataObj: Record<string, any> = {};
+        if (Array.isArray(attachments) && attachments.length > 0) {
+          metadataObj.attachments = attachments;
+        }
+        if (matchedSkills.length > 0) {
+          metadataObj.skills = matchedSkills.map((s) => ({
+            name: s.name,
+            description: s.description,
+            content: s.content,
+          }));
+        }
+        const userMetadata = Object.keys(metadataObj).length > 0 ? JSON.stringify(metadataObj) : null;
+
         // Save user message to database
         const userMsgId = msg.messageId || uuidv4();
         const now = Date.now();
-        const userMetadata = (Array.isArray(attachments) && attachments.length > 0)
-          ? JSON.stringify({ attachments })
-          : null;
 
         db.prepare(`
           INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
@@ -1735,7 +1749,6 @@ wss.on('connection', (ws: WebSocket) => {
           },
         });
 
-        const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
         let modelToUse = model || session.model;
         let effortToUse = thinkingEffort || session.thinking_effort;
 
@@ -1791,7 +1804,7 @@ wss.on('connection', (ws: WebSocket) => {
         }
 
         let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, task.worktree_path);
-        let promptForAgy = effectiveAgentPrompt;
+        let promptForAgy = effectivePrompt;
 
         // If not resuming a native CLI session, provide conversational history fallback
         if (!canResumeCliSession) {
@@ -1802,7 +1815,7 @@ wss.on('connection', (ws: WebSocket) => {
           `).all(sessionId, userMsgId) as Array<{ role: string; content: string }>;
 
           if (prevMessages.length > 0) {
-            promptForAgy = buildConversationContextFallback(prevMessages, effectiveAgentPrompt);
+            promptForAgy = buildConversationContextFallback(prevMessages, effectivePrompt);
             effectivePrompt = buildConversationContextFallback(prevMessages, effectivePrompt);
           }
         }

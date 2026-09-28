@@ -63,46 +63,75 @@ export function parseSkillMarkdown(fileContent: string): { name?: string; descri
 // Built-in slash commands for Antigravity (matching Antigravity app)
 export const AGY_SLASH_COMMANDS: AgentSkill[] = [
   {
-    name: 'btw',
-    description: 'Ask a quick question without interrupting the main conversation.',
+    name: 'grill-me',
+    description: 'Interview me to align on a plan.',
     source: 'built-in',
     cli: 'agy',
-  },
-  {
-    name: 'goal',
-    description: 'Run until the specified goal is completely finished.',
-    source: 'built-in',
-    cli: 'agy',
-  },
-  {
-    name: 'schedule',
-    description: 'Run an instruction on a recurring schedule or as a one-time timer.',
-    source: 'built-in',
-    cli: 'agy',
-  },
-  {
-    name: 'browser',
-    description: 'Invoke a browser agent for web tasks.',
-    source: 'built-in',
-    cli: 'agy',
+    content: `<GRILL_ME>
+The user has requested that you interview them about every aspect of their task until you've reached a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. For each question, provide your recommended answer.
+
+Guidelines:
+- Ask the questions one at a time.
+- If a question can be answered by exploring the codebase, explore the codebase instead.
+- If an ask_question tool is available, use it; otherwise ask directly in your response.
+</GRILL_ME>`,
   },
   {
     name: 'plan',
     description: 'Plan carefully before executing a task.',
     source: 'built-in',
     cli: 'agy',
+    content: `<PLAN>
+The user has requested that you create a structured, step-by-step implementation plan before modifying any code.
+Inspect the relevant files, identify dependencies, evaluate potential risks, and design the solution. Present the plan clearly with phases and verification steps before proceeding.
+</PLAN>`,
   },
   {
-    name: 'grill-me',
-    description: 'Interview me to align on a plan.',
+    name: 'goal',
+    description: 'Run until the specified goal is completely finished.',
     source: 'built-in',
     cli: 'agy',
+    content: `<GOAL>
+The user has marked this task with /goal, indicating that this task is intended to run until the specified goal is completely fulfilled.
+Be extra thorough, verify every step, run all relevant tests, and only stop when you are confident the goal has been fully achieved.
+</GOAL>`,
+  },
+  {
+    name: 'schedule',
+    description: 'Run an instruction on a recurring schedule or as a one-time timer.',
+    source: 'built-in',
+    cli: 'agy',
+    content: `<SCHEDULE>
+The user has requested to run an instruction on a recurring schedule or as a one-time timer.
+Use available scheduling or timer tools to configure the desired schedule or timer.
+</SCHEDULE>`,
+  },
+  {
+    name: 'browser',
+    description: 'Invoke a browser agent for web tasks.',
+    source: 'built-in',
+    cli: 'agy',
+    content: `<BROWSER>
+The user has requested to invoke a browser agent or web automation tools. Use browser navigation tools to inspect pages, extract web content, or test web applications.
+</BROWSER>`,
   },
   {
     name: 'learn',
     description: 'Reflect on recent successes or corrections to capture reusable skills or rules.',
     source: 'built-in',
     cli: 'agy',
+    content: `<LEARN>
+Reflect on recent interactions, successes, errors, or corrections in this session to capture reusable skills, conventions, or rules for future tasks.
+</LEARN>`,
+  },
+  {
+    name: 'btw',
+    description: 'Ask a quick question without interrupting the main conversation.',
+    source: 'built-in',
+    cli: 'agy',
+    content: `<BTW>
+The user is asking a quick side question without wanting to interrupt or derail the main conversation. Provide a direct, concise answer.
+</BTW>`,
   },
 ];
 
@@ -228,6 +257,67 @@ export function discoverAgySkills(worktreePath?: string): AgentSkill[] {
     }
   }
 
+  // 5. Antigravity Plugin skills (~/.gemini/config/plugins)
+  const pluginsDir = path.join(home, '.gemini', 'config', 'plugins');
+  if (fs.existsSync(pluginsDir)) {
+    try {
+      const pluginFolders = fs.readdirSync(pluginsDir, { withFileTypes: true });
+      for (const pFolder of pluginFolders) {
+        if (!pFolder.isDirectory()) continue;
+        const pluginPath = path.join(pluginsDir, pFolder.name);
+
+        // Check if plugin directly has SKILL.md
+        const directSkillPath = path.join(pluginPath, 'SKILL.md');
+        if (fs.existsSync(directSkillPath)) {
+          try {
+            const text = fs.readFileSync(directSkillPath, 'utf-8');
+            const parsed = parseSkillMarkdown(text);
+            const skillName = parsed.name || pFolder.name;
+            if (!skillsMap.has(skillName)) {
+              skillsMap.set(skillName, {
+                name: skillName,
+                description: parsed.description || 'Plugin skill',
+                source: 'global',
+                cli: 'agy',
+                filePath: directSkillPath,
+                content: text,
+              });
+            }
+          } catch {}
+        }
+
+        // Check plugin/skills subfolder
+        const subSkillsDir = path.join(pluginPath, 'skills');
+        if (fs.existsSync(subSkillsDir)) {
+          try {
+            const skillEntries = fs.readdirSync(subSkillsDir, { withFileTypes: true });
+            for (const sEntry of skillEntries) {
+              if (!sEntry.isDirectory()) continue;
+              const skillFilePath = path.join(subSkillsDir, sEntry.name, 'SKILL.md');
+              if (fs.existsSync(skillFilePath)) {
+                try {
+                  const text = fs.readFileSync(skillFilePath, 'utf-8');
+                  const parsed = parseSkillMarkdown(text);
+                  const skillName = parsed.name || sEntry.name;
+                  if (!skillsMap.has(skillName)) {
+                    skillsMap.set(skillName, {
+                      name: skillName,
+                      description: parsed.description || 'Plugin skill',
+                      source: 'global',
+                      cli: 'agy',
+                      filePath: skillFilePath,
+                      content: text,
+                    });
+                  }
+                } catch {}
+              }
+            }
+          } catch {}
+        }
+      }
+    } catch {}
+  }
+
   return Array.from(skillsMap.values());
 }
 
@@ -235,6 +325,13 @@ export function discoverAgySkills(worktreePath?: string): AgentSkill[] {
 export function discoverClaudeSkills(worktreePath?: string): AgentSkill[] {
   const home = os.homedir();
   const skillsMap = new Map<string, AgentSkill>();
+
+  // Include universal slash commands (grill-me, plan, goal, etc.)
+  for (const cmd of AGY_SLASH_COMMANDS) {
+    if (!skillsMap.has(cmd.name)) {
+      skillsMap.set(cmd.name, { ...cmd, cli: 'claude' });
+    }
+  }
 
   // 1. Built-in common Claude Code commands
   const defaultClaudeCommands: AgentSkill[] = [
@@ -399,6 +496,13 @@ export function discoverCodexSkills(worktreePath?: string): AgentSkill[] {
   const home = os.homedir();
   const skillsMap = new Map<string, AgentSkill>();
 
+  // Include universal slash commands (grill-me, plan, goal, etc.)
+  for (const cmd of AGY_SLASH_COMMANDS) {
+    if (!skillsMap.has(cmd.name)) {
+      skillsMap.set(cmd.name, { ...cmd, cli: 'codex' });
+    }
+  }
+
   // 1. Built-in common Codex commands
   const defaultCodexCommands: AgentSkill[] = [
     {
@@ -534,41 +638,46 @@ export function getSkillsForCli(cliName: string, worktreePath?: string): AgentSk
   return [];
 }
 
-// Resolves and appends skill instructions for CLIs like Claude/Codex that do not natively expand slash commands in non-interactive mode
-export function resolveSkillPrompt(cliName: string, prompt: string, worktreePath?: string): string {
+// Extract skills or slash commands referenced anywhere in prompt (e.g. /grill-me, /plan, /a11y-debugging)
+export function extractMatchedSkills(cliName: string, prompt: string, worktreePath?: string): AgentSkill[] {
+  if (!prompt || typeof prompt !== 'string') {
+    return [];
+  }
   const norm = (cliName || '').toLowerCase().trim();
-  // agy natively expands slash commands and skills in -p mode
-  if (norm === 'agy') {
-    return prompt;
-  }
-
-  // Check if prompt references any /<skill-name>
-  const slashMatches = prompt.match(/(?:^|\s)\/([a-zA-Z0-9_\-]+)(?:\s|$)/g);
-  if (!slashMatches || slashMatches.length === 0) {
-    return prompt;
-  }
-
   const skills = getSkillsForCli(norm, worktreePath);
-  const matchedSkills: AgentSkill[] = [];
+  if (!skills || skills.length === 0) {
+    return [];
+  }
 
-  for (const rawMatch of slashMatches) {
-    const nameOnly = rawMatch.trim().replace(/^\//, '');
-    const found = skills.find((s) => s.name.toLowerCase() === nameOnly.toLowerCase());
-    if (found && !matchedSkills.some((m) => m.name === found.name)) {
+  // Strip URLs so path segments in URLs (e.g. https://github.com/...) don't trigger false matches
+  const textWithoutUrls = prompt.replace(/https?:\/\/[^\s]+/g, ' ');
+  const regex = /\/([a-zA-Z0-9_\-]+)/g;
+  const matchedSkills: AgentSkill[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = regex.exec(textWithoutUrls)) !== null) {
+    const nameOnly = m[1].toLowerCase();
+    const found = skills.find((s) => s.name.toLowerCase() === nameOnly);
+    if (found && !matchedSkills.some((s) => s.name.toLowerCase() === found.name.toLowerCase())) {
       matchedSkills.push(found);
     }
   }
 
+  return matchedSkills;
+}
+
+// Resolves and appends skill instructions for all CLIs (agy, claude, codex)
+export function resolveSkillPrompt(cliName: string, prompt: string, worktreePath?: string): string {
+  const matchedSkills = extractMatchedSkills(cliName, prompt, worktreePath);
   if (matchedSkills.length === 0) {
     return prompt;
   }
 
   let augmentedPrompt = prompt;
   for (const skill of matchedSkills) {
-    if (skill.content) {
-      augmentedPrompt += `\n\n[Skill Instructions: /${skill.name}]\n${skill.content}\n[End of Skill Instructions]`;
-    } else if (skill.description) {
-      augmentedPrompt += `\n\n[Skill: /${skill.name} - ${skill.description}]`;
+    const instructions = skill.content || (skill.description ? `[Skill: /${skill.name} - ${skill.description}]` : '');
+    if (instructions) {
+      augmentedPrompt += `\n\n[Skill Instructions: /${skill.name}]\n${instructions.trim()}\n[End of Skill Instructions]`;
     }
   }
 
