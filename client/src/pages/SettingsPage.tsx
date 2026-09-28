@@ -1020,37 +1020,28 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                   </div>
                 )
               ) : (
-                <div className="space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {models.map((m) => {
                     const isSelected = defaultModel === m.id;
                     return (
                       <div
                         key={m.id}
                         onClick={() => handleSelectModel(m)}
-                        className={`p-4 rounded-2xl border cursor-pointer flex items-center justify-between transition-all ${
+                        className={`p-3.5 sm:p-4 rounded-2xl border cursor-pointer flex flex-col justify-between transition-all ${
                           isSelected
                             ? 'bg-teal-500/10 border-teal-400/40 text-cozy-text shadow-glow-ocean/10 ring-1 ring-teal-400/30'
                             : 'bg-cozy-subtle/50 border-cozy-border text-cozy-muted hover:border-teal-400/25 hover:shadow-soft-sm'
                         }`}
                       >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-cozy-text">{m.name}</span>
-                            {m.discoveredFrom && (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-cozy-subtle border border-cozy-border text-cozy-muted flex items-center gap-1 font-mono">
-                                <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-                                <span>{m.discoveredFrom}</span>
-                              </span>
-                            )}
+                        <div className="space-y-1.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-xs font-bold text-cozy-text leading-snug">{m.name}</span>
+                            {isSelected && <Check className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" />}
                           </div>
-                          {m.description && <div className="text-[11px] text-cozy-muted">{m.description}</div>}
-                          {m.reasoningEfforts && m.reasoningEfforts.length > 0 && (
-                            <div className="text-[10px] text-cozy-muted/80 font-mono">
-                              Reasoning tiers: {m.reasoningEfforts.join(', ')}
-                            </div>
+                          {m.description && (
+                            <div className="text-[11px] text-cozy-muted leading-relaxed">{m.description}</div>
                           )}
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-teal-500 shrink-0 ml-3" />}
                       </div>
                     );
                   })}
