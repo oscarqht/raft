@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Settings as SettingsIcon,
   Check,
@@ -25,6 +26,7 @@ import {
   Globe,
   ShieldCheck,
   Pencil,
+  Bot,
 } from 'lucide-react';
 import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill, SkillInstallSummaryItem } from '../types';
 import {
@@ -78,6 +80,25 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedOs, setCopiedOs] = useState<'win' | 'mac' | null>(null);
   const [savedToast, setSavedToast] = useState(false);
+
+  // Tabs state: 'agents' | 'skills' | 'git'
+  type SettingsTab = 'agents' | 'skills' | 'git';
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const initialTab: SettingsTab =
+    tabParam === 'skills' ? 'skills' : tabParam === 'git' ? 'git' : 'agents';
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+
+  useEffect(() => {
+    if (tabParam === 'skills' || tabParam === 'git' || tabParam === 'agents') {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (tab: SettingsTab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab }, { replace: true });
+  };
 
   // Streaming CLI installer state
   const [isInstallingCli, setIsInstallingCli] = useState(false);
@@ -565,10 +586,10 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
 
   return (
     <div className="flex-1 overflow-y-auto w-full">
-      <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
-        <div className="flex items-start justify-between gap-4">
+      <div className="max-w-5xl xl:max-w-6xl mx-auto p-6 md:p-8 space-y-6 w-full">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-1.5">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm shrink-0">
                 <SettingsIcon className="w-5 h-5" />
               </div>
@@ -577,43 +598,109 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
               </h1>
             </div>
             <p className="text-sm text-cozy-muted ml-13">
-              Configure default AI agent CLIs, models, and reasoning efforts.
+              Configure default AI agent CLIs, models, skills, and git integrations.
             </p>
           </div>
 
           {savedToast && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-500 bg-emerald-500/15 border border-emerald-400/30 px-3.5 py-1.5 rounded-full shadow-soft-sm animate-in fade-in shrink-0 mt-1">
+            <div className="flex items-center gap-1.5 text-xs text-emerald-500 bg-emerald-500/15 border border-emerald-400/30 px-3.5 py-1.5 rounded-full shadow-soft-sm animate-in fade-in shrink-0">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Settings saved automatically</span>
             </div>
           )}
         </div>
 
-      <div className="space-y-6">
-        {/* 1. AI Agent CLI Selection */}
-        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
-          <div className="flex items-start justify-between">
-            <div>
-              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                Default AI Agent CLI
-              </h2>
-              <p className="text-xs text-cozy-muted mt-1">
-                Choose which CLI agent to use for code exploration, editing, rebasing, and tasks.
-              </p>
-            </div>
+        {/* 3 Navigation Tabs: AI Agents, Skills, Git Integration */}
+        <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm max-w-xl">
+          <button
+            type="button"
+            onClick={() => handleTabChange('agents')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'agents'
+                ? 'bg-teal-500 text-white shadow-soft-sm'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
+            }`}
+          >
+            <Bot className="w-4 h-4" />
+            <span>AI Agents</span>
+          </button>
 
-            <button
-              type="button"
-              onClick={handleRefreshCliStatus}
-              disabled={isCheckingCli}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
-              title="Rescan system PATH to check CLI availability"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-teal-500 ${isCheckingCli ? 'animate-spin' : ''}`} />
-              <span>{isCheckingCli ? 'Checking...' : 'Check PATH'}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => handleTabChange('skills')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'skills'
+                ? 'bg-teal-500 text-white shadow-soft-sm'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Skills</span>
+            {skills.length > 0 && (
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                  activeTab === 'skills'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-cozy-subtle text-cozy-muted'
+                }`}
+              >
+                {skills.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('git')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+              activeTab === 'git'
+                ? 'bg-teal-500 text-white shadow-soft-sm'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
+            }`}
+          >
+            <GitBranch className="w-4 h-4" />
+            <span>Git Integration</span>
+            {gitAccounts.length > 0 && (
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                  activeTab === 'git'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-cozy-subtle text-cozy-muted'
+                }`}
+              >
+                {gitAccounts.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Tab 1: AI Agents */}
+        {activeTab === 'agents' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            {/* 1. AI Agent CLI Selection */}
+            <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                    <Cpu className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                    Default AI Agent CLI
+                  </h2>
+                  <p className="text-xs text-cozy-muted mt-1">
+                    Choose which CLI agent to use for code exploration, editing, rebasing, and tasks.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRefreshCliStatus}
+                  disabled={isCheckingCli}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer shrink-0 whitespace-nowrap self-start sm:self-auto"
+                  title="Rescan system PATH to check CLI availability"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-teal-500 ${isCheckingCli ? 'animate-spin' : ''}`} />
+                  <span>{isCheckingCli ? 'Checking...' : 'Check PATH'}</span>
+                </button>
+              </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
             {localClis.map((c) => {
@@ -880,7 +967,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
           <>
             {/* 3. Default Model Selection (Available CLI) */}
             <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
                     <BrainCircuit className="w-4 h-4 text-amber-500" />
@@ -895,7 +982,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                   type="button"
                   onClick={() => loadModels(agentCli, true)}
                   disabled={isDiscovering}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer shrink-0 whitespace-nowrap self-start sm:self-auto"
                   title="Query agent CLI to discover latest available models and reasoning options"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-teal-500 ${isDiscovering ? 'animate-spin' : ''}`} />
@@ -986,7 +1073,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                   <span>This model does not require variable reasoning effort (standard generation mode).</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
                   {currentEffortOptions.map((effort) => {
                     const isSelected = thinkingEffort.toLowerCase() === effort.id.toLowerCase();
                     return (
@@ -994,14 +1081,14 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                         key={effort.id}
                         type="button"
                         onClick={() => handleSelectEffort(effort.id)}
-                        className={`py-3 px-3.5 rounded-2xl text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[60px] ${
+                        className={`py-3 px-3 rounded-2xl text-xs font-semibold border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer min-h-[60px] min-w-0 ${
                           isSelected
                             ? 'bg-teal-500 text-white border-teal-500 shadow-glow-ocean font-bold'
                             : 'bg-cozy-surface text-cozy-muted border-cozy-border/80 hover:text-cozy-text hover:border-teal-400/30 hover:bg-cozy-subtle/60 shadow-soft-sm'
                         }`}
                         title={effort.description}
                       >
-                        <span className="capitalize font-bold">{effort.label}</span>
+                        <span className="capitalize font-bold truncate max-w-full">{effort.label}</span>
                         {effort.description && (
                           <span
                             className={`text-[10px] truncate max-w-full font-normal ${
@@ -1019,25 +1106,31 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
             </div>
           </>
         )}
+      </div>
+    )}
 
-        {/* 4. Custom Skills & Slash Commands */}
+    {/* Tab 2: Skills */}
+    {activeTab === 'skills' && (
+      <div className="space-y-6 animate-in fade-in duration-150">
+        {/* Custom Skills & Slash Commands */}
         <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                Custom Skills & Slash Commands
+                Custom Skills &amp; Slash Commands
               </h2>
               <p className="text-xs text-cozy-muted mt-1">
-                Create custom skills to inject instructions into your AI agent prompt when typing <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">/skill-name</span> in chat.
+                Create custom skills to inject instructions into your AI agent prompt when typing{' '}
+                <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">/skill-name</span> in chat.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
               <button
                 type="button"
                 onClick={handleOpenInstallSkillModal}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-text transition-all shadow-soft-sm cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-text transition-all shadow-soft-sm cursor-pointer shrink-0 whitespace-nowrap"
                 title="Install skills from GitHub or npm packages via npx skills add"
               >
                 <Terminal className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
@@ -1046,7 +1139,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
               <button
                 type="button"
                 onClick={handleOpenAddSkill}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Skill</span>
@@ -1116,10 +1209,15 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
             </div>
           )}
         </div>
+      </div>
+    )}
 
-        {/* 5. Linked Git Accounts */}
+    {/* Tab 3: Git Integration */}
+    {activeTab === 'git' && (
+      <div className="space-y-6 animate-in fade-in duration-150">
+        {/* Linked Git Accounts */}
         <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
                 <Github className="w-4 h-4 text-teal-600 dark:text-teal-400" />
@@ -1138,7 +1236,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                   setAccountVerifyError(null);
                   setAccountSuccessMsg(null);
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0 whitespace-nowrap self-start sm:self-auto"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Link Account</span>
@@ -1359,8 +1457,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
             </form>
           )}
         </div>
-
       </div>
+    )}
 
       {/* Skill Add/Edit Modal */}
       {isSkillModalOpen && (
