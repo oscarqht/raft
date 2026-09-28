@@ -172,7 +172,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
       <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[1200px]:p-4 bg-cozy-bg">
         {/* Mobile Header Tabs */}
-        <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface/80 backdrop-blur-md shrink-0 select-none">
+        <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface shrink-0 select-none">
           <button
             type="button"
             onClick={() => setMobileTab('chat')}
@@ -200,7 +200,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             <span
               className={`w-2 h-2 rounded-full transition-all ${
                 isDevRunning
-                  ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
+                  ? 'bg-emerald-400 shadow-glow-mint'
                   : 'bg-zinc-400/40'
               }`}
               title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}

@@ -95,36 +95,29 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   }, [storageKey]);
 
   useEffect(() => {
+    if (!isDragging) return;
+
     const handlePointerMove = (e: MouseEvent | PointerEvent) => {
-      if (!isDraggingRef.current) return;
       updateRatio(e.clientX);
     };
 
     const handlePointerUp = () => {
-      if (isDraggingRef.current) {
-        stopDragging();
-      }
+      stopDragging();
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
       if (rafIdRef.current !== null) {
         cancelAnimationFrame(rafIdRef.current);
       }
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
     };
-  }, [updateRatio, stopDragging]);
+  }, [isDragging, updateRatio, stopDragging]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return; // Only primary button

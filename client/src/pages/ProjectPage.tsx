@@ -82,18 +82,26 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   // Auto-refresh task status on tab focus, event broadcast, and gentle 60s interval
   useEffect(() => {
     const handleFocus = () => loadTasksStatus(false);
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        loadTasksStatus(false);
+      }
+    };
     const handleStatusUpdate = () => loadTasksStatus(true);
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('task-status-updated', handleStatusUpdate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       loadTasksStatus(false);
     }, 60000);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('task-status-updated', handleStatusUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
   }, [loadTasksStatus]);
@@ -102,6 +110,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const [, setTimeTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       setTimeTick((prev) => prev + 1);
     }, 30000);
     return () => clearInterval(timer);

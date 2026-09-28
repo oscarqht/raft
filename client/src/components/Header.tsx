@@ -74,6 +74,11 @@ export const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     const handleFocus = () => fetchTaskStatus(false);
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchTaskStatus(false);
+      }
+    };
     const handleStatusUpdate = (e: any) => {
       if (!e.detail?.taskId || e.detail.taskId === currentPath?.taskId) {
         fetchTaskStatus(true);
@@ -82,14 +87,17 @@ export const Header: React.FC<HeaderProps> = ({
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('task-status-updated', handleStatusUpdate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       fetchTaskStatus(false);
     }, 60000);
 
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('task-status-updated', handleStatusUpdate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
   }, [fetchTaskStatus, currentPath?.taskId]);
@@ -118,7 +126,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
           <span className="text-lg tracking-tight font-semibold text-cozy-text flex items-center gap-1.5">
             Raft
-            <Sparkles className="w-4 h-4 text-teal-400 fill-teal-400/20 inline animate-pulse" />
+            <Sparkles className="w-4 h-4 text-teal-400 fill-teal-400/20 inline group-hover:rotate-12 transition-transform duration-300" />
           </span>
         </Link>
 

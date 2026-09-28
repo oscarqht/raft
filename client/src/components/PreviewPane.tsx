@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
+import { Play, Pause, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
 import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer, getSettings } from '../api';
 import { useOptionalScriptExecution } from '../contexts/ScriptExecutionContext';
@@ -10,7 +10,7 @@ const PreviewAnnotationOverlay = React.lazy(() =>
 );
 
 const MAX_RETRY_ATTEMPTS = 30; // 30 seconds
-const RETRY_INTERVAL_MS = 1000; // 1s
+const RETRY_INTERVAL_MS = 1500; // 1.5s gentle polling
 
 interface PreviewPaneProps {
   task: Task;
@@ -34,6 +34,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showConsole, setShowConsole] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [isPreviewSleeping, setIsPreviewSleeping] = useState(false);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -55,15 +56,22 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     };
     updateWidth();
 
+    let rafId: number | null = null;
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect) {
-          setPanelWidth(entry.contentRect.width);
-        }
+      const entry = entries[0];
+      if (entry?.contentRect) {
+        const nextWidth = Math.round(entry.contentRect.width);
+        if (rafId !== null) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          setPanelWidth((prev) => (Math.abs(prev - nextWidth) >= 4 ? nextWidth : prev));
+        });
       }
     });
     observer.observe(panelRef.current);
-    return () => observer.disconnect();
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      observer.disconnect();
+    };
   }, []);
 
   const isCompact = panelWidth < 620;
@@ -235,6 +243,14 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     let timerId: any = null;
 
     const checkReady = async () => {
+      // Pause polling if user has switched away or minimized the tab
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        if (isMounted) {
+          timerId = setTimeout(checkReady, RETRY_INTERVAL_MS * 2);
+        }
+        return;
+      }
+
       let ready = false;
 
       // 1. Backend ping probe (checks TCP/HTTP on host)
@@ -283,8 +299,16 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     // Run first check immediately
     checkReady();
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !isServerReady && !isTimedOut) {
+        checkReady();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
     return () => {
       isMounted = false;
+      document.removeEventListener('visibilitychange', handleVisibility);
       if (timerId) clearTimeout(timerId);
     };
   }, [devState.status, isServerReady, isTimedOut, task.id, activePort]);
@@ -419,50 +443,37 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       return;
     }
 
+    let stream: MediaStream | null = null;
+    let videoEl: HTMLVideoElement | null = null;
+
     try {
       setIsCapturing(true);
       setCaptureError(null);
       const container = previewContainerRef.current;
       const rect = container.getBoundingClientRect();
 
-      // 1. Check if we have an active live stream from an earlier capture in this session
-      let stream = captureStreamRef.current;
-      let track = stream?.getVideoTracks().find((t) => t.readyState === 'live');
-
-      // 2. If no active track, request getDisplayMedia (prompts user ONCE per session)
-      if (!stream || !track) {
-        try {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              displaySurface: 'browser',
-            } as any,
-            audio: false,
-            preferCurrentTab: true,
-            selfBrowserSurface: 'include',
-            surfaceSwitching: 'include',
-            systemAudio: 'exclude',
-          } as any);
-
-          track = stream.getVideoTracks()[0];
-          if (!track) {
-            throw new Error('No video track returned from screen capture');
-          }
-
-          // When user stops sharing via browser bar, clear ref
-          track.onended = () => {
-            if (captureStreamRef.current === stream) {
-              captureStreamRef.current = null;
-            }
-          };
-
-          captureStreamRef.current = stream;
-        } catch (displayErr: any) {
-          // If user dismissed or cancelled the tab share dialog, gracefully exit
-          if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
-            return;
-          }
-          throw displayErr;
+      try {
+        stream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: 'browser',
+          } as any,
+          audio: false,
+          preferCurrentTab: true,
+          selfBrowserSurface: 'include',
+          surfaceSwitching: 'include',
+          systemAudio: 'exclude',
+        } as any);
+      } catch (displayErr: any) {
+        // If user dismissed or cancelled the tab share dialog, gracefully exit
+        if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
+          return;
         }
+        throw displayErr;
+      }
+
+      const track = stream.getVideoTracks()[0];
+      if (!track) {
+        throw new Error('No video track returned from screen capture');
       }
 
       let drawSource: CanvasImageSource | null = null;
@@ -484,23 +495,23 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
       // 4. Fallback to video element if ImageCapture is unavailable
       if (!drawSource) {
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play();
+        videoEl = document.createElement('video');
+        videoEl.srcObject = stream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
+        await videoEl.play();
 
         await new Promise<void>((resolve) => {
-          if (video.readyState >= 2) return resolve();
-          video.onloadeddata = () => resolve();
+          if (videoEl!.readyState >= 2) return resolve();
+          videoEl!.onloadeddata = () => resolve();
         });
 
         // Brief delay for video frame buffer
         await new Promise((r) => setTimeout(r, 60));
 
-        sourceWidth = video.videoWidth;
-        sourceHeight = video.videoHeight;
-        drawSource = video;
+        sourceWidth = videoEl.videoWidth;
+        sourceHeight = videoEl.videoHeight;
+        drawSource = videoEl;
       }
 
       const windowW = window.innerWidth;
@@ -534,8 +545,6 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         (drawSource as any).close();
       }
 
-      // NOTE: Intentionally keep track and stream active in captureStreamRef for persistent session reuse!
-
       const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
       const rawDataUrl = canvas.toDataURL('image/png');
       const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
@@ -553,6 +562,22 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       }
     } finally {
       setIsCapturing(false);
+      // Clean up fallback video element
+      if (videoEl) {
+        try {
+          videoEl.pause();
+          videoEl.srcObject = null;
+        } catch {}
+        videoEl = null;
+      }
+      // Stop media tracks immediately so Chrome stops background screen capture pipelines
+      if (stream) {
+        try {
+          stream.getTracks().forEach((t) => t.stop());
+        } catch {}
+        stream = null;
+      }
+      captureStreamRef.current = null;
     }
   };
 
@@ -601,7 +626,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       )}
 
       {/* Top Address & Controls Toolbar */}
-      <div className="min-h-[64px] py-3.5 px-3 sm:px-4 md:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 gap-2 sm:gap-3 select-none">
+      <div className="min-h-[64px] py-3.5 px-3 sm:px-4 md:px-5 border-b border-cozy-border/50 bg-cozy-surface/95 flex items-center justify-between shrink-0 gap-2 sm:gap-3 select-none">
         {/* Server Start/Stop/Restart */}
         <div className="flex items-center space-x-1.5 shrink-0">
           {devState.status === 'running' ? (
@@ -726,6 +751,22 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             )}
           </button>
 
+          {/* Pause / Sleep Preview Toggle */}
+          {devState.status === 'running' && isServerReady && (
+            <button
+              type="button"
+              onClick={() => setIsPreviewSleeping(!isPreviewSleeping)}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                isPreviewSleeping
+                  ? 'bg-amber-500/15 text-amber-500 hover:bg-amber-500/25'
+                  : 'text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle'
+              }`}
+              title={isPreviewSleeping ? 'Resume preview iframe' : 'Sleep preview iframe to reduce CPU & memory usage'}
+            >
+              {isPreviewSleeping ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
           <a
             href={externalUrl}
             target="_blank"
@@ -768,9 +809,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <span
               className={`w-2 h-2 rounded-full ${
                 devState.status === 'running' && isServerReady
-                  ? 'bg-emerald-400 shadow-glow-mint animate-pulse'
+                  ? 'bg-emerald-400 shadow-glow-mint'
                   : devState.status === 'running' || devState.status === 'starting'
-                  ? 'bg-amber-400 animate-ping'
+                  ? 'bg-amber-400'
                   : 'bg-cozy-muted/40'
               }`}
             />
@@ -824,14 +865,36 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
         {devState.status === 'running' || devState.status === 'starting' ? (
           isServerReady ? (
-            <iframe
-              ref={iframeRef}
-              key={iframeKey}
-              src={iframeSrc}
-              title="Task Dev Server Preview"
-              className="w-full h-full border-0"
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
-            />
+            isPreviewSleeping ? (
+              <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
+                <div className="w-14 h-14 rounded-2.5xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-4 text-teal-500 shadow-soft-sm">
+                  <Pause className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-semibold text-cozy-text mb-1">
+                  Preview Paused
+                </h3>
+                <p className="text-xs max-w-sm mb-5 text-cozy-muted leading-relaxed">
+                  The preview iframe is sleeping to save battery, GPU, and CPU cycles while you code and chat. The dev server process remains running.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewSleeping(false)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Resume Preview</span>
+                </button>
+              </div>
+            ) : (
+              <iframe
+                ref={iframeRef}
+                key={iframeKey}
+                src={iframeSrc}
+                title="Task Dev Server Preview"
+                className="w-full h-full border-0"
+                sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
+              />
+            )
           ) : isTimedOut ? (
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
               <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-amber-500/15 via-red-500/15 to-amber-600/10 border border-amber-400/30 flex items-center justify-center mb-4 shadow-soft-sm text-amber-500">
@@ -883,7 +946,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
               <div className="relative mb-5">
                 <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/15 to-emerald-500/15 border border-teal-400/25 flex items-center justify-center shadow-soft-sm relative">
-                  <Globe className="w-7 h-7 text-teal-500 animate-pulse" />
+                  <Globe className="w-7 h-7 text-teal-500" />
                   <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-cozy-surface border border-cozy-border/70 flex items-center justify-center shadow-sm">
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500" />
                   </div>
