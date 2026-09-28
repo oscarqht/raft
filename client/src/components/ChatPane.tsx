@@ -497,6 +497,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   ...target,
                   id: msg.messageId || target.id,
                   content: nextContent,
+                  steps: msg.steps || target.steps,
                 };
                 return updated;
               }
@@ -509,6 +510,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   session_id: eventSessionId,
                   role: 'assistant',
                   content: typeof fullContent === 'string' ? fullContent : deltaContent,
+                  steps: msg.steps,
                   timestamp: Date.now(),
                 },
               ];
@@ -521,13 +523,23 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
                 existingIdx = prev.length - 1;
               }
+              let parsedSteps = msg.steps;
+              if (!parsedSteps && msg.message.metadata) {
+                try {
+                  parsedSteps = JSON.parse(msg.message.metadata)?.steps;
+                } catch {}
+              }
+              const messageWithSteps: ChatMessage = {
+                ...msg.message,
+                steps: parsedSteps,
+              };
               let next: ChatMessage[];
               if (existingIdx !== -1) {
                 const updated = [...prev];
-                updated[existingIdx] = msg.message;
+                updated[existingIdx] = messageWithSteps;
                 next = updated;
               } else {
-                next = [...prev, msg.message];
+                next = [...prev, messageWithSteps];
               }
               setCachedMessages(eventSessionId, next);
               return next;
@@ -1187,6 +1199,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         currentCli={tabCli || settings?.agent_cli || 'codex'}
         onSwitchCliAndRetry={handleSwitchCliAndRetry}
         onOpenSettings={handleOpenSettings}
+        onAbort={handleAbort}
       />
       {/* Input Area */}
       <div

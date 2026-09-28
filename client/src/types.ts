@@ -79,6 +79,22 @@ export interface FileAttachment {
   url: string;
 }
 
+export interface AgentStep {
+  id: string;
+  type: 'tool' | 'thought';
+  toolName?: string;
+  category: 'command' | 'file_read' | 'file_write' | 'search' | 'browser' | 'other';
+  title: string;
+  detail?: string;
+  status: 'running' | 'completed' | 'failed';
+  duration?: number;
+  output?: string;
+  error?: string;
+  thought?: string;
+  startTime?: number;
+  endTime?: number;
+}
+
 export interface ChatMessage {
   id: string;
   session_id: string;
@@ -87,6 +103,7 @@ export interface ChatMessage {
   metadata?: string | null;
   attachments?: FileAttachment[];
   timestamp: number;
+  steps?: AgentStep[];
 }
 
 export interface Settings {
