@@ -747,6 +747,7 @@ function formatProject(p: any) {
   if (!p) return null;
   return {
     ...p,
+    system_prompt: p.system_prompt || '',
     custom_scripts: parseScripts(p.custom_scripts),
   };
 }
@@ -764,7 +765,7 @@ app.get('/api/projects', (_req: Request, res: Response) => {
 });
 
 app.post('/api/projects', (req: Request, res: Response) => {
-  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon, custom_scripts } = req.body;
+  const { path: rawPath, name: customName, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon, custom_scripts, system_prompt } = req.body;
   const projectPath = path.resolve(rawPath);
   const repoInfo = GitService.getRepoInfo(projectPath);
   if (!repoInfo.isRepo) {
@@ -780,8 +781,8 @@ app.post('/api/projects', (req: Request, res: Response) => {
     const stmt = db.prepare(`
       INSERT INTO projects (
         id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon,
-        default_agent_cli, default_model, custom_scripts, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        default_agent_cli, default_model, custom_scripts, system_prompt, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -798,6 +799,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
       custom_scripts ? JSON.stringify(custom_scripts) : '[]',
+      system_prompt || '',
       now,
       now
     );
@@ -1012,6 +1014,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     default_agent_cli,
     default_model,
     custom_scripts,
+    system_prompt,
   } = req.body;
   const now = Date.now();
 
@@ -1033,6 +1036,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       default_agent_cli = coalesce(?, default_agent_cli),
       default_model = coalesce(?, default_model),
       custom_scripts = coalesce(?, custom_scripts),
+      system_prompt = coalesce(?, system_prompt),
       updated_at = ?
     WHERE id = ?
   `).run(
@@ -1047,6 +1051,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     default_agent_cli !== undefined ? default_agent_cli : null,
     default_model !== undefined ? default_model : null,
     custom_scripts !== undefined ? JSON.stringify(custom_scripts) : null,
+    system_prompt !== undefined ? system_prompt : null,
     now,
     req.params.id
   );
@@ -2093,6 +2098,17 @@ wss.on('connection', (ws: WebSocket) => {
             db.prepare('UPDATE tasks SET worktree_path = ? WHERE id = ?').run(effectiveWorktreePath, task.id);
             task.worktree_path = effectiveWorktreePath;
           } catch {}
+        }
+
+        // Auto-inject project system prompt into first turn of each chat session
+        const prevUserMessages = db.prepare(`
+          SELECT id FROM chat_messages
+          WHERE session_id = ? AND role = 'user' AND id != ?
+        `).all(sessionId, userMsgId) as Array<{ id: string }>;
+        const isFirstTurn = prevUserMessages.length === 0;
+
+        if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
+          effectiveAgentPrompt = `[Project Instructions]\n${project.system_prompt.trim()}\n\n[User Request]\n${effectiveAgentPrompt}`;
         }
 
         let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, effectiveWorktreePath);

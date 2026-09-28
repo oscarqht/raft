@@ -59,6 +59,7 @@ db.exec(`
     default_agent_cli TEXT,
     default_model TEXT,
     custom_scripts TEXT,
+    system_prompt TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
@@ -153,6 +154,11 @@ try {
 }
 try {
   db.exec('ALTER TABLE projects ADD COLUMN icon TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE projects ADD COLUMN system_prompt TEXT');
 } catch {
   // column already exists
 }

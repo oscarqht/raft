@@ -37,6 +37,7 @@ export interface Project {
   default_agent_cli?: string;
   default_model?: string;
   custom_scripts?: ProjectCustomScript[];
+  system_prompt?: string;
   created_at: number;
   updated_at: number;
   task_count?: number;

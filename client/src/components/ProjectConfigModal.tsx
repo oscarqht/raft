@@ -18,10 +18,149 @@ import {
   Edit2,
   Package,
   Smile,
+  FileText,
+  RotateCcw,
 } from 'lucide-react';
 import { Settings, Project, ProjectCustomScript } from '../types';
 import { updateProject, validateProjectPath, createWebSocketConnection } from '../api';
 import { ProjectEmojiPicker } from './ProjectEmojiPicker';
+
+export type ProjectConfigTab = 'settings' | 'system_prompt' | 'scripts';
+
+const renderInlineMarkdown = (text: string): React.ReactNode => {
+  if (!text) return null;
+
+  // Match inline tokens: inline code, bold, italic, links, strikethrough
+  const tokenRegex = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]*\]\([^)\n]*\)|~~[^~\n]+~~)/g;
+  const parts = text.split(tokenRegex);
+
+  return parts.map((part, i) => {
+    if (!part) return null;
+
+    if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+      return (
+        <span key={i} className="text-teal-600 dark:text-teal-300 bg-teal-500/10 px-1 py-0.5 rounded font-mono">
+          {part}
+        </span>
+      );
+    }
+    if ((part.startsWith('**') && part.endsWith('**') && part.length >= 4) ||
+        (part.startsWith('__') && part.endsWith('__') && part.length >= 4)) {
+      return (
+        <span key={i} className="font-bold text-amber-600 dark:text-amber-300">
+          {part}
+        </span>
+      );
+    }
+    if ((part.startsWith('*') && part.endsWith('*') && part.length >= 2) ||
+        (part.startsWith('_') && part.endsWith('_') && part.length >= 2)) {
+      return (
+        <span key={i} className="italic text-purple-600 dark:text-purple-300">
+          {part}
+        </span>
+      );
+    }
+    if (/^\[.*\]\(.*\)$/.test(part)) {
+      return (
+        <span key={i} className="text-sky-500 dark:text-sky-400 underline decoration-sky-400/50">
+          {part}
+        </span>
+      );
+    }
+    if (part.startsWith('~~') && part.endsWith('~~') && part.length >= 4) {
+      return (
+        <span key={i} className="line-through text-cozy-muted">
+          {part}
+        </span>
+      );
+    }
+
+    return <span key={i} className="text-cozy-text">{part}</span>;
+  });
+};
+
+const renderMarkdownLine = (line: string): React.ReactNode => {
+  if (line.trim().startsWith('```')) {
+    return (
+      <span className="font-bold text-teal-600 dark:text-teal-400 bg-teal-500/10 px-1 py-0.5 rounded font-mono">
+        {line}
+      </span>
+    );
+  }
+
+  const headingMatch = line.match(/^(#{1,6}\s+)(.*)$/);
+  if (headingMatch) {
+    return (
+      <>
+        <span className="font-bold text-teal-600 dark:text-teal-400">
+          {headingMatch[1]}
+        </span>
+        <span className="font-bold text-cozy-text">
+          {renderInlineMarkdown(headingMatch[2])}
+        </span>
+      </>
+    );
+  }
+
+  const quoteMatch = line.match(/^(>\s*)(.*)$/);
+  if (quoteMatch) {
+    return (
+      <>
+        <span className="text-emerald-500 font-bold">{quoteMatch[1]}</span>
+        <span className="text-emerald-600 dark:text-emerald-400 italic">
+          {renderInlineMarkdown(quoteMatch[2])}
+        </span>
+      </>
+    );
+  }
+
+  const bulletMatch = line.match(/^(\s*[-*+]\s+)(.*)$/);
+  if (bulletMatch) {
+    return (
+      <>
+        <span className="text-teal-500 font-bold">{bulletMatch[1]}</span>
+        <span>{renderInlineMarkdown(bulletMatch[2])}</span>
+      </>
+    );
+  }
+
+  const numMatch = line.match(/^(\s*\d+\.\s+)(.*)$/);
+  if (numMatch) {
+    return (
+      <>
+        <span className="text-teal-500 font-bold">{numMatch[1]}</span>
+        <span>{renderInlineMarkdown(numMatch[2])}</span>
+      </>
+    );
+  }
+
+  if (/^(\s*---|\s*\*\*\*|\s*___)\s*$/.test(line)) {
+    return <span className="text-cozy-muted font-bold">{line}</span>;
+  }
+
+  return renderInlineMarkdown(line);
+};
+
+const renderMarkdownSyntax = (text: string): React.ReactNode => {
+  if (!text) {
+    return (
+      <span className="text-cozy-muted/40 italic">
+        Write project system prompt here in Markdown...
+      </span>
+    );
+  }
+
+  const lines = text.split('\n');
+  return lines.map((line, idx) => {
+    const isLast = idx === lines.length - 1;
+    return (
+      <React.Fragment key={idx}>
+        {renderMarkdownLine(line)}
+        {!isLast && '\n'}
+      </React.Fragment>
+    );
+  });
+};
 
 export interface ProjectConfigModalProps {
   project: Project;
@@ -58,6 +197,18 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   const [scriptNameInput, setScriptNameInput] = useState('');
   const [scriptCmdInput, setScriptCmdInput] = useState('');
 
+  const [activeTab, setActiveTab] = useState<ProjectConfigTab>('settings');
+  const [systemPrompt, setSystemPrompt] = useState(project.system_prompt || '');
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const promptHighlightRef = useRef<HTMLPreElement>(null);
+
+  const handlePromptScroll = () => {
+    if (promptTextareaRef.current && promptHighlightRef.current) {
+      promptHighlightRef.current.scrollTop = promptTextareaRef.current.scrollTop;
+      promptHighlightRef.current.scrollLeft = promptTextareaRef.current.scrollLeft;
+    }
+  };
+
   const [branches, setBranches] = useState<string[]>(propBranches || [project.branch_convention || 'main']);
   const [isCustomBranch, setIsCustomBranch] = useState(false);
 
@@ -92,6 +243,8 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     setTestCmd(project.test_cmd || 'npm test');
     setInstallCmd(project.install_cmd || 'npm install');
     setCustomScripts(project.custom_scripts || []);
+    setSystemPrompt(project.system_prompt || '');
+    setActiveTab('settings');
     setEditingScriptId(null);
     setScriptNameInput('');
     setScriptCmdInput('');
@@ -260,6 +413,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         test_cmd: testCmd.trim(),
         install_cmd: installCmd.trim(),
         custom_scripts: customScripts,
+        system_prompt: systemPrompt,
       });
 
       setSaveSuccess(true);
@@ -337,8 +491,71 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
             </div>
           )}
 
-          {/* AI Auto-Discovery Card */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-cyan-500/5 to-transparent border border-teal-400/20 text-xs shadow-soft-sm">
+          {/* Tab Navigation */}
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 shadow-soft-sm">
+            <button
+              type="button"
+              onClick={() => setActiveTab('settings')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'settings'
+                  ? 'bg-teal-500 text-white shadow-soft-sm'
+                  : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface'
+              }`}
+            >
+              <Sliders className="w-3.5 h-3.5" />
+              <span>Project Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('system_prompt')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'system_prompt'
+                  ? 'bg-teal-500 text-white shadow-soft-sm'
+                  : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>System Prompt</span>
+              {systemPrompt.trim() && (
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    activeTab === 'system_prompt' ? 'bg-white' : 'bg-teal-500'
+                  }`}
+                />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('scripts')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'scripts'
+                  ? 'bg-teal-500 text-white shadow-soft-sm'
+                  : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-surface'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              <span>Terminal Scripts</span>
+              {customScripts.length > 0 && (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold leading-none ${
+                    activeTab === 'scripts'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-cozy-surface text-cozy-muted border border-cozy-border/60'
+                  }`}
+                >
+                  {customScripts.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* TAB 1: PROJECT SETTINGS */}
+          {activeTab === 'settings' && (
+            <div className="space-y-4 animate-in fade-in duration-150">
+              {/* AI Auto-Discovery Card */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-cyan-500/5 to-transparent border border-teal-400/20 text-xs shadow-soft-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center space-x-3">
                 <div className="w-8 h-8 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-500">
@@ -629,8 +846,128 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
               </p>
             </div>
 
-            {/* Custom Scripts Section */}
-            <div className="pt-3 border-t border-cozy-border/60 space-y-3">
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: SYSTEM PROMPT */}
+          {activeTab === 'system_prompt' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-emerald-500/5 to-transparent border border-teal-400/20 text-xs shadow-soft-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-8 h-8 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 text-teal-500 mt-0.5">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-semibold text-cozy-text text-xs">Project-Level System Prompt</h4>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/20">
+                          Auto-injected on 1st message
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-cozy-muted mt-1 leading-relaxed">
+                        These instructions are automatically prepended as project context on the first turn of each chat session in this project. Use this to establish architecture standards, coding rules, component patterns, or tech stack constraints.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Snippet Helpers */}
+              <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] text-cozy-muted font-medium">Quick snippets:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const snippet = '## Architecture Guidelines\n- Follow modular component structure\n- Keep components focused and single-purpose\n';
+                      setSystemPrompt((prev) => (prev ? `${prev.trim()}\n\n${snippet}` : snippet));
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border/70 transition-colors cursor-pointer"
+                  >
+                    + Architecture
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const snippet = '## TypeScript & Code Quality\n- Strict TypeScript typing (avoid `any`)\n- Verify clean compile with zero linter errors\n';
+                      setSystemPrompt((prev) => (prev ? `${prev.trim()}\n\n${snippet}` : snippet));
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border/70 transition-colors cursor-pointer"
+                  >
+                    + TypeScript
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const snippet = '## Testing\n- Write unit tests for new logic and edge cases\n- Verify tests pass before completing tasks\n';
+                      setSystemPrompt((prev) => (prev ? `${prev.trim()}\n\n${snippet}` : snippet));
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-[11px] bg-cozy-subtle hover:bg-cozy-surface text-cozy-text border border-cozy-border/70 transition-colors cursor-pointer"
+                  >
+                    + Tests
+                  </button>
+                </div>
+
+                {systemPrompt && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm('Clear the project system prompt?')) {
+                        setSystemPrompt('');
+                      }
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-[11px] text-cozy-muted hover:text-red-500 rounded transition-colors cursor-pointer"
+                    title="Clear system prompt"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Clear</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Markdown Syntax-Styled Editor */}
+              <div className="relative w-full h-80 rounded-2xl bg-cozy-bg border border-cozy-border focus-within:border-teal-400 transition-colors overflow-hidden group shadow-inner">
+                {/* Underlying Syntax-Highlighted Layer */}
+                <pre
+                  ref={promptHighlightRef}
+                  aria-hidden="true"
+                  className="absolute inset-0 m-0 w-full h-full p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto pointer-events-none select-none z-0 border border-transparent text-cozy-text"
+                >
+                  {renderMarkdownSyntax(systemPrompt)}
+                </pre>
+
+                {/* Editable Transparent Textarea Overlay */}
+                <textarea
+                  ref={promptTextareaRef}
+                  onScroll={handlePromptScroll}
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="Write project system prompt in Markdown (e.g. ## Conventions, **rules**, `code`, etc.)..."
+                  spellCheck={false}
+                  className="absolute inset-0 w-full h-full p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words overflow-y-auto bg-transparent text-transparent caret-teal-500 dark:caret-teal-400 focus:outline-none resize-none z-10 selection:bg-teal-500/25 selection:text-transparent border border-transparent placeholder:text-cozy-muted/40"
+                />
+              </div>
+
+              {/* Editor Metadata Footer */}
+              <div className="flex items-center justify-between text-[11px] text-cozy-muted px-1">
+                <div className="flex items-center gap-2">
+                  <span>{systemPrompt.length} characters</span>
+                  <span>•</span>
+                  <span>{systemPrompt ? systemPrompt.split('\n').length : 0} lines</span>
+                </div>
+                <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400">
+                  <Sparkles className="w-3 h-3" />
+                  <span>Markdown syntax rendered inline</span>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: TERMINAL SCRIPTS */}
+          {activeTab === 'scripts' && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-xs font-semibold text-cozy-text uppercase tracking-wider text-[11px] flex items-center gap-1.5">
@@ -649,7 +986,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                       setScriptNameInput('');
                       setScriptCmdInput('');
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-lg transition-colors"
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-sky-500 hover:text-sky-400 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 rounded-xl transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add Script</span>
@@ -659,75 +996,57 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
 
               {/* Editing script form */}
               {editingScriptId && (
-                <div className="p-3 bg-cozy-subtle/60 border border-sky-500/30 rounded-xl space-y-2.5">
+                <div className="p-3.5 bg-cozy-subtle/60 border border-sky-500/30 rounded-2xl space-y-2.5 shadow-soft-sm">
                   <div className="text-xs font-semibold text-cozy-text">
                     {editingScriptId === 'new' ? 'New Script' : 'Edit Script'}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      value={scriptNameInput}
-                      onChange={(e) => setScriptNameInput(e.target.value)}
-                      placeholder="Script Name (e.g. Dev Server)"
-                      className="px-3 py-1.5 text-xs bg-cozy-bg border border-cozy-border rounded-lg text-cozy-text focus:outline-none focus:border-sky-500"
-                    />
-                    <input
-                      type="text"
-                      value={scriptCmdInput}
-                      onChange={(e) => setScriptCmdInput(e.target.value)}
-                      placeholder="Command (e.g. npm run dev)"
-                      className="px-3 py-1.5 text-xs font-mono bg-cozy-bg border border-cozy-border rounded-lg text-cozy-text focus:outline-none focus:border-sky-500"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const trimmedCmd = scriptCmdInput.trim();
-                          if (!trimmedCmd) return;
-                          const trimmedName = scriptNameInput.trim() || trimmedCmd;
-                          if (editingScriptId === 'new') {
-                            setCustomScripts((prev) => [
-                              ...prev,
-                              { id: `script-${Date.now()}`, name: trimmedName, command: trimmedCmd },
-                            ]);
-                          } else {
-                            setCustomScripts((prev) =>
-                              prev.map((s) =>
-                                s.id === editingScriptId
-                                  ? { ...s, name: trimmedName, command: trimmedCmd }
-                                  : s
-                              )
-                            );
-                          }
-                          setEditingScriptId(null);
-                          setScriptNameInput('');
-                          setScriptCmdInput('');
-                        }
-                      }}
-                    />
+                    <div>
+                      <label className="block text-[11px] text-cozy-muted mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        value={scriptNameInput}
+                        onChange={(e) => setScriptNameInput(e.target.value)}
+                        placeholder="e.g. Run Linter"
+                        className="w-full bg-cozy-bg border border-cozy-border focus:border-sky-500 rounded-xl px-3 py-1.5 text-xs text-cozy-text focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-cozy-muted mb-1">Terminal Command</label>
+                      <input
+                        type="text"
+                        value={scriptCmdInput}
+                        onChange={(e) => setScriptCmdInput(e.target.value)}
+                        placeholder="e.g. npm run lint"
+                        className="w-full bg-cozy-bg border border-cozy-border focus:border-sky-500 rounded-xl px-3 py-1.5 text-xs font-mono text-cozy-text focus:outline-none"
+                      />
+                    </div>
                   </div>
                   <div className="flex justify-end gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setEditingScriptId(null)}
-                      className="px-2.5 py-1 text-xs text-cozy-muted hover:text-cozy-text rounded-md"
+                      className="px-3 py-1 text-xs text-cozy-muted hover:text-cozy-text bg-cozy-surface rounded-lg border border-cozy-border cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
+                      disabled={!scriptNameInput.trim() || !scriptCmdInput.trim()}
                       onClick={() => {
-                        const trimmedCmd = scriptCmdInput.trim();
-                        if (!trimmedCmd) return;
-                        const trimmedName = scriptNameInput.trim() || trimmedCmd;
+                        if (!scriptNameInput.trim() || !scriptCmdInput.trim()) return;
                         if (editingScriptId === 'new') {
-                          setCustomScripts((prev) => [
-                            ...prev,
-                            { id: `script-${Date.now()}`, name: trimmedName, command: trimmedCmd },
-                          ]);
+                          const newScript: ProjectCustomScript = {
+                            id: `script_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                            name: scriptNameInput.trim(),
+                            command: scriptCmdInput.trim(),
+                          };
+                          setCustomScripts((prev) => [...prev, newScript]);
                         } else {
                           setCustomScripts((prev) =>
                             prev.map((s) =>
                               s.id === editingScriptId
-                                ? { ...s, name: trimmedName, command: trimmedCmd }
+                                ? { ...s, name: scriptNameInput.trim(), command: scriptCmdInput.trim() }
                                 : s
                             )
                           );
@@ -736,8 +1055,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                         setScriptNameInput('');
                         setScriptCmdInput('');
                       }}
-                      disabled={!scriptCmdInput.trim()}
-                      className="px-3 py-1 text-xs font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-md transition-colors disabled:opacity-50"
+                      className="px-3 py-1 text-xs font-semibold text-white bg-sky-500 hover:bg-sky-600 disabled:opacity-40 rounded-lg cursor-pointer transition-colors"
                     >
                       Save Script
                     </button>
@@ -747,21 +1065,28 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
 
               {/* Script list */}
               {customScripts.length === 0 && !editingScriptId ? (
-                <div className="text-center py-4 text-xs text-cozy-muted border border-dashed border-cozy-border rounded-xl">
-                  No custom scripts saved yet.
+                <div className="text-center py-8 px-4 rounded-2xl border border-dashed border-cozy-border bg-cozy-subtle/30 text-xs text-cozy-muted">
+                  <Terminal className="w-6 h-6 mx-auto mb-2 opacity-40 text-sky-400" />
+                  <p className="font-medium text-cozy-text">No custom terminal scripts defined yet</p>
+                  <p className="text-[11px] mt-1 text-cozy-muted">
+                    Add scripts to quickly run tests, linters, migrations, or builds from your task workspaces.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                   {customScripts.map((s) => (
                     <div
                       key={s.id}
-                      className="flex items-center justify-between p-2.5 bg-cozy-bg border border-cozy-border rounded-lg text-xs"
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-cozy-subtle/50 border border-cozy-border text-xs group hover:border-sky-500/30 transition-all"
                     >
-                      <div className="min-w-0 flex-1 pr-2">
-                        <div className="font-medium text-cozy-text truncate">{s.name}</div>
-                        <div className="text-[11px] font-mono text-cozy-muted truncate mt-0.5">{s.command}</div>
+                      <div className="flex items-center space-x-2.5 min-w-0">
+                        <Terminal className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="font-medium text-cozy-text truncate">{s.name}</span>
+                        <span className="text-[11px] font-mono text-cozy-muted truncate max-w-[200px] sm:max-w-xs">
+                          {s.command}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center space-x-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => {
@@ -769,7 +1094,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                             setScriptNameInput(s.name);
                             setScriptCmdInput(s.command);
                           }}
-                          className="p-1 text-cozy-muted hover:text-cozy-text rounded hover:bg-cozy-subtle"
+                          className="p-1 text-cozy-muted hover:text-cozy-text rounded hover:bg-cozy-subtle cursor-pointer"
                           title="Edit"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -779,7 +1104,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                           onClick={() => {
                             setCustomScripts((prev) => prev.filter((item) => item.id !== s.id));
                           }}
-                          className="p-1 text-cozy-muted hover:text-red-500 rounded hover:bg-red-500/10"
+                          className="p-1 text-cozy-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -790,7 +1115,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                 </div>
               )}
             </div>
-          </div>
+          )}
         </div>
 
         {/* Modal Footer */}

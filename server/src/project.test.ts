@@ -81,6 +81,49 @@ test('Project configuration can be updated in SQLite database', () => {
   db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
 });
 
+test('Project system prompt can be stored and updated in SQLite database', () => {
+  const projectId = uuidv4();
+  const now = Date.now();
+  const systemPrompt = 'Always use TypeScript strict mode.\nFollow clean architecture guidelines.';
+
+  db.prepare(`
+    INSERT INTO projects (
+      id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, branch_convention,
+      default_agent_cli, default_model, system_prompt, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    projectId,
+    'prompt-test-project',
+    '/dummy/path/' + projectId,
+    'npm run dev',
+    5173,
+    'npm run build',
+    'npm test',
+    'main',
+    'agy',
+    'gemini-3.8-flash',
+    systemPrompt,
+    now,
+    now
+  );
+
+  const initial = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as any;
+  assert.equal(initial.system_prompt, systemPrompt);
+
+  const updatedPrompt = 'Always use TDD approach.';
+  db.prepare(`
+    UPDATE projects SET
+      system_prompt = ?,
+      updated_at = ?
+    WHERE id = ?
+  `).run(updatedPrompt, Date.now(), projectId);
+
+  const afterUpdate = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as any;
+  assert.equal(afterUpdate.system_prompt, updatedPrompt);
+
+  db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+});
+
 test('Task details (name, base_branch) can be modified in SQLite database', () => {
   const projectId = uuidv4();
   const taskId = uuidv4();

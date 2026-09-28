@@ -9,11 +9,13 @@ import {
   Clock,
   Pencil,
   Loader2,
+  Sliders,
 } from 'lucide-react';
 import { Project, Task, Settings, TaskGitStatus } from '../types';
 import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath, getProjectTasksGitStatus } from '../api';
 import { setCachedTask, deleteCachedTask } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
+import { ProjectConfigModal } from '../components/ProjectConfigModal';
 import { TaskStatusBadges } from '../components/TaskStatusBadges';
 import { formatRelativeTime } from '../utils/time';
 
@@ -54,6 +56,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   const [tasksStatus, setTasksStatus] = useState<Record<string, TaskGitStatus>>({});
   const [loadingStatus, setLoadingStatus] = useState(false);
@@ -242,6 +245,18 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
             </span>
           )}
         </h2>
+
+        {project && (
+          <button
+            type="button"
+            onClick={() => setIsConfigModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 bg-cozy-surface/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 rounded-xl transition-all shadow-soft-sm cursor-pointer"
+            title="Configure Project Settings, System Prompt, and Scripts"
+          >
+            <Sliders className="w-3.5 h-3.5 text-teal-500" />
+            <span>Project Settings</span>
+          </button>
+        )}
       </div>
 
       {/* Tasks Grid */}
@@ -454,6 +469,22 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           onSuccess={handleTaskUpdated}
           availableBranches={availableBranches}
           projectPath={project.path}
+        />
+      )}
+
+      {/* Project Configuration Modal */}
+      {isConfigModalOpen && project && (
+        <ProjectConfigModal
+          project={project}
+          isOpen={isConfigModalOpen}
+          onClose={() => setIsConfigModalOpen(false)}
+          onSuccess={(updated) => {
+            setProject(updated);
+            loadData(false);
+          }}
+          settings={settings || null}
+          ws={ws || null}
+          availableBranches={availableBranches}
         />
       )}
     </div>
