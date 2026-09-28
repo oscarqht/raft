@@ -740,15 +740,17 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                 </div>
               );
             })}
-          </div>
-        </div>
+              </div>
 
-        {/* 2. AI Agent Usage & Remaining Quotas (CodexBar Engine) */}
-        <AgentUsageCard
-          activeCli={agentCli}
-          clis={localClis}
-          onSelectCli={handleSelectCli}
-        />
+              {/* AI Agent Usage & Remaining Quotas (CodexBar) */}
+              <div className="pt-2 border-t border-cozy-border/60">
+                <AgentUsageCard
+                  activeCli={agentCli}
+                  clis={localClis}
+                  onSelectCli={handleSelectCli}
+                />
+              </div>
+            </div>
 
         {/* 3. Installation Guide (if selected CLI is NOT available) */}
         {!isCliReady ? (
