@@ -1,4 +1,4 @@
-import { Task, ChatSession, ChatMessage, ModelOption } from './types';
+import { Task, ChatSession, ChatMessage, ModelOption, AgentUsageSnapshot } from './types';
 
 const PREFIX = 'raft:';
 const LEGACY_PREFIX = 'termai:';
@@ -289,4 +289,37 @@ export function resolveModelAndEffort(
     'medium';
 
   return { modelId, effort: validEffort };
+}
+
+// Agent usages cache
+let inMemoryAgentUsages: Record<string, AgentUsageSnapshot> | null = null;
+
+export function getCachedAgentUsages(): Record<string, AgentUsageSnapshot> | null {
+  if (inMemoryAgentUsages && Object.keys(inMemoryAgentUsages).length > 0) {
+    return inMemoryAgentUsages;
+  }
+  try {
+    const raw =
+      localStorage.getItem(`${PREFIX}agent_usages`) ||
+      localStorage.getItem(`${LEGACY_PREFIX}agent_usages`) ||
+      localStorage.getItem('raft_agent_usages');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        inMemoryAgentUsages = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedAgentUsages(usages: Record<string, AgentUsageSnapshot>): void {
+  if (!usages || typeof usages !== 'object' || Object.keys(usages).length === 0) {
+    return;
+  }
+  inMemoryAgentUsages = usages;
+  try {
+    localStorage.setItem(`${PREFIX}agent_usages`, JSON.stringify(usages));
+  } catch {}
 }
