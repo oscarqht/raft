@@ -20,6 +20,8 @@ interface TaskPageProps {
   settings: Settings | null;
   clis: CliInfo[];
   ws: WebSocket | null;
+  onDeleteTask?: () => void;
+  isDeletingTask?: boolean;
 }
 
 export const TaskPage: React.FC<TaskPageProps> = ({
@@ -27,6 +29,8 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   settings,
   clis,
   ws,
+  onDeleteTask,
+  isDeletingTask,
 }) => {
   const params = useParams<{ projectId?: string; taskId?: string }>();
   const navigate = useNavigate();
@@ -202,6 +206,8 @@ export const TaskPage: React.FC<TaskPageProps> = ({
               onOpenRebase={() => setIsRebaseOpen(true)}
               onOpenSubmit={() => setIsSubmitOpen(true)}
               onOpenScripts={() => setIsRunScriptOpen(true)}
+              onDeleteTask={onDeleteTask}
+              isDeletingTask={isDeletingTask}
             />
           }
           right={

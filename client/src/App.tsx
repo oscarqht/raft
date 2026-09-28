@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
-import { getSettings, getClis, getProject, getTask } from './api';
-import { getCachedTask, setCachedTask } from './cache';
+import { getSettings, getClis, getProject, getTask, deleteTask } from './api';
+import { getCachedTask, setCachedTask, deleteCachedTask } from './cache';
 import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
 import { TaskPage } from './pages/TaskPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { Loader2 } from 'lucide-react';
 
 export default function App() {
   const location = useLocation();
@@ -17,6 +18,7 @@ export default function App() {
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
+  const [isDeletingTask, setIsDeletingTask] = useState(false);
 
   const [settings, setSettings] = useState<Settings | null>(null);
   const [clis, setClis] = useState<CliInfo[]>([]);
@@ -139,6 +141,28 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
   };
 
+  const handleDeleteActiveTask = async () => {
+    if (!activeTask || isDeletingTask) return;
+    if (!confirm('Delete this task and clean up its git worktree?')) return;
+
+    setIsDeletingTask(true);
+    try {
+      await deleteTask(activeTask.id);
+      deleteCachedTask(activeTask.id);
+      const targetProjectId = activeTask.project_id || currentProjectId;
+      setActiveTask(null);
+      if (targetProjectId) {
+        navigate(`/projects/${targetProjectId}`);
+      } else {
+        navigate('/');
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete task');
+    } finally {
+      setIsDeletingTask(false);
+    }
+  };
+
   const isProjectPage = Boolean(projectMatch && !projectTaskMatch);
 
   return (
@@ -154,6 +178,8 @@ export default function App() {
         onNavigate={handleNavigate}
         settings={settings}
         onEditTask={currentTaskId && activeTask ? () => setIsEditTaskOpen(true) : undefined}
+        onDeleteTask={currentTaskId && activeTask ? handleDeleteActiveTask : undefined}
+        isDeletingTask={isDeletingTask}
         onNewTask={isProjectPage ? () => window.dispatchEvent(new CustomEvent('open-new-task')) : undefined}
       />
 
@@ -178,15 +204,6 @@ export default function App() {
                 onUpdateSettings={(s) => setSettings(s)}
                 clis={clis}
                 onRefreshClis={() => getClis().then(setClis).catch(() => {})}
-                onBack={() => {
-                  if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
-                    navigate(-1);
-                  } else if (window.history.length > 1 && (!window.history.state || window.history.state.idx === undefined)) {
-                    navigate(-1);
-                  } else {
-                    navigate('/');
-                  }
-                }}
               />
             }
           />
@@ -214,6 +231,8 @@ export default function App() {
                 settings={settings}
                 clis={clis}
                 ws={ws}
+                onDeleteTask={handleDeleteActiveTask}
+                isDeletingTask={isDeletingTask}
               />
             }
           />
@@ -225,6 +244,8 @@ export default function App() {
                 settings={settings}
                 clis={clis}
                 ws={ws}
+                onDeleteTask={handleDeleteActiveTask}
+                isDeletingTask={isDeletingTask}
               />
             }
           />
@@ -242,6 +263,21 @@ export default function App() {
           onSuccess={handleActiveTaskUpdated}
           projectPath={activeProject?.path || activeTask.project?.path}
         />
+      )}
+
+      {/* Deleting Task Overlay */}
+      {isDeletingTask && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 select-none">
+          <div className="bg-cozy-surface border border-cozy-border/80 shadow-soft-2xl rounded-2.5xl p-6 flex flex-col items-center text-center max-w-sm mx-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3 text-red-500 shadow-soft-sm">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+            <h3 className="text-sm font-semibold text-cozy-text mb-1">Deleting Task</h3>
+            <p className="text-xs text-cozy-muted leading-relaxed">
+              Cleaning up git worktree and removing task data... Please wait.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

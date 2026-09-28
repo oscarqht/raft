@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
-  Paperclip, Loader2, AlertCircle
+  Paperclip, Loader2, AlertCircle, Trash2
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment } from '../types';
 import { ChatMessageList } from './ChatMessageList';
@@ -36,6 +36,8 @@ interface ChatPaneProps {
   onOpenRebase: () => void;
   onOpenSubmit: () => void;
   onOpenScripts?: () => void;
+  onDeleteTask?: () => void;
+  isDeletingTask?: boolean;
 }
 
 export const ChatPane: React.FC<ChatPaneProps> = ({
@@ -46,6 +48,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   onOpenRebase,
   onOpenSubmit,
   onOpenScripts,
+  onDeleteTask,
+  isDeletingTask,
 }) => {
   const navigate = useNavigate();
   // Synchronous cache initialization for 0ms instantaneous load
@@ -1119,6 +1123,20 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 <UploadCloud className="w-3.5 h-3.5" />
                 <span>Submit Changes</span>
               </button>
+              {onDeleteTask && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileActionsMenu(false);
+                    onDeleteTask();
+                  }}
+                  disabled={isDeletingTask}
+                  className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-red-500/10 text-red-500 transition-colors font-medium border-t border-cozy-border/40 disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  <span>Delete Task</span>
+                </button>
+              )}
             </div>
           )}
         </div>

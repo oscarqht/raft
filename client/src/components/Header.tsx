@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2 } from 'lucide-react';
 import { Settings } from '../types';
 import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 
@@ -15,6 +15,8 @@ interface HeaderProps {
   onNavigate?: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
   onEditTask?: () => void;
+  onDeleteTask?: () => void;
+  isDeletingTask?: boolean;
   onNewTask?: () => void;
 }
 
@@ -23,6 +25,8 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   settings,
   onEditTask,
+  onDeleteTask,
+  isDeletingTask,
   onNewTask,
 }) => {
   const navigate = useNavigate();
@@ -81,22 +85,40 @@ export const Header: React.FC<HeaderProps> = ({
         {currentPath?.taskName && (
           <div className="hidden min-[920px]:flex items-center space-x-2 text-cozy-muted min-w-0">
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
-            <button
-              type="button"
-              onClick={onEditTask}
-              disabled={!onEditTask}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium ${
-                onEditTask ? 'group cursor-pointer' : 'cursor-default'
-              }`}
-              title={onEditTask ? 'Click to edit task details' : undefined}
-            >
-              <span className="text-cozy-text font-medium max-w-[100px] sm:max-w-[220px] truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
-                {currentPath.taskName}
-              </span>
-              {onEditTask && (
-                <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-teal-400 transition-opacity shrink-0 hidden sm:inline" />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                onClick={onEditTask}
+                disabled={!onEditTask || isDeletingTask}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium ${
+                  onEditTask && !isDeletingTask ? 'group cursor-pointer' : 'cursor-default'
+                }`}
+                title={onEditTask ? 'Click to edit task details' : undefined}
+              >
+                <span className="text-cozy-text font-medium max-w-[100px] sm:max-w-[220px] truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                  {currentPath.taskName}
+                </span>
+                {onEditTask && (
+                  <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-teal-400 transition-opacity shrink-0 hidden sm:inline" />
+                )}
+              </button>
+
+              {onDeleteTask && (
+                <button
+                  type="button"
+                  onClick={onDeleteTask}
+                  disabled={isDeletingTask}
+                  className="w-7 h-7 rounded-full bg-cozy-subtle/70 hover:bg-red-500/15 border border-cozy-border/60 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
+                  title="Delete task and clean up git worktree"
+                >
+                  {isDeletingTask ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                </button>
               )}
-            </button>
+            </div>
           </div>
         )}
       </div>
@@ -113,6 +135,22 @@ export const Header: React.FC<HeaderProps> = ({
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Start New Task</span>
             <span className="sm:hidden">New Task</span>
+          </button>
+        )}
+
+        {currentPath?.taskId && onDeleteTask && (
+          <button
+            type="button"
+            onClick={onDeleteTask}
+            disabled={isDeletingTask}
+            className="min-[920px]:hidden w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 border border-cozy-border/70 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
+            title="Delete task and clean up git worktree"
+          >
+            {isDeletingTask ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+            ) : (
+              <Trash2 className="w-3.5 h-3.5" />
+            )}
           </button>
         )}
 

@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Settings as SettingsIcon,
   Check,
   Cpu,
   BrainCircuit,
   Sliders,
-  ArrowLeft,
   CheckCircle2,
   RefreshCw,
   Sparkles,
@@ -52,15 +50,13 @@ interface SettingsPageProps {
   onUpdateSettings: (newSettings: Settings) => void;
   clis: CliInfo[];
   onRefreshClis?: () => void;
-  onBack?: () => void;
 }
 
-const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; onBack: () => void }> = ({
+const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> = ({
   settings,
   onUpdateSettings,
   clis,
   onRefreshClis,
-  onBack,
 }) => {
   const [localClis, setLocalClis] = useState<CliInfo[]>(clis);
   const [agentCli, setAgentCli] = useState(settings.agent_cli);
@@ -381,37 +377,28 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
   return (
     <div className="flex-1 overflow-y-auto w-full">
       <div className="max-w-3xl mx-auto p-6 md:p-8 space-y-6">
-        {/* Top Bar */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-cozy-muted hover:text-cozy-text bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/60 transition-all shadow-soft-sm cursor-pointer"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Back</span>
-          </button>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm shrink-0">
+                <SettingsIcon className="w-5 h-5" />
+              </div>
+              <h1 className="text-2xl font-bold tracking-tight text-cozy-text">
+                Settings
+              </h1>
+            </div>
+            <p className="text-sm text-cozy-muted ml-13">
+              Configure default AI agent CLIs, models, and reasoning efforts.
+            </p>
+          </div>
 
           {savedToast && (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-500 bg-emerald-500/15 border border-emerald-400/30 px-3.5 py-1.5 rounded-full shadow-soft-sm animate-in fade-in">
+            <div className="flex items-center gap-1.5 text-xs text-emerald-500 bg-emerald-500/15 border border-emerald-400/30 px-3.5 py-1.5 rounded-full shadow-soft-sm animate-in fade-in shrink-0 mt-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Settings saved automatically</span>
             </div>
           )}
         </div>
-
-      <div>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm shrink-0">
-            <SettingsIcon className="w-5 h-5" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-cozy-text">
-            Settings
-          </h1>
-        </div>
-        <p className="text-sm text-cozy-muted ml-13">
-          Configure default AI agent CLIs, models, and reasoning efforts.
-        </p>
-      </div>
 
       <div className="space-y-6">
         {/* 1. AI Agent CLI Selection */}
@@ -1094,22 +1081,6 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings; on
 };
 
 export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
-  const navigate = useNavigate();
-
-  const handleBack = () => {
-    if (props.onBack) {
-      props.onBack();
-      return;
-    }
-    if (window.history.state && typeof window.history.state.idx === 'number' && window.history.state.idx > 0) {
-      navigate(-1);
-    } else if (window.history.length > 1 && (!window.history.state || window.history.state.idx === undefined)) {
-      navigate(-1);
-    } else {
-      navigate('/');
-    }
-  };
-
   if (!props.settings) {
     return (
       <div className="flex-1 flex items-center justify-center text-cozy-muted text-sm">
@@ -1122,7 +1093,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
     <SettingsPageContent
       {...props}
       settings={props.settings}
-      onBack={handleBack}
     />
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FolderGit2, Trash2, ArrowRight, Sparkles, Sliders } from 'lucide-react';
+import { Plus, FolderGit2, Trash2, ArrowRight, Sparkles, Sliders, Loader2 } from 'lucide-react';
 import { Project, Settings, SelectionMeta } from '../types';
 import { getProjects, deleteProject, validateProjectPath } from '../api';
 import { DiscoveryModal } from '../components/DiscoveryModal';
@@ -20,6 +20,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 }) => {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [discoveryPath, setDiscoveryPath] = useState('');
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
@@ -33,15 +34,18 @@ export const HomePage: React.FC<HomePageProps> = ({
     }
   };
 
-  const loadProjects = async () => {
+  const loadProjects = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     try {
       const data = await getProjects();
       setProjects(data);
-    } catch {}
+    } catch {} finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadProjects();
+    loadProjects(true);
   }, []);
 
   const handleSelectRepository = async (selectedPath: string, _meta: SelectionMeta) => {
@@ -92,7 +96,12 @@ export const HomePage: React.FC<HomePageProps> = ({
       </div>
 
       {/* Projects Grid */}
-      {projects.length === 0 ? (
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-24 text-cozy-muted text-sm gap-3">
+          <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+          <span className="font-medium">Loading projects...</span>
+        </div>
+      ) : projects.length === 0 ? (
         <div className="p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
           <div className="w-20 h-20 rounded-2.5xl flex items-center justify-center mb-4 overflow-hidden drop-shadow-md">
             <img src="/logo.png" alt="Raft otter" className="w-full h-full object-contain" />

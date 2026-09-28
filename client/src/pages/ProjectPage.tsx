@@ -8,10 +8,11 @@ import {
   ArrowRight,
   Clock,
   Pencil,
+  Loader2,
 } from 'lucide-react';
 import { Project, Task, Settings } from '../types';
 import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath } from '../api';
-import { setCachedTask } from '../cache';
+import { setCachedTask, deleteCachedTask } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { formatRelativeTime } from '../utils/time';
 
@@ -44,6 +45,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [taskName, setTaskName] = useState('');
   const [baseBranch, setBaseBranch] = useState('');
@@ -67,20 +69,21 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = false) => {
     if (!projectId) {
       setError('Project ID is missing');
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (showLoading) setLoading(true);
     setError(null);
     try {
-      const p = await getProject(projectId);
+      const [p, t] = await Promise.all([
+        getProject(projectId),
+        getProjectTasks(projectId),
+      ]);
       setProject(p);
       setBaseBranch(p.branch_convention || 'main');
-
-      const t = await getProjectTasks(projectId);
       setTasks(t);
       t.forEach((taskItem) => setCachedTask(taskItem));
 
@@ -101,7 +104,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
   };
 
   useEffect(() => {
-    loadData();
+    setProject(null);
+    setTasks([]);
+    setLoading(true);
+    loadData(true);
   }, [projectId]);
 
   const handleCreateTask = async (e?: React.FormEvent) => {
@@ -134,9 +140,18 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
   const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (deletingTaskId) return;
     if (confirm('Delete this task and clean up its git worktree?')) {
-      await deleteTask(id);
-      loadData();
+      setDeletingTaskId(id);
+      try {
+        await deleteTask(id);
+        deleteCachedTask(id);
+        await loadData();
+      } catch (err: any) {
+        alert(err?.message || 'Failed to delete task');
+      } finally {
+        setDeletingTaskId(null);
+      }
     }
   };
 
@@ -155,10 +170,26 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     );
   }
 
-  if (loading || !project) {
+  if (loading && !project) {
     return (
-      <div className="flex-1 flex items-center justify-center text-cozy-muted text-sm">
-        Loading project...
+      <div className="flex-1 flex flex-col items-center justify-center py-24 text-cozy-muted text-sm gap-3">
+        <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+        <span className="font-medium">Loading tasks...</span>
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+        <p className="text-cozy-muted text-sm mb-4">Project not found</p>
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Projects</span>
+        </button>
       </div>
     );
   }
@@ -169,14 +200,21 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-base font-bold text-cozy-text flex items-center gap-2.5">
           Ongoing & Completed Tasks
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cozy-subtle text-cozy-muted border border-cozy-border/70 shadow-soft-sm">
-            {tasks.length}
-          </span>
+          {!loading && (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cozy-subtle text-cozy-muted border border-cozy-border/70 shadow-soft-sm">
+              {tasks.length}
+            </span>
+          )}
         </h2>
       </div>
 
       {/* Tasks Grid */}
-      {tasks.length === 0 ? (
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-cozy-muted text-sm gap-3">
+          <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+          <span className="font-medium">Loading tasks...</span>
+        </div>
+      ) : tasks.length === 0 ? (
         <div className="p-8 sm:p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
           <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center mb-3.5 shadow-soft-sm">
             <GitBranch className="w-6 h-6 text-teal-500" />
@@ -195,75 +233,91 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         </div>
       ) : (
         <div className="space-y-3.5">
-          {tasks.map((t) => (
-            <div
-              key={t.id}
-              onClick={() => onSelectTask(t.id, t)}
-              className="group p-4 sm:p-5 rounded-2xl sm:rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4"
-            >
-              <div className="flex items-start sm:items-center space-x-3 sm:space-x-3.5 min-w-0 flex-1">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-500/15 to-cyan-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 shadow-soft-sm mt-0.5 sm:mt-0">
-                  <GitBranch className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2.5">
-                    <h4 className="text-sm font-semibold text-cozy-text truncate max-w-full group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
-                      {t.name}
-                    </h4>
-                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-400/20 font-medium whitespace-nowrap shrink-0 max-w-full truncate">
-                      {t.branch}
-                    </span>
+          {tasks.map((t) => {
+            const isDeletingThis = deletingTaskId === t.id;
+            return (
+              <div
+                key={t.id}
+                onClick={() => {
+                  if (deletingTaskId) return;
+                  onSelectTask(t.id, t);
+                }}
+                className={`group p-4 sm:p-5 rounded-2xl sm:rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 ${
+                  isDeletingThis ? 'opacity-60 cursor-wait pointer-events-none' : ''
+                }`}
+              >
+                <div className="flex items-start sm:items-center space-x-3 sm:space-x-3.5 min-w-0 flex-1">
+                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-500/15 to-cyan-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 shadow-soft-sm mt-0.5 sm:mt-0">
+                    <GitBranch className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                   </div>
-                  <p className="text-xs text-cozy-muted font-mono truncate mt-1" title={t.worktree_path}>
-                    <span>Based on {t.base_branch}</span>
-                    <span className="hidden sm:inline"> &bull; {t.worktree_path}</span>
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 sm:gap-2.5">
+                      <h4 className="text-sm font-semibold text-cozy-text truncate max-w-full group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                        {t.name}
+                      </h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-400/20 font-medium whitespace-nowrap shrink-0 max-w-full truncate">
+                        {t.branch}
+                      </span>
+                    </div>
+                    <p className="text-xs text-cozy-muted font-mono truncate mt-1" title={t.worktree_path}>
+                      <span>Based on {t.base_branch}</span>
+                      <span className="hidden sm:inline"> &bull; {t.worktree_path}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between sm:justify-end space-x-2 shrink-0 pt-2.5 sm:pt-0 border-t border-cozy-border/40 sm:border-t-0">
+                  <div
+                    className="flex items-center gap-1.5 text-[11px] text-cozy-muted font-medium whitespace-nowrap shrink-0"
+                    title={t.created_at ? new Date(t.created_at).toLocaleString() : undefined}
+                  >
+                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                    <span>{formatRelativeTime(t.created_at)}</span>
+                  </div>
+
+                  <div className="flex items-center space-x-1.5 sm:space-x-2">
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenEditTask(t, e)}
+                      disabled={Boolean(deletingTaskId)}
+                      className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-cozy-subtle flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all cursor-pointer shadow-soft-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Edit task name and base branch"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteTask(t.id, e)}
+                      disabled={Boolean(deletingTaskId)}
+                      className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-80 disabled:cursor-wait"
+                      title={isDeletingThis ? 'Deleting task and worktree...' : 'Delete task and worktree'}
+                    >
+                      {isDeletingThis ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (deletingTaskId) return;
+                        onSelectTask(t.id, t);
+                      }}
+                      disabled={Boolean(deletingTaskId)}
+                      className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-teal-500/15 flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all cursor-pointer shadow-soft-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Go to task page"
+                    >
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div className="flex items-center justify-between sm:justify-end space-x-2 shrink-0 pt-2.5 sm:pt-0 border-t border-cozy-border/40 sm:border-t-0">
-                <div
-                  className="flex items-center gap-1.5 text-[11px] text-cozy-muted font-medium whitespace-nowrap shrink-0"
-                  title={t.created_at ? new Date(t.created_at).toLocaleString() : undefined}
-                >
-                  <Clock className="w-3.5 h-3.5 shrink-0" />
-                  <span>{formatRelativeTime(t.created_at)}</span>
-                </div>
-
-                <div className="flex items-center space-x-1.5 sm:space-x-2">
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenEditTask(t, e)}
-                    className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-cozy-subtle flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all cursor-pointer shadow-soft-sm"
-                    title="Edit task name and base branch"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteTask(t.id, e)}
-                    className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm"
-                    title="Delete task and worktree"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelectTask(t.id, t);
-                    }}
-                    className="w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-teal-500/15 flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all cursor-pointer shadow-soft-sm"
-                    title="Go to task page"
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

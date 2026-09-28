@@ -143,6 +143,19 @@ export function setCachedMessages(sessionId: string, messages: ChatMessage[]): v
   }
 }
 
+// Delete cached task
+export function deleteCachedTask(taskId: string): void {
+  if (!taskId) return;
+  try {
+    localStorage.removeItem(`${PREFIX}task:${taskId}`);
+    localStorage.removeItem(`${PREFIX}chats:${taskId}`);
+    localStorage.removeItem(`${PREFIX}active_chat:${taskId}`);
+    const index = getIndex();
+    index.taskIds = index.taskIds.filter((id) => id !== taskId);
+    saveIndex(index);
+  } catch {}
+}
+
 // Delete cached chat
 export function deleteCachedChat(taskId: string, chatId: string): void {
   try {
