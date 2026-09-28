@@ -12,6 +12,7 @@ import {
   ProjectCustomScript,
   ScriptExecutionItem,
   AgentSkill,
+  SkillInstallSummaryItem,
   GitAccount,
   RemoteRepoItem,
   VerifyGitAccountResult,
@@ -124,6 +125,42 @@ export async function deleteSkill(id: string): Promise<void> {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to delete skill');
   }
+}
+
+export function installSkillStream(
+  command: string,
+  onLog: (chunk: string) => void,
+  onDone: (result: {
+    success: boolean;
+    error?: string;
+    installedSkills?: SkillInstallSummaryItem[];
+    allSkills?: AgentSkill[];
+  }) => void,
+  onError?: (err: any) => void
+): () => void {
+  const query = new URLSearchParams({ command });
+  const eventSource = new EventSource(`${API_BASE}/skills/install/stream?${query.toString()}`);
+
+  eventSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.type === 'output' && data.chunk) {
+        onLog(data.chunk);
+      } else if (data.type === 'done') {
+        onDone(data);
+        eventSource.close();
+      }
+    } catch {}
+  };
+
+  eventSource.onerror = (err) => {
+    if (onError) onError(err);
+    eventSource.close();
+  };
+
+  return () => {
+    eventSource.close();
+  };
 }
 
 export async function validateProjectPath(dirPath: string): Promise<any> {

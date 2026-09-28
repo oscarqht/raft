@@ -26,7 +26,7 @@ import {
   ShieldCheck,
   Pencil,
 } from 'lucide-react';
-import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill } from '../types';
+import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill, SkillInstallSummaryItem } from '../types';
 import {
   updateSettings,
   getModels,
@@ -40,6 +40,7 @@ import {
   createSkill,
   updateSkill,
   deleteSkill,
+  installSkillStream,
 } from '../api';
 
 import {
@@ -55,6 +56,10 @@ interface SettingsPageProps {
   onUpdateSettings: (newSettings: Settings) => void;
   clis: CliInfo[];
   onRefreshClis?: () => void;
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\].*?\x07/g, '');
 }
 
 const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> = ({
@@ -172,6 +177,29 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [isSavingSkill, setIsSavingSkill] = useState(false);
   const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
 
+  // Skill installation via npx command state
+  const [isInstallSkillModalOpen, setIsInstallSkillModalOpen] = useState(false);
+  const [installSkillCommand, setInstallSkillCommand] = useState('npx skills add https://github.com/mattpocock/skills --skill grilling');
+  const [isInstallingSkill, setIsInstallingSkill] = useState(false);
+  const [skillInstallLogs, setSkillInstallLogs] = useState('');
+  const [skillInstallError, setSkillInstallError] = useState<string | null>(null);
+  const [skillInstallSuccess, setSkillInstallSuccess] = useState<boolean | null>(null);
+  const [installedSkillsSummary, setInstalledSkillsSummary] = useState<SkillInstallSummaryItem[] | null>(null);
+  const cancelSkillInstallRef = React.useRef<(() => void) | null>(null);
+  const skillLogsEndRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (skillLogsEndRef.current) {
+      skillLogsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [skillInstallLogs]);
+
+  useEffect(() => {
+    return () => {
+      cancelSkillInstallRef.current?.();
+    };
+  }, []);
+
   const loadSkills = async () => {
     try {
       setIsLoadingSkills(true);
@@ -187,6 +215,63 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   useEffect(() => {
     loadSkills();
   }, []);
+
+  const handleOpenInstallSkillModal = () => {
+    setInstallSkillCommand('npx skills add https://github.com/mattpocock/skills --skill grilling');
+    setSkillInstallLogs('');
+    setSkillInstallError(null);
+    setSkillInstallSuccess(null);
+    setInstalledSkillsSummary(null);
+    setIsInstallSkillModalOpen(true);
+  };
+
+  const handleStartSkillInstall = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!installSkillCommand.trim() || isInstallingSkill) return;
+
+    setIsInstallingSkill(true);
+    setSkillInstallLogs('');
+    setSkillInstallError(null);
+    setSkillInstallSuccess(null);
+    setInstalledSkillsSummary(null);
+
+    const cancel = installSkillStream(
+      installSkillCommand.trim(),
+      (chunk) => {
+        setSkillInstallLogs((prev) => prev + chunk);
+      },
+      (result) => {
+        setIsInstallingSkill(false);
+        if (result.success) {
+          setSkillInstallSuccess(true);
+          setInstalledSkillsSummary(result.installedSkills || []);
+          if (result.allSkills) {
+            setSkills(result.allSkills);
+          } else {
+            loadSkills();
+          }
+        } else {
+          setSkillInstallSuccess(false);
+          setSkillInstallError(result.error || 'Failed to install skill');
+        }
+      },
+      (err) => {
+        setIsInstallingSkill(false);
+        setSkillInstallSuccess(false);
+        setSkillInstallError(err?.message || 'Connection lost during installation');
+      }
+    );
+
+    cancelSkillInstallRef.current = cancel;
+  };
+
+  const handleCloseInstallSkillModal = () => {
+    if (isInstallingSkill) {
+      cancelSkillInstallRef.current?.();
+      setIsInstallingSkill(false);
+    }
+    setIsInstallSkillModalOpen(false);
+  };
 
   const handleOpenAddSkill = () => {
     setEditingSkill(null);
@@ -948,14 +1033,25 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleOpenAddSkill}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Skill</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleOpenInstallSkillModal}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-text transition-all shadow-soft-sm cursor-pointer shrink-0"
+                title="Install skills from GitHub or npm packages via npx skills add"
+              >
+                <Terminal className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                <span>Install with npx</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenAddSkill}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Skill</span>
+              </button>
+            </div>
           </div>
 
           {/* List of Skills */}
@@ -1371,6 +1467,154 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                     <>
                       <Check className="w-3.5 h-3.5" />
                       <span>{editingSkill ? 'Save Changes' : 'Create Skill'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Skill Install via npx Command Modal */}
+      {isInstallSkillModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-xl rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden relative">
+            <div className="p-4 md:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400">
+                  <Terminal className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-cozy-text">
+                    Install Skills via Command
+                  </h3>
+                  <p className="text-xs text-cozy-muted">
+                    Install community or repository skills using <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">npx skills add</span>.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseInstallSkillModal}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleStartSkillInstall} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-cozy-text mb-1.5">
+                  Command or Package URL
+                </label>
+                <input
+                  type="text"
+                  value={installSkillCommand}
+                  onChange={(e) => setInstallSkillCommand(e.target.value)}
+                  placeholder="npx skills add https://github.com/mattpocock/skills --skill grilling"
+                  disabled={isInstallingSkill}
+                  required
+                  className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-cozy-surface border border-cozy-border focus:border-teal-400 focus:outline-none transition-all text-cozy-text placeholder:text-cozy-muted/60 disabled:opacity-60"
+                />
+                <div className="flex items-center gap-2 mt-2 flex-wrap text-[11px] text-cozy-muted">
+                  <span>Quick examples:</span>
+                  <button
+                    type="button"
+                    disabled={isInstallingSkill}
+                    onClick={() => setInstallSkillCommand('npx skills add https://github.com/mattpocock/skills --skill grilling')}
+                    className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 hover:bg-teal-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    mattpocock/skills --skill grilling
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isInstallingSkill}
+                    onClick={() => setInstallSkillCommand('npx skills add vercel-labs/agent-skills')}
+                    className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 hover:bg-teal-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    vercel-labs/agent-skills
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Alert */}
+              {skillInstallSuccess && installedSkillsSummary && (
+                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-400/30 text-xs space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>
+                      Successfully installed {installedSkillsSummary.length} skill{installedSkillsSummary.length === 1 ? '' : 's'}!
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {installedSkillsSummary.map((s) => (
+                      <span
+                        key={s.id}
+                        className="inline-flex items-center gap-1 font-mono text-[11px] px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-medium"
+                      >
+                        /{s.name}
+                        {s.overwritten && (
+                          <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-sans opacity-80">(updated)</span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-cozy-muted pt-1">
+                    Skills are ready to be used! Type <span className="font-mono font-semibold text-cozy-text">/{installedSkillsSummary[0]?.name || 'name'}</span> in chat or view them below.
+                  </p>
+                </div>
+              )}
+
+              {skillInstallError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-400/20 text-xs text-red-500">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{skillInstallError}</span>
+                </div>
+              )}
+
+              {/* Terminal Logs Output */}
+              {(isInstallingSkill || skillInstallLogs) && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] text-cozy-muted">
+                    <span className="font-mono">Terminal Output</span>
+                    {isInstallingSkill && (
+                      <span className="flex items-center gap-1 text-teal-500">
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                        <span>Cloning &amp; Installing...</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-950 text-slate-200 font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap select-text border border-white/10 shadow-inner">
+                    {stripAnsi(skillInstallLogs) || 'Initializing installation process...'}
+                    <div ref={skillLogsEndRef} />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-cozy-border/50">
+                <button
+                  type="button"
+                  onClick={handleCloseInstallSkillModal}
+                  className="px-4 py-2 rounded-full text-xs font-semibold text-cozy-muted hover:text-cozy-text bg-cozy-surface border border-cozy-border transition-all cursor-pointer"
+                >
+                  {skillInstallSuccess ? 'Close' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isInstallingSkill || !installSkillCommand.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
+                >
+                  {isInstallingSkill ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Installing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{skillInstallSuccess ? 'Install Another' : 'Install Skill'}</span>
                     </>
                   )}
                 </button>

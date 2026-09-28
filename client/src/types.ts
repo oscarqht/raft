@@ -214,6 +214,13 @@ export interface AgentSkill {
   filePath?: string;
 }
 
+export interface SkillInstallSummaryItem {
+  id: string;
+  name: string;
+  description: string;
+  overwritten: boolean;
+}
+
 export interface GitAccount {
   id: string;
   provider: 'github' | 'gitlab';

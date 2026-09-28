@@ -41,7 +41,7 @@ import {
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
-import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
+import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills, installSkillWithNpxProcess } from './skillService.js';
 import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
 import multer from 'multer';
 
@@ -304,6 +304,52 @@ app.delete('/api/skills/:id', (req: Request, res: Response) => {
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to delete skill' });
+  }
+});
+
+app.get('/api/skills/install/stream', (req: Request, res: Response) => {
+  const command = (req.query.command as string) || '';
+  if (!command.trim()) {
+    return res.status(400).json({ error: 'command query parameter is required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendEvent({ type: 'start', command });
+
+  try {
+    const { proc, promise } = installSkillWithNpxProcess(command, (chunk) => {
+      sendEvent({ type: 'output', chunk });
+    });
+
+    req.on('close', () => {
+      try {
+        if (proc) proc.kill();
+      } catch {}
+    });
+
+    promise.then((result) => {
+      const allSkills = getAllSkills();
+      sendEvent({
+        type: 'done',
+        success: result.success,
+        error: result.error,
+        installedSkills: result.installedSkills,
+        allSkills,
+      });
+      res.end();
+    });
+  } catch (err: any) {
+    sendEvent({ type: 'output', chunk: `\n[raft error] ${err.message}\n` });
+    sendEvent({ type: 'done', success: false, error: err.message });
+    res.end();
   }
 });
 

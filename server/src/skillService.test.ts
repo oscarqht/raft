@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseSkillMarkdown, getAllCustomSkills, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
+import { parseSkillMarkdown, getAllCustomSkills, resolveSkillPrompt, extractMatchedSkills, parseSkillCommand, installSkillWithNpxProcess } from './skillService.js';
 import { insertSkill, deleteSkillById, getSkillByName, updateSkillById } from './db.js';
 
 test('parseSkillMarkdown parses YAML frontmatter correctly', () => {
@@ -90,4 +90,74 @@ test('user-managed skills CRUD and prompt resolution', () => {
   assert.strictEqual(afterDelete, undefined);
   const promptAfterDelete = resolveSkillPrompt('Please run /test-deploy');
   assert.strictEqual(promptAfterDelete, 'Please run /test-deploy');
+});
+
+test('parseSkillCommand parses full npx commands and adds required flags', () => {
+  const parsed = parseSkillCommand('npx skills add https://github.com/mattpocock/skills --skill grilling');
+  assert.deepStrictEqual(parsed.args, [
+    'https://github.com/mattpocock/skills',
+    '--skill',
+    'grilling',
+    '--copy',
+    '-y',
+  ]);
+});
+
+test('parseSkillCommand parses shorthand skills add and repo paths', () => {
+  const parsed1 = parseSkillCommand('skills add vercel-labs/agent-skills');
+  assert.deepStrictEqual(parsed1.args, ['vercel-labs/agent-skills', '--copy', '-y']);
+
+  const parsed2 = parseSkillCommand('https://github.com/mattpocock/skills --skill "grilling recipe"');
+  assert.deepStrictEqual(parsed2.args, [
+    'https://github.com/mattpocock/skills',
+    '--skill',
+    'grilling recipe',
+    '--copy',
+    '-y',
+  ]);
+
+  const parsed3 = parseSkillCommand('npx -y skills add some/repo -y --copy');
+  assert.deepStrictEqual(parsed3.args, ['some/repo', '-y', '--copy']);
+});
+
+test('parseSkillCommand handles invalid or empty input gracefully', () => {
+  const parsedEmpty = parseSkillCommand('');
+  assert.ok(parsedEmpty.error);
+  assert.strictEqual(parsedEmpty.args.length, 0);
+
+  const parsedOnlyPrefix = parseSkillCommand('npx skills add');
+  assert.ok(parsedOnlyPrefix.error);
+  assert.strictEqual(parsedOnlyPrefix.args.length, 0);
+});
+
+test('installSkillWithNpxProcess installs skill and registers it in DB', async () => {
+  // Clean up if already exists
+  const existing = getSkillByName('grilling');
+  if (existing) {
+    deleteSkillById(existing.id);
+  }
+
+  const logs: string[] = [];
+  const { promise } = installSkillWithNpxProcess(
+    'npx skills add https://github.com/mattpocock/skills --skill grilling',
+    (chunk) => logs.push(chunk)
+  );
+
+  const result = await promise;
+  assert.strictEqual(result.success, true);
+  assert.ok(result.installedSkills && result.installedSkills.length > 0);
+  const grillingSkill = result.installedSkills.find((s) => s.name === 'grilling');
+  assert.ok(grillingSkill, 'Expected grilling skill to be in installedSkills');
+
+  // Verify in database
+  const fromDb = getSkillByName('grilling');
+  assert.ok(fromDb, 'Expected grilling skill to be found in database');
+  assert.ok(fromDb.content.length > 0);
+
+  // Verify prompt resolution works with /grilling
+  const resolved = resolveSkillPrompt('Please conduct an interview using /grilling');
+  assert.ok(resolved.includes('[Skill Instructions: /grilling]'));
+
+  // Clean up
+  deleteSkillById(fromDb.id);
 });
