@@ -37,9 +37,12 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
   if (!status && loading) {
     return (
       <div className={`flex items-center gap-1.5 ${className}`}>
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-cozy-subtle/60 text-cozy-muted border border-cozy-border/40 animate-pulse">
-          <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-          <span>Checking status...</span>
+        <div
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-cozy-subtle/60 text-cozy-muted border border-cozy-border/40 animate-pulse shrink-0"
+          title="Checking Git status..."
+        >
+          <RefreshCw className="w-2.5 h-2.5 animate-spin shrink-0" />
+          <span className="hidden min-[1400px]:inline">Checking status...</span>
         </div>
       </div>
     );
@@ -75,7 +78,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
 
   return (
     <div
-      className={`flex items-center flex-wrap gap-1.5 text-xs ${className}`}
+      className={`flex items-center flex-nowrap gap-1.5 text-xs ${className}`}
       onClick={(e) => {
         // Prevent clicking badges inside task cards from triggering card navigation if not desired
         e.stopPropagation();
@@ -84,38 +87,39 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
       {/* 1. Primary Lifecycle Stage */}
       {isMerged ? (
         <span
-          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25 shadow-soft-xs"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25 shadow-soft-xs shrink-0"
           title="Branch has been merged into base branch"
         >
-          <GitMerge className="w-3 h-3 text-purple-500" />
-          <span>Merged</span>
+          <GitMerge className="w-3 h-3 text-purple-500 shrink-0" />
+          <span className="hidden min-[1400px]:inline">Merged</span>
         </span>
       ) : isPrOpen ? (
         <button
           type="button"
           onClick={(e) => pr?.url && openUrl(pr.url, e)}
-          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition-all shadow-soft-xs cursor-pointer group"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition-all shadow-soft-xs cursor-pointer group shrink-0"
           title={`Pull Request #${pr.number}: ${pr.title} (Click to open)`}
         >
-          <GitPullRequest className="w-3 h-3 text-sky-500" />
-          <span>PR #{pr.number}</span>
-          <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity" />
+          <GitPullRequest className="w-3 h-3 text-sky-500 shrink-0" />
+          <span className="hidden min-[1400px]:inline">PR </span>
+          <span>#{pr.number}</span>
+          <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity hidden min-[1400px]:inline" />
         </button>
       ) : hasLocal || unpushed > 0 ? (
         <span
-          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-soft-xs"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-soft-xs shrink-0"
           title="Task has active development in progress"
         >
-          <GitBranch className="w-3 h-3 text-teal-500" />
-          <span>In Progress</span>
+          <GitBranch className="w-3 h-3 text-teal-500 shrink-0" />
+          <span className="hidden min-[1400px]:inline">In Progress</span>
         </span>
       ) : (
         <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-cozy-subtle/70 text-cozy-muted border border-cozy-border/50"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-cozy-subtle/70 text-cozy-muted border border-cozy-border/50 shrink-0"
           title="Working directory is clean and up to date"
         >
-          <CheckCircle2 className="w-3 h-3 text-emerald-500/70" />
-          <span>Clean</span>
+          <CheckCircle2 className="w-3 h-3 text-emerald-500/70 shrink-0" />
+          <span className="hidden min-[1400px]:inline">Clean</span>
         </span>
       )}
 
@@ -128,7 +132,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             onOpenRebase?.();
           }}
           disabled={!onOpenRebase}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 transition-all ${
+          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 transition-all shrink-0 ${
             onOpenRebase
               ? 'hover:bg-amber-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
               : 'cursor-default'
@@ -137,8 +141,9 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             behind === 1 ? '' : 's'
           }.${onOpenRebase ? ' Click to rebase.' : ''}`}
         >
-          <ArrowDown className="w-3 h-3 text-amber-500" />
-          <span>Behind {behind}</span>
+          <ArrowDown className="w-3 h-3 text-amber-500 shrink-0" />
+          <span className="hidden min-[1400px]:inline">Behind </span>
+          <span>{behind}</span>
         </button>
       )}
 
@@ -151,7 +156,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             onOpenSubmit?.();
           }}
           disabled={!onOpenSubmit}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30 transition-all ${
+          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30 transition-all shrink-0 ${
             onOpenSubmit
               ? 'hover:bg-orange-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
               : 'cursor-default'
@@ -160,8 +165,9 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             totalChanges === 1 ? '' : 's'
           } (staged, unstaged, untracked).${onOpenSubmit ? ' Click to commit.' : ''}`}
         >
-          <FileEdit className="w-3 h-3 text-orange-500" />
-          <span>{totalChanges} uncommitted</span>
+          <FileEdit className="w-3 h-3 text-orange-500 shrink-0" />
+          <span>{totalChanges}</span>
+          <span className="hidden min-[1400px]:inline">&nbsp;uncommitted</span>
         </button>
       )}
 
@@ -174,7 +180,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             onOpenSubmit?.();
           }}
           disabled={!onOpenSubmit}
-          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 transition-all ${
+          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 transition-all shrink-0 ${
             onOpenSubmit
               ? 'hover:bg-blue-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
               : 'cursor-default'
@@ -183,8 +189,9 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             unpushed === 1 ? '' : 's'
           } not yet pushed to remote.${onOpenSubmit ? ' Click to push.' : ''}`}
         >
-          <ArrowUp className="w-3 h-3 text-blue-500" />
-          <span>{unpushed} unpushed</span>
+          <ArrowUp className="w-3 h-3 text-blue-500 shrink-0" />
+          <span>{unpushed}</span>
+          <span className="hidden min-[1400px]:inline">&nbsp;unpushed</span>
         </button>
       )}
 
@@ -193,12 +200,12 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
         <button
           type="button"
           onClick={(e) => openUrl(status.createPrUrl!, e)}
-          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all shadow-soft-xs cursor-pointer group active:scale-95"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all shadow-soft-xs cursor-pointer group active:scale-95 shrink-0"
           title="All changes pushed. Click to open Pull/Merge Request in browser."
         >
-          <GitPullRequest className="w-3 h-3 text-emerald-500" />
-          <span>Create PR</span>
-          <ExternalLink className="w-2.5 h-2.5 opacity-70 group-hover:opacity-100 transition-opacity" />
+          <GitPullRequest className="w-3 h-3 text-emerald-500 shrink-0" />
+          <span className="hidden min-[1400px]:inline">Create PR</span>
+          <ExternalLink className="w-2.5 h-2.5 opacity-70 group-hover:opacity-100 transition-opacity hidden min-[1400px]:inline" />
         </button>
       )}
 
@@ -210,11 +217,11 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             e.stopPropagation();
             onCompleteTask();
           }}
-          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-purple-500 hover:bg-purple-600 text-white transition-all shadow-soft-sm active:scale-95 cursor-pointer ml-1"
+          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-purple-500 hover:bg-purple-600 text-white transition-all shadow-soft-sm active:scale-95 cursor-pointer ml-0.5 shrink-0"
           title="Mark this task as completed now that the branch is merged"
         >
-          <Check className="w-3 h-3" />
-          <span>Complete Task</span>
+          <Check className="w-3 h-3 shrink-0" />
+          <span className="hidden min-[1400px]:inline">Complete Task</span>
         </button>
       )}
 
@@ -227,10 +234,10 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
             onRefresh();
           }}
           disabled={loading}
-          className="p-1 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer ml-0.5"
+          className="p-1 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer ml-0.5 shrink-0"
           title="Refresh Git status"
         >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin text-teal-500' : ''}`} />
+          <RefreshCw className={`w-3 h-3 shrink-0 ${loading ? 'animate-spin text-teal-500' : ''}`} />
         </button>
       )}
     </div>

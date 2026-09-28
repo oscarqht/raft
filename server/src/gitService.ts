@@ -47,7 +47,7 @@ export interface RemoteRepoDetails {
   remoteUrl: string;
 }
 
-export function parseRemoteUrl(remoteUrl: string): RemoteRepoDetails | null {
+export function parseRemoteUrl(remoteUrl: string, providerHint?: 'github' | 'gitlab' | 'other'): RemoteRepoDetails | null {
   if (!remoteUrl) return null;
   const cleanUrl = remoteUrl.trim();
   let host = '';
@@ -69,9 +69,11 @@ export function parseRemoteUrl(remoteUrl: string): RemoteRepoDetails | null {
 
   if (!host || !projectPath) return null;
 
-  let provider: 'github' | 'gitlab' | 'other' = 'other';
-  if (host.includes('github')) provider = 'github';
-  else if (host.includes('gitlab')) provider = 'gitlab';
+  let provider: 'github' | 'gitlab' | 'other' = providerHint || 'other';
+  if (provider === 'other') {
+    if (host.includes('github')) provider = 'github';
+    else if (host.includes('gitlab')) provider = 'gitlab';
+  }
 
   const parts = projectPath.split('/');
   const owner = parts[0] || '';
@@ -746,8 +748,79 @@ export class GitService {
     }
   }
 
-  static getRemoteUrl(cwd: string): string {
+  static getRemoteForBranch(cwd: string, branch?: string): string {
+    if (!cwd || !fs.existsSync(cwd)) return 'origin';
+    let remotes: string[] = [];
+    try {
+      remotes = execSync('git remote', {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+    } catch {}
+
+    if (remotes.length === 0) return 'origin';
+
+    if (branch) {
+      try {
+        const r = execSync(`git config --get branch.${branch}.remote`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+        if (r && remotes.includes(r)) return r;
+      } catch {}
+    }
+
+    // Check common branches
+    for (const b of ['main', 'master', 'dev', 'test', 'trunk']) {
+      try {
+        const r = execSync(`git config --get branch.${b}.remote`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+        if (r && remotes.includes(r)) return r;
+      } catch {}
+    }
+
+    if (remotes.includes('origin')) return 'origin';
+    return remotes[0];
+  }
+
+  static getRemoteUrl(cwd: string, branchOrRemote?: string): string {
     if (!cwd || !fs.existsSync(cwd)) return '';
+    let remotes: string[] = [];
+    try {
+      remotes = execSync('git remote', {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+    } catch {}
+
+    // If branchOrRemote matches a remote name directly, query it
+    if (branchOrRemote && remotes.includes(branchOrRemote)) {
+      try {
+        const url = execSync(`git config --get remote.${branchOrRemote}.url`, {
+          cwd,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+        if (url) return url;
+      } catch {}
+    }
+
+    const remote = GitService.getRemoteForBranch(cwd, branchOrRemote);
+    try {
+      const url = execSync(`git config --get remote.${remote}.url`, {
+        cwd,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      if (url) return url;
+    } catch {}
+
     try {
       const url = execSync('git config --get remote.origin.url', {
         cwd,
@@ -757,20 +830,16 @@ export class GitService {
       if (url) return url;
     } catch {}
 
-    try {
-      const remotes = execSync('git remote', {
-        cwd,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-      if (remotes.length > 0) {
-        return execSync(`git config --get remote.${remotes[0]}.url`, {
+    for (const r of remotes) {
+      try {
+        const url = execSync(`git config --get remote.${r}.url`, {
           cwd,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'ignore'],
         }).trim();
-      }
-    } catch {}
+        if (url) return url;
+      } catch {}
+    }
 
     return '';
   }
@@ -786,10 +855,11 @@ export class GitService {
     }
 
     const safeBaseBranch = baseBranch || 'main';
+    const remote = GitService.getRemoteForBranch(cwd, safeBaseBranch);
 
     if (options?.forceFetch) {
       try {
-        execSync(`git fetch origin ${safeBaseBranch}`, {
+        execSync(`git fetch ${remote} ${safeBaseBranch}`, {
           cwd,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'ignore'],
@@ -800,12 +870,12 @@ export class GitService {
 
     let targetRef = '';
     try {
-      execSync(`git rev-parse --verify refs/remotes/origin/${safeBaseBranch}`, {
+      execSync(`git rev-parse --verify refs/remotes/${remote}/${safeBaseBranch}`, {
         cwd,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'ignore'],
       });
-      targetRef = `refs/remotes/origin/${safeBaseBranch}`;
+      targetRef = `refs/remotes/${remote}/${safeBaseBranch}`;
     } catch {
       try {
         execSync(`git rev-parse --verify refs/heads/${safeBaseBranch}`, {
@@ -853,7 +923,7 @@ export class GitService {
     worktreePath: string,
     branch: string,
     baseBranch: string,
-    options?: { token?: string; forceRefresh?: boolean; taskCreatedAt?: number }
+    options?: { token?: string; provider?: 'github' | 'gitlab' | 'other'; forceRefresh?: boolean; taskCreatedAt?: number }
   ): Promise<TaskGitStatus> {
     const safeBaseBranch = baseBranch || 'main';
     const cacheKey = `${worktreePath}:::${branch}`;
@@ -888,8 +958,8 @@ export class GitService {
     const basic = GitService.getGitStatus(worktreePath, branch, safeBaseBranch);
     const hasLocalChanges = basic.staged.length > 0 || basic.unstaged.length > 0 || basic.untracked.length > 0;
 
-    const remoteUrl = GitService.getRemoteUrl(worktreePath);
-    const remoteInfo = parseRemoteUrl(remoteUrl);
+    const remoteUrl = GitService.getRemoteUrl(worktreePath, branch);
+    const remoteInfo = parseRemoteUrl(remoteUrl, options?.provider);
 
     const { behindCount, aheadCount, targetRef } = GitService.getDivergence(
       worktreePath,

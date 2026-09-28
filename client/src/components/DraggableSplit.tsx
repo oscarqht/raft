@@ -19,7 +19,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   minRightWidth = 320,
   storageKey = 'raft:split-ratio',
   mobileActivePane = 'left',
-  mobileBreakpoint = 920,
+  mobileBreakpoint = 1200,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < mobileBreakpoint);

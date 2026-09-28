@@ -170,9 +170,9 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
-      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[920px]:p-4 bg-cozy-bg">
+      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[1200px]:p-4 bg-cozy-bg">
         {/* Mobile Header Tabs */}
-        <div className="min-[920px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface/80 backdrop-blur-md shrink-0 select-none">
+        <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface/80 backdrop-blur-md shrink-0 select-none">
           <button
             type="button"
             onClick={() => setMobileTab('chat')}

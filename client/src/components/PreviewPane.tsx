@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
-import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
+import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
 import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer } from '../api';
 import { useOptionalScriptExecution } from '../contexts/ScriptExecutionContext';
@@ -29,6 +29,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
 
   const [pathInput, setPathInput] = useState('/');
   const [iframeKey, setIframeKey] = useState(0);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [showConsole, setShowConsole] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -127,7 +130,34 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setIsServerReady(false);
     setIsTimedOut(false);
     setAttemptCount(0);
+    setCanGoBack(false);
+    setCanGoForward(false);
+    setPathInput('/');
     stopCaptureStream();
+  }, [task.id]);
+
+  // Listen for URL changes and navigation history depth from injected preview tracker
+  useEffect(() => {
+    const handleWindowMessage = (event: MessageEvent) => {
+      try {
+        if (!event.data || typeof event.data !== 'object') return;
+        if (event.data.type === 'RAFT_PREVIEW_URL_CHANGED') {
+          if (event.data.taskId && event.data.taskId !== task.id) return;
+          if (typeof event.data.pathname === 'string') {
+            setPathInput(event.data.pathname);
+          }
+          if (typeof event.data.canGoBack === 'boolean') {
+            setCanGoBack(event.data.canGoBack);
+          }
+          if (typeof event.data.canGoForward === 'boolean') {
+            setCanGoForward(event.data.canGoForward);
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
   }, [task.id]);
 
   // Subscribe to dev server WebSocket events
@@ -295,6 +325,40 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
 
   const handleReloadIframe = () => {
     setIframeKey((k) => k + 1);
+  };
+
+  const handleNavigateAddress = (targetPath?: string) => {
+    const raw = targetPath ?? pathInput;
+    const normalized = raw.startsWith('/') ? raw : '/' + raw;
+    setPathInput(normalized);
+
+    if (iframeRef.current?.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          {
+            type: 'RAFT_PREVIEW_NAVIGATE_TO',
+            path: normalized,
+          },
+          '*'
+        );
+      } catch {
+        handleReloadIframe();
+      }
+    } else {
+      handleReloadIframe();
+    }
+  };
+
+  const handleNavigateBack = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_NAVIGATE_BACK' }, '*');
+    }
+  };
+
+  const handleNavigateForward = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_NAVIGATE_FORWARD' }, '*');
+    }
   };
 
 // Draws a crisp 1px subtle border around the perimeter of the captured screenshot
@@ -479,11 +543,14 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const hostname = typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== ''
+  const activeDevPort = devState.port || 5173;
+  const activeProxyPort = devState.proxyPort || activeDevPort;
+  const previewHostname = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? window.location.hostname
     : 'localhost';
   const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
-  const currentUrl = `http://${hostname}:${activePort}${currentPath}`;
+  const iframeSrc = `http://${previewHostname}:${activeProxyPort}${currentPath}`;
+  const externalUrl = `http://${previewHostname}:${activeDevPort}${currentPath}`;
 
   return (
     <div ref={panelRef} className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
@@ -556,16 +623,42 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </button>
         </div>
 
+        {/* Back and Forward history buttons */}
+        {!isCompact && (
+          <div className="flex items-center space-x-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleNavigateBack}
+              disabled={devState.status !== 'running' || !isServerReady || !canGoBack}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all cursor-pointer disabled:cursor-not-allowed"
+              title="Back"
+              aria-label="Back"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleNavigateForward}
+              disabled={devState.status !== 'running' || !isServerReady || !canGoForward}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all cursor-pointer disabled:cursor-not-allowed"
+              title="Forward"
+              aria-label="Forward"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* URL Address Bar */}
         {!isCompact && (
           <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-teal-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
             <Globe className="w-3.5 h-3.5 text-teal-500 mr-1.5 shrink-0" />
-            <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activePort}</span>
+            <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activeDevPort}</span>
             <input
               type="text"
               value={pathInput}
               onChange={(e) => setPathInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleReloadIframe()}
+              onKeyDown={(e) => e.key === 'Enter' && handleNavigateAddress()}
               placeholder="/"
               className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
             />
@@ -603,7 +696,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </button>
 
           <a
-            href={currentUrl}
+            href={externalUrl}
             target="_blank"
             rel="noopener noreferrer"
             className={`w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all ${
@@ -635,9 +728,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             }`}
             title={
               devState.status === 'running' && isServerReady
-                ? `Online :${activePort}`
+                ? `Online :${activeDevPort}`
                 : devState.status === 'running' || devState.status === 'starting'
-                ? `Starting :${activePort}`
+                ? `Starting :${activeDevPort}`
                 : 'Offline'
             }
           >
@@ -653,9 +746,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             {!isCompact && (
               <span className="font-mono text-cozy-muted text-[11px] font-medium">
                 {devState.status === 'running' && isServerReady
-                  ? `:${activePort}`
+                  ? `:${activeDevPort}`
                   : devState.status === 'running' || devState.status === 'starting'
-                  ? `starting :${activePort}`
+                  ? `starting :${activeDevPort}`
                   : 'offline'}
               </span>
             )}
@@ -684,8 +777,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         {devState.status === 'running' || devState.status === 'starting' ? (
           isServerReady ? (
             <iframe
+              ref={iframeRef}
               key={iframeKey}
-              src={currentUrl}
+              src={iframeSrc}
               title="Task Dev Server Preview"
               className="w-full h-full border-0"
               sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
@@ -700,12 +794,12 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               </h3>
               <p className="text-xs max-w-md mb-2 text-cozy-muted leading-relaxed">
                 The dev server process is running, but no HTTP response was received at{' '}
-                <span className="font-mono text-cozy-text font-medium">{currentUrl}</span> after {MAX_RETRY_ATTEMPTS} seconds.
+                <span className="font-mono text-cozy-text font-medium">{externalUrl}</span> after {MAX_RETRY_ATTEMPTS} seconds.
               </p>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-[11px] font-mono text-amber-500 mb-6">
                 <span>{MAX_RETRY_ATTEMPTS} retries reached</span>
                 <span>•</span>
-                <span>Port :{activePort}</span>
+                <span>Port :{activeDevPort}</span>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-2.5">
                 <button
@@ -752,7 +846,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 Waiting for Dev Server...
               </h3>
               <p className="text-xs font-mono text-teal-600/90 dark:text-teal-400 mb-4 font-medium">
-                http://localhost:{activePort}
+                http://localhost:{activeDevPort}
               </p>
 
               <div className="w-64 max-w-xs mb-3">

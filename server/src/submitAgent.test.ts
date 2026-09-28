@@ -257,3 +257,54 @@ test('runSubmitAgent masks PAT auth header from UI logs during push', async () =
   }
 });
 
+test('runSubmitAgent pushes to custom named remote (e.g. gitlab) when origin does not exist', async () => {
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote-gitlab-'));
+  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-local-gitlab-'));
+
+  try {
+    execSync('git init --bare', { cwd: tmpRemote });
+    GitService.initRepo(tmpLocal);
+    fs.writeFileSync(path.join(tmpLocal, 'README.md'), '# GitLab Test\n');
+    execSync('git add -A', { cwd: tmpLocal });
+    execSync('git commit -m "init"', { cwd: tmpLocal });
+    // Note: remote is named 'gitlab', NOT 'origin'
+    execSync(`git remote add gitlab "${tmpRemote.replace(/\\/g, '/')}"`, { cwd: tmpLocal });
+    execSync('git branch -M main', { cwd: tmpLocal });
+    execSync('git push -u gitlab main', { cwd: tmpLocal });
+
+    execSync('git checkout -b fix-voice-issue', { cwd: tmpLocal });
+    fs.writeFileSync(path.join(tmpLocal, 'voice.txt'), 'fixed voice\n');
+
+    let pushedRemote = '';
+    await new Promise<void>((resolve, reject) => {
+      runSubmitAgent(
+        tmpLocal,
+        'fix-voice-issue',
+        'fix(voice): fix issue',
+        undefined,
+        undefined,
+        (ev) => {
+          if (ev.type === 'status' && ev.content && ev.content.includes('pushed branch')) {
+            pushedRemote = ev.content;
+          }
+          if (ev.type === 'done') resolve();
+          if (ev.type === 'error') reject(new Error(ev.content || 'error'));
+        },
+        'main'
+      );
+    });
+
+    assert.ok(pushedRemote.includes('gitlab'), `Expected push status to indicate gitlab remote, got: ${pushedRemote}`);
+
+    // Verify remote received the branch
+    const remoteBranches = execSync('git branch -a', { cwd: tmpRemote, encoding: 'utf-8' });
+    assert.ok(remoteBranches.includes('fix-voice-issue'), 'Remote bare repo should have received fix-voice-issue');
+  } finally {
+    try {
+      fs.rmSync(tmpRemote, { recursive: true, force: true });
+      fs.rmSync(tmpLocal, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+

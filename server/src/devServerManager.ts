@@ -2,12 +2,15 @@ import { spawn, execSync, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import http from 'node:http';
 import { getCrossPlatformEnv } from './agentRunner.js';
+import { startDevServerProxy, DevServerProxyInstance } from './previewProxy.js';
 
 export interface DevServerState {
   taskId: string;
   status: 'stopped' | 'starting' | 'running' | 'error';
   port?: number;
+  proxyPort?: number;
   url?: string;
+  proxyUrl?: string;
   logs: string[];
   devCmd: string;
   worktreePath: string;
@@ -17,6 +20,8 @@ class DevServerManager extends EventEmitter {
   private servers: Map<string, {
     proc: ChildProcess | null;
     state: DevServerState;
+    proxy?: DevServerProxyInstance | null;
+    targetPort?: number;
   }> = new Map();
 
   getServerState(taskId: string): DevServerState {
@@ -50,10 +55,13 @@ class DevServerManager extends EventEmitter {
       worktreePath,
     };
 
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...getCrossPlatformEnv(),
       FORCE_COLOR: '1',
     };
+    // Ensure task dev servers do NOT bind to Tailscale IP or remote interfaces
+    delete env.HOST;
+    delete env.TAILSCALE_IP;
 
     const isWin = process.platform === 'win32';
     const proc = spawn(devCmd, {
@@ -78,6 +86,7 @@ class DevServerManager extends EventEmitter {
           state.url = `http://localhost:${detectedPort}`;
           state.status = 'running';
           this.emit(`state:${taskId}`, state);
+          this.ensureProxy(taskId, detectedPort);
         }
       }
     };
@@ -108,33 +117,69 @@ class DevServerManager extends EventEmitter {
       this.emit(`state:${taskId}`, state);
     });
 
-    this.servers.set(taskId, { proc, state });
+    this.servers.set(taskId, { proc, state, proxy: null });
     this.emit(`state:${taskId}`, state);
+    this.ensureProxy(taskId, defaultPort);
     return state;
+  }
+
+  async ensureProxy(taskId: string, targetPort: number): Promise<void> {
+    const entry = this.servers.get(taskId);
+    if (!entry) return;
+
+    if (entry.proxy && entry.proxy.port && entry.targetPort === targetPort) {
+      return;
+    }
+
+    if (entry.proxy) {
+      entry.proxy.close();
+      entry.proxy = null;
+    }
+
+    try {
+      const proxy = await startDevServerProxy(taskId, targetPort, '127.0.0.1');
+      entry.targetPort = targetPort;
+      entry.proxy = proxy;
+      entry.state.proxyPort = proxy.port;
+      entry.state.proxyUrl = `http://localhost:${proxy.port}`;
+      this.emit(`state:${taskId}`, entry.state);
+    } catch (err: any) {
+      console.error(`[DevServerManager] Failed to start preview proxy for task ${taskId}:`, err);
+    }
   }
 
   stopServer(taskId: string): void {
     const entry = this.servers.get(taskId);
-    if (!entry || !entry.proc) return;
+    if (!entry) return;
 
-    try {
-      if (entry.proc.pid) {
-        if (process.platform === 'win32') {
-          // On Windows, use taskkill to kill process tree cleanly
-          try {
-            execSync(`taskkill /pid ${entry.proc.pid} /T /F`, { stdio: 'ignore' });
-          } catch {}
-        } else {
-          // Kill process group on POSIX
-          process.kill(-entry.proc.pid, 'SIGTERM');
-        }
-      } else {
-        entry.proc.kill('SIGTERM');
-      }
-    } catch {
+    if (entry.proxy) {
+      entry.proxy.close();
+      entry.proxy = null;
+    }
+    entry.targetPort = undefined;
+    entry.state.proxyPort = undefined;
+    entry.state.proxyUrl = undefined;
+
+    if (entry.proc) {
       try {
-        entry.proc.kill('SIGKILL');
-      } catch {}
+        if (entry.proc.pid) {
+          if (process.platform === 'win32') {
+            // On Windows, use taskkill to kill process tree cleanly
+            try {
+              execSync(`taskkill /pid ${entry.proc.pid} /T /F`, { stdio: 'ignore' });
+            } catch {}
+          } else {
+            // Kill process group on POSIX
+            process.kill(-entry.proc.pid, 'SIGTERM');
+          }
+        } else {
+          entry.proc.kill('SIGTERM');
+        }
+      } catch {
+        try {
+          entry.proc.kill('SIGKILL');
+        } catch {}
+      }
     }
 
     entry.state.status = 'stopped';
@@ -150,12 +195,13 @@ class DevServerManager extends EventEmitter {
     return this.startServer(taskId, worktreePath, devCmd, defaultPort || port);
   }
 
-  async checkServerReady(taskId: string): Promise<{ ready: boolean; port: number }> {
+  async checkServerReady(taskId: string): Promise<{ ready: boolean; port: number; proxyPort?: number }> {
     const entry = this.servers.get(taskId);
     if (!entry || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
-      return { ready: false, port: entry?.state.port || 5173 };
+      return { ready: false, port: entry?.state.port || 5173, proxyPort: entry?.state.proxyPort };
     }
     const port = entry.state.port || 5173;
+    const proxyPort = entry.state.proxyPort;
 
     const probe = (hostname: string): Promise<boolean> => {
       return new Promise((resolve) => {
@@ -184,10 +230,15 @@ class DevServerManager extends EventEmitter {
 
     const isReady127 = await probe('127.0.0.1');
     if (isReady127) {
-      return { ready: true, port };
+      entry.proxy?.setTargetHost('127.0.0.1');
+      return { ready: true, port, proxyPort };
     }
     const isReadyIpv6 = await probe('::1');
-    return { ready: isReadyIpv6, port };
+    if (isReadyIpv6) {
+      entry.proxy?.setTargetHost('::1');
+      return { ready: true, port, proxyPort };
+    }
+    return { ready: false, port, proxyPort };
   }
 }
 

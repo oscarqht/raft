@@ -123,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
         </Link>
 
         {currentPath?.projectName && currentPath?.projectId && (
-          <div className="hidden min-[920px]:flex items-center space-x-2 text-cozy-muted min-w-0">
+          <div className="hidden min-[1200px]:flex items-center space-x-2 text-cozy-muted min-w-0">
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
             <Link
               to={`/projects/${currentPath.projectId}`}
@@ -140,14 +140,14 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {currentPath?.taskName && (
-          <div className="hidden min-[920px]:flex items-center space-x-2 text-cozy-muted min-w-0">
+          <div className="hidden min-[1200px]:flex items-center space-x-2 text-cozy-muted min-w-0">
             <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-nowrap">
               <button
                 type="button"
                 onClick={onEditTask}
                 disabled={!onEditTask || isDeletingTask}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium ${
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium shrink-0 ${
                   onEditTask && !isDeletingTask ? 'group cursor-pointer' : 'cursor-default'
                 }`}
                 title={onEditTask ? 'Click to edit task details' : undefined}
@@ -168,6 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
                 onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
                 onRefresh={() => fetchTaskStatus(true)}
                 onCompleteTask={handleCompleteTask}
+                className="flex-nowrap shrink-0"
               />
 
               {onDeleteTask && (
@@ -193,13 +194,14 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Task Switcher, Agent Status & Controls */}
       <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
         {currentPath?.taskId && taskStatus && (
-          <div className="min-[920px]:hidden flex items-center">
+          <div className="min-[1200px]:hidden flex items-center shrink-0">
             <TaskStatusBadges
               status={taskStatus}
               loading={loadingStatus}
               compact={true}
               onOpenRebase={() => window.dispatchEvent(new CustomEvent('open-rebase-drawer'))}
               onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
+              className="flex-nowrap shrink-0"
             />
           </div>
         )}
@@ -222,7 +224,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onDeleteTask}
             disabled={isDeletingTask}
-            className="min-[920px]:hidden w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 border border-cozy-border/70 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
+            className="min-[1200px]:hidden w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 border border-cozy-border/70 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
             title="Delete task and clean up git worktree"
           >
             {isDeletingTask ? (
@@ -242,7 +244,7 @@ export const Header: React.FC<HeaderProps> = ({
         {settings && (
           <Link
             to="/settings"
-            className="hidden min-[920px]:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
+            className="hidden min-[1200px]:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
             title="Active AI Agent CLI"
           >
             <span className="w-2 h-2 rounded-full bg-teal-400 shadow-glow-ocean"></span>

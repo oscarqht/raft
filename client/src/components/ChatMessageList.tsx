@@ -300,11 +300,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start justify-start min-[920px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
-          <div className="hidden min-[920px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
+        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+          <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
             <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
           </div>
-          <div className="w-full max-w-full min-[920px]:max-w-[92%] min-[920px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
+          <div className="w-full max-w-full min-[1200px]:max-w-[92%] min-[1200px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
             <div className="bg-cozy-surface/90 dark:bg-slate-900/90 border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
               <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                 <Sparkles className="w-3.5 h-3.5" />
@@ -550,15 +550,15 @@ const MessageItem: React.FC<{
   return (
     <div
       style={isStreaming ? undefined : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
-      className={`flex items-start min-w-0 w-full min-[920px]:space-x-3 ${
+      className={`flex items-start min-w-0 w-full min-[1200px]:space-x-3 ${
         isUser
-          ? 'justify-end min-[920px]:justify-start min-[920px]:flex-row-reverse min-[920px]:space-x-reverse'
+          ? 'justify-end min-[1200px]:justify-start min-[1200px]:flex-row-reverse min-[1200px]:space-x-reverse'
           : 'justify-start'
       }`}
     >
       {/* Avatar */}
       <div
-        className={`hidden min-[920px]:flex w-8 h-8 rounded-full items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
+        className={`hidden min-[1200px]:flex w-8 h-8 rounded-full items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
           isUser
             ? 'bg-gradient-to-tr from-teal-500 to-cyan-600 border-teal-400/30 text-white shadow-glow-ocean'
             : spendCapInfo.isSpendCap
@@ -573,8 +573,8 @@ const MessageItem: React.FC<{
       <div
         className={`space-y-1.5 min-w-0 flex flex-col max-w-full ${
           isUser
-            ? 'items-end min-[920px]:max-w-[78%]'
-            : 'items-start w-full min-[920px]:max-w-[92%]'
+            ? 'items-end min-[1200px]:max-w-[78%]'
+            : 'items-start w-full min-[1200px]:max-w-[92%]'
         }`}
       >
         {/* Friendly Natural Summary Pill for Thoughts & Actions */}
@@ -938,7 +938,7 @@ const MessageItem: React.FC<{
         </div>
 
         <div
-          className={`text-[10px] text-cozy-muted/60 px-1 font-medium text-right min-[920px]:${
+          className={`text-[10px] text-cozy-muted/60 px-1 font-medium text-right min-[1200px]:${
             isUser ? 'text-right' : 'text-left'
           }`}
         >

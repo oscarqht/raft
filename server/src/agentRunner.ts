@@ -1498,30 +1498,31 @@ export function runRebaseAgent(
 
       if (isCancelled) return;
 
-      // 3. Check for remote origin
-      let hasOrigin = false;
+      // 3. Check for remote
+      const targetRemote = GitService.getRemoteForBranch(worktreePath, baseBranch);
+      let hasRemote = false;
       try {
         const remotes = execSync('git remote', {
           cwd: worktreePath,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'ignore'],
-        });
-        hasOrigin = remotes.split(/\r?\n/).some((r) => r.trim() === 'origin');
+        }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+        hasRemote = remotes.includes(targetRemote);
       } catch {}
 
-      // 4. Fetch origin and update local base branch
-      if (hasOrigin) {
-        emit({ type: 'status', content: `Fetching origin/${baseBranch}...` });
-        emit({ type: 'chunk', content: `→ git fetch origin ${baseBranch}` });
+      // 4. Fetch remote and update local base branch
+      if (hasRemote) {
+        emit({ type: 'status', content: `Fetching ${targetRemote}/${baseBranch}...` });
+        emit({ type: 'chunk', content: `→ git fetch ${targetRemote} ${baseBranch}` });
 
         try {
-          execSync(`git fetch origin ${baseBranch}`, {
+          execSync(`git fetch ${targetRemote} ${baseBranch}`, {
             cwd: worktreePath,
             stdio: ['pipe', 'pipe', 'pipe'],
           });
-          emit({ type: 'chunk', content: `✓ Fetched latest origin/${baseBranch}` });
+          emit({ type: 'chunk', content: `✓ Fetched latest ${targetRemote}/${baseBranch}` });
         } catch (fetchErr: any) {
-          emit({ type: 'chunk', content: `→ Notice: Could not fetch origin/${baseBranch}: ${fetchErr.message?.split('\n')[0]}` });
+          emit({ type: 'chunk', content: `→ Notice: Could not fetch ${targetRemote}/${baseBranch}: ${fetchErr.message?.split('\n')[0]}` });
         }
 
         if (isCancelled) return;
@@ -1538,7 +1539,7 @@ export function runRebaseAgent(
 
         if (rootCurrentBranch === baseBranch) {
           try {
-            const ffOut = execSync(`git merge --ff-only origin/${baseBranch}`, {
+            const ffOut = execSync(`git merge --ff-only ${targetRemote}/${baseBranch}`, {
               cwd: mainRepo,
               encoding: 'utf-8',
               stdio: ['pipe', 'pipe', 'pipe'],
@@ -1546,18 +1547,18 @@ export function runRebaseAgent(
             if (ffOut && !ffOut.includes('Already up to date')) {
               emit({ type: 'chunk', content: `✓ Fast-forwarded local base branch "${baseBranch}" in primary repository (${ffOut})` });
             } else {
-              emit({ type: 'chunk', content: `✓ Local base branch "${baseBranch}" is up to date with origin` });
+              emit({ type: 'chunk', content: `✓ Local base branch "${baseBranch}" is up to date with ${targetRemote}` });
             }
           } catch {
             emit({ type: 'chunk', content: `→ Local base branch "${baseBranch}" has unpushed commits or working changes; rebasing will cleanly incorporate local "${baseBranch}"` });
           }
         } else {
           try {
-            execSync(`git fetch origin ${baseBranch}:${baseBranch}`, {
+            execSync(`git fetch ${targetRemote} ${baseBranch}:${baseBranch}`, {
               cwd: worktreePath,
               stdio: ['pipe', 'pipe', 'pipe'],
             });
-            emit({ type: 'chunk', content: `✓ Updated local ref "${baseBranch}" to origin/${baseBranch}` });
+            emit({ type: 'chunk', content: `✓ Updated local ref "${baseBranch}" to ${targetRemote}/${baseBranch}` });
           } catch {
             // Local base branch may have diverged or be ahead
           }
@@ -1573,15 +1574,15 @@ export function runRebaseAgent(
           stdio: ['pipe', 'pipe', 'ignore'],
         });
       } catch {
-        if (hasOrigin) {
+        if (hasRemote) {
           try {
-            execSync(`git branch --track ${baseBranch} origin/${baseBranch}`, {
+            execSync(`git branch --track ${baseBranch} ${targetRemote}/${baseBranch}`, {
               cwd: worktreePath,
               stdio: ['pipe', 'pipe', 'pipe'],
             });
-            emit({ type: 'chunk', content: `✓ Created local branch "${baseBranch}" tracking "origin/${baseBranch}"` });
+            emit({ type: 'chunk', content: `✓ Created local branch "${baseBranch}" tracking "${targetRemote}/${baseBranch}"` });
           } catch {
-            emit({ type: 'error', content: `Base branch "${baseBranch}" could not be found locally or on origin.` });
+            emit({ type: 'error', content: `Base branch "${baseBranch}" could not be found locally or on ${targetRemote}.` });
             return;
           }
         } else {
@@ -1739,13 +1740,20 @@ export function runSubmitAgent(
   _cliName?: string,
   _model?: string,
   thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
-  onEvent?: (event: StreamEvent) => void
+  onEventOrBaseBranch?: ((event: StreamEvent) => void) | string,
+  baseBranch?: string
 ): { kill: (signal?: any) => void } {
   let emit: (event: StreamEvent) => void;
+  let resolvedBaseBranch = baseBranch;
   if (typeof thinkingEffortOrOnEvent === 'function') {
     emit = thinkingEffortOrOnEvent;
+    if (typeof onEventOrBaseBranch === 'string') {
+      resolvedBaseBranch = onEventOrBaseBranch;
+    }
+  } else if (typeof onEventOrBaseBranch === 'function') {
+    emit = onEventOrBaseBranch;
   } else {
-    emit = onEvent || (() => {});
+    emit = () => {};
   }
   emit({ type: 'status', content: `Submitting changes...` });
 
@@ -1817,32 +1825,23 @@ export function runSubmitAgent(
 
       if (isKilled) return;
 
-      // 3. Push branch to remote origin
-      let remoteUrl = '';
+      // 3. Push branch to remote
+      const targetRemote = GitService.getRemoteForBranch(worktreePath, resolvedBaseBranch || branchName);
+      let remotes: string[] = [];
       try {
-        remoteUrl = execSync('git config --get remote.origin.url', {
+        remotes = execSync('git remote', {
           cwd: worktreePath,
           encoding: 'utf-8',
           stdio: ['pipe', 'pipe', 'ignore'],
-        }).trim();
+        }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
       } catch {}
 
-      if (!remoteUrl) {
-        try {
-          const remotes = execSync('git remote', {
-            cwd: worktreePath,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-          if (remotes.length > 0) {
-            remoteUrl = execSync(`git config --get remote.${remotes[0]}.url`, {
-              cwd: worktreePath,
-              encoding: 'utf-8',
-              stdio: ['pipe', 'pipe', 'ignore'],
-            }).trim();
-          }
-        } catch {}
+      if (remotes.length === 0) {
+        throw new Error('No git remotes configured for this repository. Please configure a remote repository (e.g. git remote add origin <url>) before pushing.');
       }
+
+      const remoteToUse = remotes.includes(targetRemote) ? targetRemote : (remotes.includes('origin') ? 'origin' : remotes[0]);
+      const remoteUrl = GitService.getRemoteUrl(worktreePath, remoteToUse);
 
       const detectedUser = detectGitUsername(worktreePath);
       let gitAccount: any;
@@ -1868,7 +1867,7 @@ export function runSubmitAgent(
         pushArgs.unshift('-c', `credential.username=${detectedUser}`);
       }
 
-      pushArgs.push('-u', 'origin', branchName);
+      pushArgs.push('-u', remoteToUse, branchName);
 
       // Safe display command omitting authorization headers
       const displayArgs = pushArgs.filter((arg, idx, arr) => {
@@ -1906,7 +1905,7 @@ export function runSubmitAgent(
 
       if (isKilled) return;
 
-      emit({ type: 'status', content: `\n✓ Successfully pushed branch "${branchName}" to origin!\n` });
+      emit({ type: 'status', content: `\n✓ Successfully pushed branch "${branchName}" to ${remoteToUse}!\n` });
       emit({ type: 'done', content: `\nSubmission completed successfully.\n` });
     } catch (err: any) {
       let errorMsg = err?.message || String(err);
@@ -1915,9 +1914,11 @@ export function runSubmitAgent(
         errorMsg.includes('could not read') ||
         errorMsg.includes('Password') ||
         errorMsg.includes('terminal prompts disabled') ||
-        errorMsg.includes('Device not configured')
+        errorMsg.includes('Device not configured') ||
+        errorMsg.includes('does not appear to be a git repository') ||
+        errorMsg.includes('Could not read from remote repository')
       ) {
-        errorMsg += '\nTip: Please verify that a valid Personal Access Token (PAT) with repo/write permissions is configured in Settings > Linked Git Accounts.';
+        errorMsg += '\nTip: Please verify that a valid Personal Access Token (PAT) with repo/write permissions is configured in Settings > Linked Git Accounts, and that the remote repository URL is reachable.';
       }
       emit({ type: 'error', content: `\n${errorMsg}\n` });
     }

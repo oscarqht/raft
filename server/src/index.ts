@@ -1186,10 +1186,11 @@ app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   if (!task) return res.status(404).json({ error: 'Task not found' });
   const force = req.query.force === '1' || req.query.force === 'true';
-  const remoteUrl = GitService.getRemoteUrl(task.worktree_path);
+  const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
   const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
   const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
     token: account?.token,
+    provider: account?.provider as any,
     forceRefresh: force,
     taskCreatedAt: task.created_at,
   });
@@ -1205,10 +1206,11 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
   await Promise.all(
     tasks.map(async (task) => {
       try {
-        const remoteUrl = GitService.getRemoteUrl(task.worktree_path);
+        const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
         const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
         const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
           token: account?.token,
+          provider: account?.provider as any,
           forceRefresh: force,
           taskCreatedAt: task.created_at,
         });
@@ -1751,12 +1753,21 @@ wss.on('connection', (ws: WebSocket) => {
         const defaultModel = getSetting<string>('default_model', '');
         const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
-        activeProc = runSubmitAgent(task.worktree_path, task.branch, commitMessage, defaultCli, defaultModel, defaultEffort, (ev) => {
-          if (ev.type === 'done') {
-            GitService.invalidateTaskStatus(task.worktree_path);
-          }
-          send({ type: 'submit_event', event: ev });
-        });
+        activeProc = runSubmitAgent(
+          task.worktree_path,
+          task.branch,
+          commitMessage,
+          defaultCli,
+          defaultModel,
+          defaultEffort,
+          (ev) => {
+            if (ev.type === 'done') {
+              GitService.invalidateTaskStatus(task.worktree_path);
+            }
+            send({ type: 'submit_event', event: ev });
+          },
+          task.base_branch
+        );
       }
 
       // Generate Commit Message Agent
