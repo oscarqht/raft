@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
 import { Play, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
-import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer } from '../api';
+import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer, getSettings } from '../api';
 import { useOptionalScriptExecution } from '../contexts/ScriptExecutionContext';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
@@ -395,13 +395,26 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     if (isCapturing || !previewContainerRef.current) return;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
       if (typeof window !== 'undefined' && !window.isSecureContext) {
-        setCaptureError(
-          'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
-        );
+        try {
+          const s = await getSettings();
+          if (s.tailscale_https_url) {
+            setCaptureError(
+              `Screen capture requires HTTPS. Open Raft via Tailscale HTTPS: ${s.tailscale_https_url}`
+            );
+          } else {
+            setCaptureError(
+              'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
+            );
+          }
+        } catch {
+          setCaptureError(
+            'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
+          );
+        }
       } else {
         setCaptureError('Screen capture is not supported in this browser environment.');
       }
-      setTimeout(() => setCaptureError(null), 6000);
+      setTimeout(() => setCaptureError(null), 8000);
       return;
     }
 
@@ -769,11 +782,28 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       >
         {/* Error notification banner */}
         {captureError && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-md px-4 py-2.5 rounded-xl bg-red-500/95 text-white text-xs shadow-lg backdrop-blur flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
-            <span className="flex-1 leading-snug">{captureError}</span>
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 max-w-lg px-4 py-2.5 rounded-xl bg-red-500/95 text-white text-xs shadow-lg backdrop-blur flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+            <span className="flex-1 leading-snug">
+              {captureError.includes('https://') ? (
+                <>
+                  {captureError.split('https://')[0]}
+                  <a
+                    href={`https://${captureError.split('https://')[1]}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline font-semibold hover:text-white ml-1 inline-flex items-center gap-1"
+                  >
+                    https://{captureError.split('https://')[1]}
+                    <ExternalLink className="w-3 h-3 inline" />
+                  </a>
+                </>
+              ) : (
+                captureError
+              )}
+            </span>
             <button
               onClick={() => setCaptureError(null)}
-              className="text-white/80 hover:text-white text-sm font-semibold px-1"
+              className="text-white/80 hover:text-white text-sm font-semibold px-1 cursor-pointer"
             >
               ✕
             </button>

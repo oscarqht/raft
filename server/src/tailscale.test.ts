@@ -55,4 +55,31 @@ describe('tailscale auto-discovery', () => {
       }
     }
   });
+
+  it('detects Tailscale CLI and MagicDNS if available', async () => {
+    const { findTailscaleCli, getTailscaleMagicDnsName } = await import('./tailscale.js');
+    const cli = findTailscaleCli();
+    // In this environment, Tailscale CLI is installed
+    if (cli) {
+      assert.ok(typeof cli === 'string' && cli.length > 0);
+      const magicDns = getTailscaleMagicDnsName();
+      if (magicDns) {
+        assert.ok(magicDns.includes('.ts.net') || magicDns.length > 0);
+      }
+    }
+  });
+
+  it('handles setupTailscaleServe gracefully without throwing', async () => {
+    const { setupTailscaleServe } = await import('./tailscale.js');
+    // Ensure setupTailscaleServe always returns a valid object
+    const res = setupTailscaleServe(3399);
+    assert.ok(typeof res === 'object');
+    assert.ok(typeof res.enabled === 'boolean');
+    assert.equal(res.targetPort, 3399);
+    if (res.enabled) {
+      const { resetTailscaleServe } = await import('./tailscale.js');
+      resetTailscaleServe();
+    }
+  });
 });
+

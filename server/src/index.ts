@@ -27,12 +27,14 @@ import {
 import { devServerManager } from './devServerManager.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
-import { resolveHost } from './tailscale.js';
+import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
 import multer from 'multer';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+let tailscaleServeInfo: TailscaleServeResult | null = null;
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3301;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
@@ -116,7 +118,13 @@ app.get('/api/settings', async (_req: Request, res: Response) => {
   }
   const thinking_effort = getSetting<string>('thinking_effort', 'medium');
   const theme = getSetting<string>('theme', 'auto');
-  res.json({ agent_cli, default_model, thinking_effort, theme });
+  res.json({
+    agent_cli,
+    default_model,
+    thinking_effort,
+    theme,
+    tailscale_https_url: tailscaleServeInfo?.httpsUrl || null,
+  });
 });
 
 app.put('/api/settings', (req: Request, res: Response) => {
@@ -2254,6 +2262,21 @@ if (!isTestEnv) {
     console.log(`[raft-server] listening on http://${HOST}:${PORT} (${networkType}, source: ${hostSource})`);
     if (isTailscale) {
       console.log(`[raft-server] also accessible locally at http://localhost:${PORT}`);
+
+      const enableServe = process.env.RAFT_TAILSCALE_SERVE !== '0' && process.env.RAFT_TAILSCALE_SERVE !== 'false';
+      if (enableServe) {
+        const isDev = process.env.NODE_ENV !== 'production' && !process.env.RAFT_PRODUCTION;
+        const envPort = process.env.RAFT_TAILSCALE_PORT ? parseInt(process.env.RAFT_TAILSCALE_PORT, 10) : undefined;
+        // In dev mode, client runs on port 3300; in production, server serves client on PORT (3301)
+        const targetPort = envPort || (isDev ? 3300 : PORT);
+        tailscaleServeInfo = setupTailscaleServe(targetPort);
+        if (tailscaleServeInfo.enabled && tailscaleServeInfo.httpsUrl) {
+          console.log(`[raft-server] 🔒 Tailscale HTTPS active: ${tailscaleServeInfo.httpsUrl} -> http://127.0.0.1:${targetPort}`);
+          console.log(`[raft-server] 🔒 Secure context active (screen capture, clipboard, and PWA enabled)`);
+        } else if (tailscaleServeInfo.error) {
+          console.warn(`[raft-server] Tailscale Serve could not be enabled: ${tailscaleServeInfo.error}`);
+        }
+      }
     }
   });
 }

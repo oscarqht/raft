@@ -93,6 +93,7 @@ export interface Settings {
   default_model: string;
   thinking_effort: string;
   theme: 'auto' | 'dark' | 'light';
+  tailscale_https_url?: string | null;
 }
 
 export interface CliInstallGuide {
