@@ -300,11 +300,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start justify-end min-[920px]:justify-start min-[920px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+        <div className="flex items-start justify-start min-[920px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
           <div className="hidden min-[920px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
             <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
           </div>
-          <div className="w-full max-w-full min-[920px]:max-w-[92%] min-[920px]:flex-1 space-y-2 min-w-0 flex flex-col items-end min-[920px]:items-start">
+          <div className="w-full max-w-full min-[920px]:max-w-[92%] min-[920px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
             <div className="bg-cozy-surface/90 dark:bg-slate-900/90 border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
               <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                 <Sparkles className="w-3.5 h-3.5" />
@@ -550,8 +550,10 @@ const MessageItem: React.FC<{
   return (
     <div
       style={isStreaming ? undefined : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
-      className={`flex items-start justify-end min-[920px]:justify-start min-w-0 w-full min-[920px]:space-x-3 ${
-        isUser ? 'min-[920px]:flex-row-reverse min-[920px]:space-x-reverse' : ''
+      className={`flex items-start min-w-0 w-full min-[920px]:space-x-3 ${
+        isUser
+          ? 'justify-end min-[920px]:justify-start min-[920px]:flex-row-reverse min-[920px]:space-x-reverse'
+          : 'justify-start'
       }`}
     >
       {/* Avatar */}
@@ -569,15 +571,15 @@ const MessageItem: React.FC<{
 
       {/* Bubble Content */}
       <div
-        className={`space-y-1.5 min-w-0 flex flex-col items-end max-w-full ${
+        className={`space-y-1.5 min-w-0 flex flex-col max-w-full ${
           isUser
-            ? 'min-[920px]:max-w-[78%] min-[920px]:items-end'
-            : 'w-full min-[920px]:max-w-[92%] min-[920px]:items-start'
+            ? 'items-end min-[920px]:max-w-[78%]'
+            : 'items-start w-full min-[920px]:max-w-[92%]'
         }`}
       >
         {/* Friendly Natural Summary Pill for Thoughts & Actions */}
         {thoughts && summaryBadge && !spendCapInfo.isSpendCap && (
-          <div className="mb-1 w-full min-w-0 flex flex-col items-end min-[920px]:items-start">
+          <div className="mb-1 w-full min-w-0 flex flex-col items-start">
             <button
               type="button"
               onClick={() => setShowThoughts(!showThoughts)}
