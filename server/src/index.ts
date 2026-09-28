@@ -8,7 +8,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { spawn, execSync } from 'node:child_process';
 
-import { db, getSetting, setSetting, getAllGitAccounts, getGitAccountById, insertGitAccount, deleteGitAccountById, findGitAccountForRemote } from './db.js';
+import {
+  db,
+  getSetting,
+  setSetting,
+  getAllGitAccounts,
+  getGitAccountById,
+  insertGitAccount,
+  deleteGitAccountById,
+  findGitAccountForRemote,
+  getAllSkills,
+  getSkillById,
+  getSkillByName,
+  insertSkill,
+  updateSkillById,
+  deleteSkillById,
+} from './db.js';
 import { GitService } from './gitService.js';
 import {
   getAvailableClis,
@@ -197,27 +212,101 @@ app.get('/api/models', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/skills', (req: Request, res: Response) => {
-  const cli = (req.query.cli as string) || getEffectiveAgentCli();
-  let worktreePath = req.query.worktreePath as string | undefined;
-  const taskId = req.query.taskId as string | undefined;
-
-  if (!worktreePath && taskId) {
-    try {
-      const task = db.prepare('SELECT worktree_path FROM tasks WHERE id = ?').get(taskId) as any;
-      if (task && task.worktree_path) {
-        worktreePath = task.worktree_path;
-      }
-    } catch {}
-  }
-
+// ===================== Custom Skills APIs =====================
+app.get('/api/skills', (_req: Request, res: Response) => {
   try {
-    const skills = getSkillsForCli(cli, worktreePath);
+    const skills = getAllSkills();
     res.json(skills);
   } catch (err: any) {
     res.status(500).json({ error: err?.message || 'Failed to get skills' });
   }
 });
+
+app.post('/api/skills', (req: Request, res: Response) => {
+  const { name, description, content } = req.body;
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Skill name is required' });
+  }
+  if (!content || typeof content !== 'string' || !content.trim()) {
+    return res.status(400).json({ error: 'Skill instructions/content are required' });
+  }
+
+  const cleanName = name.trim().toLowerCase().replace(/^\/+/, '');
+  if (!/^[a-z0-9_\-]+$/i.test(cleanName)) {
+    return res.status(400).json({ error: 'Skill name can only contain letters, numbers, hyphens, and underscores' });
+  }
+
+  const existing = getSkillByName(cleanName);
+  if (existing) {
+    return res.status(400).json({ error: `Skill "/${cleanName}" already exists` });
+  }
+
+  try {
+    const newSkill = insertSkill({
+      id: uuidv4(),
+      name: cleanName,
+      description: (description || '').trim(),
+      content: content.trim(),
+    });
+    res.status(201).json(newSkill);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to create skill' });
+  }
+});
+
+app.put('/api/skills/:id', (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const { name, description, content } = req.body;
+
+  const existing = getSkillById(id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Skill not found' });
+  }
+
+  let cleanName = existing.name;
+  if (name !== undefined) {
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Skill name cannot be empty' });
+    }
+    cleanName = name.trim().toLowerCase().replace(/^\/+/, '');
+    if (!/^[a-z0-9_\-]+$/i.test(cleanName)) {
+      return res.status(400).json({ error: 'Skill name can only contain letters, numbers, hyphens, and underscores' });
+    }
+    const duplicate = getSkillByName(cleanName);
+    if (duplicate && duplicate.id !== id) {
+      return res.status(400).json({ error: `Skill "/${cleanName}" already exists` });
+    }
+  }
+
+  if (content !== undefined && (!content || typeof content !== 'string' || !content.trim())) {
+    return res.status(400).json({ error: 'Skill instructions/content cannot be empty' });
+  }
+
+  try {
+    const updated = updateSkillById(id, {
+      name: cleanName,
+      description: description !== undefined ? description.trim() : undefined,
+      content: content !== undefined ? content.trim() : undefined,
+    });
+    res.json(updated);
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to update skill' });
+  }
+});
+
+app.delete('/api/skills/:id', (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  try {
+    const deleted = deleteSkillById(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Skill not found' });
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete skill' });
+  }
+});
+
 
 // ===================== Git Accounts APIs =====================
 app.get('/api/git-accounts', (_req: Request, res: Response) => {

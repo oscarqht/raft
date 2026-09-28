@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { parseSkillMarkdown, getSkillsForCli, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
+import { parseSkillMarkdown, getAllCustomSkills, resolveSkillPrompt, extractMatchedSkills } from './skillService.js';
+import { insertSkill, deleteSkillById, getSkillByName, updateSkillById } from './db.js';
 
 test('parseSkillMarkdown parses YAML frontmatter correctly', () => {
   const content = `---
@@ -32,60 +33,61 @@ Skill body.
   assert.strictEqual(result.description, 'First line of description. Second line of description.');
 });
 
-test('getSkillsForCli discovers agy skills with sources and commands matching Antigravity app', () => {
-  const skills = getSkillsForCli('agy');
-  assert.ok(Array.isArray(skills));
-  assert.ok(skills.length > 0);
-
-  // Slash commands must be present at the top
-  const slashCommands = ['btw', 'goal', 'schedule', 'browser', 'plan', 'grill-me', 'learn'];
-  for (const cmd of slashCommands) {
-    assert.ok(skills.some((s) => s.name === cmd), `Expected command ${cmd} to be present`);
+test('user-managed skills CRUD and prompt resolution', () => {
+  // 1. Initially clean up any test skill if existed
+  const existing = getSkillByName('test-deploy');
+  if (existing) {
+    deleteSkillById(existing.id);
   }
 
-  // Antigravity builtin skills
-  assert.ok(skills.some((s) => s.name === 'agy-customizations'));
+  // 2. Insert user skill
+  const created = insertSkill({
+    id: 'skill-test-1',
+    name: 'test-deploy',
+    description: 'Deploys the application safely',
+    content: 'Execute deployment script with checks.',
+  });
+  assert.strictEqual(created.name, 'test-deploy');
 
-  // Foreign non-antigravity skills must NOT be included
-  assert.strictEqual(skills.some((s) => s.name === 'agent-browser'), false);
-  assert.strictEqual(skills.some((s) => s.name === 'firecrawl'), false);
-});
+  // 3. Retrieve all custom skills
+  const skills = getAllCustomSkills();
+  const found = skills.find((s) => s.name === 'test-deploy');
+  assert.ok(found);
+  assert.strictEqual(found.description, 'Deploys the application safely');
 
-test('getSkillsForCli returns commands for claude and codex', () => {
-  const claudeSkills = getSkillsForCli('claude');
-  assert.ok(claudeSkills.some((s) => s.name === 'review'));
-
-  const codexSkills = getSkillsForCli('codex');
-  assert.ok(codexSkills.some((s) => s.name === 'review'));
-});
-
-test('resolveSkillPrompt augments agy prompt with skill instructions', () => {
-  const prompt = 'Please run /grill-me on this task';
-  const resolved = resolveSkillPrompt('agy', prompt);
-  assert.ok(resolved.includes('[Skill Instructions: /grill-me]'));
-  assert.ok(resolved.includes('<GRILL_ME>'));
-});
-
-test('resolveSkillPrompt handles chained slash commands like /grill-me/grill-me', () => {
-  const prompt = 'pls identify the cause and fix  /grill-me/grill-me';
-  const resolved = resolveSkillPrompt('agy', prompt);
-  assert.ok(resolved.includes('[Skill Instructions: /grill-me]'));
-  // Should deduplicate so instructions appear exactly once
-  const matches = resolved.match(/\[Skill Instructions: \/grill-me\]/g);
-  assert.strictEqual(matches?.length, 1);
-});
-
-test('extractMatchedSkills avoids false positives on URLs', () => {
-  const prompt = 'Check https://github.com/oscarqht/raft/pulls and run /plan';
-  const matched = extractMatchedSkills('agy', prompt);
+  // 4. Match in prompt
+  const matched = extractMatchedSkills('Please run /test-deploy right now');
   assert.strictEqual(matched.length, 1);
-  assert.strictEqual(matched[0].name, 'plan');
-});
+  assert.strictEqual(matched[0].name, 'test-deploy');
 
-test('resolveSkillPrompt augments prompt for claude and codex with skill info', () => {
-  const prompt = 'Please do a /review of changes';
-  const resolved = resolveSkillPrompt('claude', prompt);
-  assert.ok(resolved.includes('/review'));
-  assert.ok(resolved.includes('[Skill Instructions: /review]'));
-});
+  // 5. Avoid false positives in URLs
+  const urlPrompt = 'Visit https://example.com/test-deploy/page and also run /test-deploy';
+  const urlMatched = extractMatchedSkills(urlPrompt);
+  assert.strictEqual(urlMatched.length, 1);
+  assert.strictEqual(urlMatched[0].name, 'test-deploy');
 
+  // 6. Resolve skill prompt
+  const resolved = resolveSkillPrompt('Please run /test-deploy on staging');
+  assert.ok(resolved.includes('[Skill Instructions: /test-deploy]'));
+  assert.ok(resolved.includes('Execute deployment script with checks.'));
+
+  // 7. Deduplicate multiple invocations
+  const dupResolved = resolveSkillPrompt('Please run /test-deploy and /test-deploy');
+  const count = (dupResolved.match(/\[Skill Instructions: \/test-deploy\]/g) || []).length;
+  assert.strictEqual(count, 1);
+
+  // 8. Update skill
+  updateSkillById('skill-test-1', {
+    description: 'Updated deploy description',
+    content: 'New instructions for deploy.',
+  });
+  const updatedResolved = resolveSkillPrompt('Please run /test-deploy');
+  assert.ok(updatedResolved.includes('New instructions for deploy.'));
+
+  // 9. Delete skill
+  deleteSkillById('skill-test-1');
+  const afterDelete = getAllCustomSkills().find((s) => s.name === 'test-deploy');
+  assert.strictEqual(afterDelete, undefined);
+  const promptAfterDelete = resolveSkillPrompt('Please run /test-deploy');
+  assert.strictEqual(promptAfterDelete, 'Please run /test-deploy');
+});

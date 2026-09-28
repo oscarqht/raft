@@ -85,14 +85,45 @@ export async function getModels(cli?: string, refresh?: boolean): Promise<ModelO
   return res.json();
 }
 
-export async function getSkills(cli?: string, worktreePath?: string, taskId?: string): Promise<AgentSkill[]> {
-  const params = new URLSearchParams();
-  if (cli) params.set('cli', cli);
-  if (worktreePath) params.set('worktreePath', worktreePath);
-  if (taskId) params.set('taskId', taskId);
-  const url = `${API_BASE}/skills?${params.toString()}`;
-  const res = await fetch(url);
+export async function getSkills(_cli?: string, _worktreePath?: string, _taskId?: string): Promise<AgentSkill[]> {
+  const res = await fetch(`${API_BASE}/skills`);
   return res.json();
+}
+
+export async function createSkill(skill: { name: string; description?: string; content: string }): Promise<AgentSkill> {
+  const res = await fetch(`${API_BASE}/skills`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(skill),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to create skill');
+  }
+  return res.json();
+}
+
+export async function updateSkill(id: string, skill: { name?: string; description?: string; content?: string }): Promise<AgentSkill> {
+  const res = await fetch(`${API_BASE}/skills/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(skill),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update skill');
+  }
+  return res.json();
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/skills/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete skill');
+  }
 }
 
 export async function validateProjectPath(dirPath: string): Promise<any> {

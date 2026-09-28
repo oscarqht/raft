@@ -127,6 +127,17 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_attachments_task ON attachments(task_id);
+
+  CREATE TABLE IF NOT EXISTS skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    content TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
 `);
 
 // Migrations for existing databases
@@ -317,5 +328,66 @@ export function findGitAccountForRemote(remoteUrl: string, detectedUsername?: st
   }
 
   return bestMatch;
+}
+
+export interface SkillRow {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getAllSkills(): SkillRow[] {
+  return db.prepare('SELECT id, name, description, content, created_at, updated_at FROM skills ORDER BY name ASC').all() as SkillRow[];
+}
+
+export function getSkillById(id: string): SkillRow | undefined {
+  return db.prepare('SELECT id, name, description, content, created_at, updated_at FROM skills WHERE id = ?').get(id) as SkillRow | undefined;
+}
+
+export function getSkillByName(name: string): SkillRow | undefined {
+  return db.prepare('SELECT id, name, description, content, created_at, updated_at FROM skills WHERE lower(name) = lower(?)').get(name) as SkillRow | undefined;
+}
+
+export function insertSkill(skill: { id: string; name: string; description?: string; content: string }): SkillRow {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO skills (id, name, description, content, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(skill.id, skill.name, skill.description || '', skill.content, now, now);
+  return {
+    id: skill.id,
+    name: skill.name,
+    description: skill.description || '',
+    content: skill.content,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+export function updateSkillById(id: string, updates: { name?: string; description?: string; content?: string }): SkillRow | undefined {
+  const existing = getSkillById(id);
+  if (!existing) return undefined;
+  const nextName = updates.name !== undefined ? updates.name : existing.name;
+  const nextDesc = updates.description !== undefined ? updates.description : existing.description;
+  const nextContent = updates.content !== undefined ? updates.content : existing.content;
+  const now = Date.now();
+  db.prepare(`
+    UPDATE skills SET name = ?, description = ?, content = ?, updated_at = ? WHERE id = ?
+  `).run(nextName, nextDesc, nextContent, now, id);
+  return {
+    ...existing,
+    name: nextName,
+    description: nextDesc,
+    content: nextContent,
+    updated_at: now,
+  };
+}
+
+export function deleteSkillById(id: string): boolean {
+  const result = db.prepare('DELETE FROM skills WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 

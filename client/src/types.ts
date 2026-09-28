@@ -203,12 +203,15 @@ export interface SelectionMeta {
 }
 
 export interface AgentSkill {
+  id: string;
   name: string;
   description: string;
-  source: 'workspace' | 'global' | 'built-in';
-  cli: string;
+  content: string;
+  created_at?: number;
+  updated_at?: number;
+  source?: 'workspace' | 'global' | 'built-in' | 'custom';
+  cli?: string;
   filePath?: string;
-  content?: string;
 }
 
 export interface GitAccount {

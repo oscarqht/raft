@@ -335,11 +335,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     };
   }, [tabCli, settings?.agent_cli, activeChatId]);
 
-  // Load skills for current agent CLI
+  // Load custom skills
   useEffect(() => {
-    const cli = tabCli || settings?.agent_cli || 'agy';
     let isCurrent = true;
-    getSkills(cli, task.worktree_path, task.id)
+    getSkills()
       .then((data) => {
         if (isCurrent && Array.isArray(data)) {
           setSkills(data);
@@ -349,7 +348,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [tabCli, task.id, task.worktree_path, settings?.agent_cli]);
+  }, [activeChatId]);
 
   // Click outside to dismiss skills popup
   useEffect(() => {
@@ -813,8 +812,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
     const matchedActiveSkills = skills.filter((s) => {
       const textWithoutUrls = prompt.replace(/https?:\/\/[^\s]+/g, ' ');
-      const regex = new RegExp(`/(?:^|[^\\w/])/${s.name}(?=[^\\w]|$)`, 'i');
-      return regex.test(textWithoutUrls) || textWithoutUrls.toLowerCase().includes(`/${s.name.toLowerCase()}`);
+      const regex = new RegExp(`(?:^|[\\s/])/${s.name}(?=[^\\w\\-]|$)`, 'i');
+      return regex.test(textWithoutUrls);
     });
 
     const optimisticMetadata =
@@ -1248,7 +1247,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <div className="px-3.5 py-2.5 bg-cozy-subtle/70 border-b border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted">
                 <div className="flex items-center space-x-2 font-medium text-cozy-text">
                   <Sparkles className="w-4 h-4 text-teal-500" />
-                  <span>Skills & Commands for <span className="text-teal-600 dark:text-teal-400 font-semibold uppercase font-mono">{tabCli || 'agy'}</span></span>
+                  <span>Custom Skills</span>
                 </div>
                 <div className="text-[11px] text-cozy-muted">
                   {filteredSkills.length} available
@@ -1259,35 +1258,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 {filteredSkills.length > 0 ? (
                   filteredSkills.map((skill, idx) => {
                     const isSelected = idx === selectedSkillIndex;
-                    const getSkillIcon = () => {
-                      switch (skill.name) {
-                        case 'btw':
-                          return <MessageSquareQuote className="w-3.5 h-3.5 text-sky-400" />;
-                        case 'goal':
-                          return <Target className="w-3.5 h-3.5 text-amber-400" />;
-                        case 'schedule':
-                          return <Clock className="w-3.5 h-3.5 text-emerald-400" />;
-                        case 'browser':
-                          return <Globe className="w-3.5 h-3.5 text-indigo-400" />;
-                        case 'plan':
-                          return <ListTodo className="w-3.5 h-3.5 text-blue-400" />;
-                        case 'grill-me':
-                          return <HelpCircle className="w-3.5 h-3.5 text-teal-400" />;
-                        case 'learn':
-                          return <BookOpen className="w-3.5 h-3.5 text-amber-400" />;
-                        case 'review':
-                          return <Sparkles className="w-3.5 h-3.5 text-teal-400" />;
-                        default:
-                          if (skill.source === 'workspace') {
-                            return <Layers className="w-3.5 h-3.5 text-emerald-400" />;
-                          }
-                          return <Terminal className="w-3.5 h-3.5 text-teal-400" />;
-                      }
-                    };
-
                     return (
                       <div
-                        key={`${skill.name}-${skill.source}`}
+                        key={skill.id || `${skill.name}-${idx}`}
                         onMouseDown={(e) => {
                           e.preventDefault();
                           selectSkill(skill);
@@ -1301,10 +1274,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       >
                         <div className="flex items-center space-x-2.5 min-w-0 flex-1">
                           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 bg-cozy-subtle border border-cozy-border/60">
-                            {getSkillIcon()}
+                            <Sparkles className="w-3.5 h-3.5 text-teal-500" />
                           </div>
                           <span className={`font-mono text-xs font-semibold flex-shrink-0 ${isSelected ? 'text-teal-600 dark:text-teal-400' : 'text-cozy-text'}`}>
-                            {skill.name}
+                            /{skill.name}
                           </span>
                           {skill.description && (
                             <span className="text-xs text-cozy-muted truncate">
@@ -1312,17 +1285,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                             </span>
                           )}
                         </div>
-                        {skill.source === 'workspace' && (
-                          <span className="text-[10px] uppercase font-medium px-2 py-0.5 rounded-full border bg-emerald-500/10 text-emerald-500 border-emerald-500/20 flex-shrink-0">
-                            workspace
-                          </span>
-                        )}
                       </div>
                     );
                   })
                 ) : (
                   <div className="px-3 py-4 text-center text-xs text-cozy-muted">
-                    No skills found matching <span className="font-mono text-cozy-text">/{activeSlashToken?.query}</span>
+                    {skills.length === 0 ? (
+                      <span>No custom skills configured yet. Add skills in Settings to use them here.</span>
+                    ) : (
+                      <span>No skills found matching <span className="font-mono text-cozy-text">/{activeSlashToken?.query}</span></span>
+                    )}
                   </div>
                 )}
               </div>

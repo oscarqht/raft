@@ -24,8 +24,9 @@ import {
   Plus,
   Globe,
   ShieldCheck,
+  Pencil,
 } from 'lucide-react';
-import { Settings, CliInfo, ModelOption, GitAccount } from '../types';
+import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill } from '../types';
 import {
   updateSettings,
   getModels,
@@ -35,6 +36,10 @@ import {
   verifyGitAccount,
   addGitAccount,
   deleteGitAccount,
+  getSkills,
+  createSkill,
+  updateSkill,
+  deleteSkill,
 } from '../api';
 
 import {
@@ -152,6 +157,105 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
       console.error('Failed to delete git account:', err);
     } finally {
       setDeletingAccountId(null);
+    }
+  };
+
+  // Skills state
+  const [skills, setSkills] = useState<AgentSkill[]>([]);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(true);
+  const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
+  const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null);
+  const [skillName, setSkillName] = useState('');
+  const [skillDescription, setSkillDescription] = useState('');
+  const [skillContent, setSkillContent] = useState('');
+  const [skillError, setSkillError] = useState<string | null>(null);
+  const [isSavingSkill, setIsSavingSkill] = useState(false);
+  const [deletingSkillId, setDeletingSkillId] = useState<string | null>(null);
+
+  const loadSkills = async () => {
+    try {
+      setIsLoadingSkills(true);
+      const data = await getSkills();
+      setSkills(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load skills:', err);
+    } finally {
+      setIsLoadingSkills(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSkills();
+  }, []);
+
+  const handleOpenAddSkill = () => {
+    setEditingSkill(null);
+    setSkillName('');
+    setSkillDescription('');
+    setSkillContent('');
+    setSkillError(null);
+    setIsSkillModalOpen(true);
+  };
+
+  const handleOpenEditSkill = (skill: AgentSkill) => {
+    setEditingSkill(skill);
+    setSkillName(skill.name);
+    setSkillDescription(skill.description || '');
+    setSkillContent(skill.content || '');
+    setSkillError(null);
+    setIsSkillModalOpen(true);
+  };
+
+  const handleSaveSkill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = skillName.trim().toLowerCase().replace(/^\/+/, '');
+    if (!cleanName) {
+      setSkillError('Skill name is required');
+      return;
+    }
+    if (!/^[a-z0-9_\-]+$/i.test(cleanName)) {
+      setSkillError('Skill name can only contain letters, numbers, hyphens, and underscores');
+      return;
+    }
+    if (!skillContent.trim()) {
+      setSkillError('Skill prompt instructions are required');
+      return;
+    }
+
+    try {
+      setIsSavingSkill(true);
+      setSkillError(null);
+      if (editingSkill) {
+        await updateSkill(editingSkill.id, {
+          name: cleanName,
+          description: skillDescription.trim(),
+          content: skillContent.trim(),
+        });
+      } else {
+        await createSkill({
+          name: cleanName,
+          description: skillDescription.trim(),
+          content: skillContent.trim(),
+        });
+      }
+      setIsSkillModalOpen(false);
+      await loadSkills();
+    } catch (err: any) {
+      setSkillError(err.message || 'Failed to save skill');
+    } finally {
+      setIsSavingSkill(false);
+    }
+  };
+
+  const handleDeleteSkill = async (id: string) => {
+    try {
+      setDeletingSkillId(id);
+      await deleteSkill(id);
+      setSkills((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error('Failed to delete skill:', err);
+    } finally {
+      setDeletingSkillId(null);
     }
   };
 
@@ -831,7 +935,93 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
           </>
         )}
 
-        {/* 4. Linked Git Accounts */}
+        {/* 4. Custom Skills & Slash Commands */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                Custom Skills & Slash Commands
+              </h2>
+              <p className="text-xs text-cozy-muted mt-1">
+                Create custom skills to inject instructions into your AI agent prompt when typing <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">/skill-name</span> in chat.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenAddSkill}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Skill</span>
+            </button>
+          </div>
+
+          {/* List of Skills */}
+          {isLoadingSkills ? (
+            <div className="p-6 rounded-2xl bg-cozy-subtle/30 border border-cozy-border flex items-center justify-center gap-2 text-xs text-cozy-muted">
+              <RefreshCw className="w-4 h-4 animate-spin text-teal-500" />
+              <span>Loading custom skills...</span>
+            </div>
+          ) : skills.length === 0 ? (
+            <div className="p-6 rounded-2xl bg-cozy-subtle/20 border border-dashed border-cozy-border text-center space-y-2">
+              <div className="w-9 h-9 mx-auto rounded-full bg-cozy-subtle flex items-center justify-center text-cozy-muted">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <p className="text-xs text-cozy-muted">
+                No custom skills added yet. Click &quot;Add Skill&quot; to define instructions accessible via slash commands in chat.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {skills.map((skill) => (
+                <div
+                  key={skill.id}
+                  className="p-4 rounded-2xl bg-cozy-surface border border-cozy-border flex items-start justify-between gap-3 shadow-soft-sm hover:border-teal-400/30 transition-all"
+                >
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-xs text-teal-600 dark:text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded-md">
+                        /{skill.name}
+                      </span>
+                      {skill.description && (
+                        <span className="text-xs text-cozy-text font-medium">{skill.description}</span>
+                      )}
+                    </div>
+                    {skill.content && (
+                      <p className="text-xs text-cozy-muted line-clamp-2 font-mono bg-cozy-subtle/50 p-2 rounded-lg whitespace-pre-wrap">
+                        {skill.content}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditSkill(skill)}
+                      className="p-2 rounded-xl text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-500/10 border border-transparent hover:border-teal-400/20 transition-all cursor-pointer"
+                      title="Edit skill"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteSkill(skill.id)}
+                      disabled={deletingSkillId === skill.id}
+                      className="p-2 rounded-xl text-cozy-muted hover:text-red-500 hover:bg-red-500/10 border border-transparent hover:border-red-400/20 transition-all cursor-pointer disabled:opacity-50"
+                      title="Delete skill"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 5. Linked Git Accounts */}
         <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1075,6 +1265,120 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
         </div>
 
       </div>
+
+      {/* Skill Add/Edit Modal */}
+      {isSkillModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-xl flex flex-col overflow-hidden relative">
+            <div className="p-4 md:p-5 border-b border-cozy-border/50 bg-cozy-subtle/50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/15 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-cozy-text">
+                    {editingSkill ? 'Edit Custom Skill' : 'Add Custom Skill'}
+                  </h3>
+                  <p className="text-xs text-cozy-muted">
+                    Define skill trigger name, summary, and instructions.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsSkillModalOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveSkill} className="p-5 space-y-4">
+              {skillError && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-400/20 text-xs text-red-500">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{skillError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-cozy-text mb-1">
+                  Trigger Command Name <span className="text-red-500">*</span>
+                </label>
+                <div className="relative flex items-center">
+                  <span className="absolute left-3 text-xs font-mono font-bold text-cozy-muted select-none">/</span>
+                  <input
+                    type="text"
+                    value={skillName}
+                    onChange={(e) => setSkillName(e.target.value.toLowerCase().replace(/^\/+/, ''))}
+                    placeholder="my-custom-skill"
+                    required
+                    className="w-full pl-7 pr-3 py-2 rounded-xl text-xs font-mono bg-cozy-surface border border-cozy-border focus:border-teal-400 focus:outline-none transition-all text-cozy-text placeholder:text-cozy-muted/60"
+                  />
+                </div>
+                <p className="text-[11px] text-cozy-muted mt-1">
+                  Letters, numbers, hyphens, and underscores. Invoked in chat via /{skillName || 'name'}.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-cozy-text mb-1">
+                  Description <span className="text-cozy-muted font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={skillDescription}
+                  onChange={(e) => setSkillDescription(e.target.value)}
+                  placeholder="e.g. Audit code changes for accessibility and compliance"
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-cozy-surface border border-cozy-border focus:border-teal-400 focus:outline-none transition-all text-cozy-text placeholder:text-cozy-muted/60"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-cozy-text mb-1">
+                  Instructions / Prompt Content <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={skillContent}
+                  onChange={(e) => setSkillContent(e.target.value)}
+                  placeholder="Write instructions or context injected into prompt when this skill is invoked..."
+                  rows={6}
+                  required
+                  className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-cozy-surface border border-cozy-border focus:border-teal-400 focus:outline-none transition-all text-cozy-text placeholder:text-cozy-muted/60 resize-y"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-cozy-border/50">
+                <button
+                  type="button"
+                  onClick={() => setIsSkillModalOpen(false)}
+                  className="px-4 py-2 rounded-full text-xs font-semibold text-cozy-muted hover:text-cozy-text bg-cozy-surface border border-cozy-border transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSkill || !skillName.trim() || !skillContent.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all disabled:opacity-50 shadow-soft-sm cursor-pointer"
+                >
+                  {isSavingSkill ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{editingSkill ? 'Save Changes' : 'Create Skill'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   </div>
 );
