@@ -707,7 +707,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   }, [taskId]);
 
   useEffect(() => {
-    if (!isAutoScrollEnabled.current && isStreaming) return;
+    if (!isAutoScrollEnabled.current && !isFirstRender.current) return;
 
     if (isStreaming) {
       const raf = requestAnimationFrame(() => {
@@ -999,7 +999,6 @@ const MessageItem: React.FC<{
 
   return (
     <div
-      style={isStreaming ? undefined : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
       className={`flex items-start min-w-0 w-full min-[1200px]:space-x-3 ${
         isUser
           ? 'justify-end min-[1200px]:justify-start min-[1200px]:flex-row-reverse min-[1200px]:space-x-reverse'

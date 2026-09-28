@@ -893,12 +893,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     );
   };
 
-  const handleAbort = () => {
+  const handleAbort = useCallback(() => {
     if (!ws) return;
     ws.send(JSON.stringify({ type: 'abort', sessionId: activeChatId }));
     setIsStreaming(false);
     setStreamingChunk('');
-  };
+  }, [ws, activeChatId]);
 
   const handleSwitchCliAndRetry = useCallback(async (targetCli: string, userPrompt: string, failedAssistantMsgId: string) => {
     if (!activeChatId || !ws || isStreaming) return;
