@@ -107,11 +107,12 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onNewTask}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer shrink-0"
             title="Start a new task in this project"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Start New Task</span>
+            <span className="hidden sm:inline">Start New Task</span>
+            <span className="sm:hidden">New Task</span>
           </button>
         )}
 
