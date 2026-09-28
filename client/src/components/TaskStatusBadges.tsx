@@ -77,13 +77,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
   };
 
   return (
-    <div
-      className={`flex items-center flex-nowrap gap-1.5 text-xs ${className}`}
-      onClick={(e) => {
-        // Prevent clicking badges inside task cards from triggering card navigation if not desired
-        e.stopPropagation();
-      }}
-    >
+    <div className={`flex items-center flex-nowrap gap-1.5 text-xs ${className}`}>
       {/* 1. Primary Lifecycle Stage */}
       {isMerged ? (
         <span
@@ -94,17 +88,28 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
           <span className="hidden min-[1400px]:inline">Merged</span>
         </span>
       ) : isPrOpen ? (
-        <button
-          type="button"
-          onClick={(e) => pr?.url && openUrl(pr.url, e)}
-          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition-all shadow-soft-xs cursor-pointer group shrink-0"
-          title={`Pull Request #${pr.number}: ${pr.title} (Click to open)`}
-        >
-          <GitPullRequest className="w-3 h-3 text-sky-500 shrink-0" />
-          <span className="hidden min-[1400px]:inline">PR </span>
-          <span>#{pr.number}</span>
-          <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity hidden min-[1400px]:inline" />
-        </button>
+        pr?.url ? (
+          <button
+            type="button"
+            onClick={(e) => openUrl(pr.url!, e)}
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 hover:bg-sky-500/25 transition-all shadow-soft-xs cursor-pointer group shrink-0"
+            title={`Pull Request #${pr.number}: ${pr.title} (Click to open)`}
+          >
+            <GitPullRequest className="w-3 h-3 text-sky-500 shrink-0" />
+            <span className="hidden min-[1400px]:inline">PR </span>
+            <span>#{pr.number}</span>
+            <ExternalLink className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100 transition-opacity hidden min-[1400px]:inline" />
+          </button>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30 shadow-soft-xs shrink-0"
+            title={`Pull Request #${pr.number}: ${pr.title}`}
+          >
+            <GitPullRequest className="w-3 h-3 text-sky-500 shrink-0" />
+            <span className="hidden min-[1400px]:inline">PR </span>
+            <span>#{pr.number}</span>
+          </span>
+        )
       ) : hasLocal || unpushed > 0 ? (
         <span
           className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/20 shadow-soft-xs shrink-0"
@@ -125,74 +130,98 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
 
       {/* 2. Flag: Behind Base Branch */}
       {behind > 0 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenRebase?.();
-          }}
-          disabled={!onOpenRebase}
-          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 transition-all shrink-0 ${
-            onOpenRebase
-              ? 'hover:bg-amber-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
-              : 'cursor-default'
-          }`}
-          title={`Task is behind ${status.baseBranch || 'base branch'} by ${behind} commit${
-            behind === 1 ? '' : 's'
-          }.${onOpenRebase ? ' Click to rebase.' : ''}`}
-        >
-          <ArrowDown className="w-3 h-3 text-amber-500 shrink-0" />
-          <span className="hidden min-[1400px]:inline">Behind </span>
-          <span>{behind}</span>
-        </button>
+        onOpenRebase ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenRebase();
+            }}
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-all shadow-soft-xs cursor-pointer active:scale-95 shrink-0"
+            title={`Task is behind ${status.baseBranch || 'base branch'} by ${behind} commit${
+              behind === 1 ? '' : 's'
+            }. Click to rebase.`}
+          >
+            <ArrowDown className="w-3 h-3 text-amber-500 shrink-0" />
+            <span className="hidden min-[1400px]:inline">Behind </span>
+            <span>{behind}</span>
+          </button>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 transition-all shrink-0"
+            title={`Task is behind ${status.baseBranch || 'base branch'} by ${behind} commit${
+              behind === 1 ? '' : 's'
+            }.`}
+          >
+            <ArrowDown className="w-3 h-3 text-amber-500 shrink-0" />
+            <span className="hidden min-[1400px]:inline">Behind </span>
+            <span>{behind}</span>
+          </span>
+        )
       )}
 
       {/* 3. Flag: Local Uncommitted Changes */}
       {hasLocal && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenSubmit?.();
-          }}
-          disabled={!onOpenSubmit}
-          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30 transition-all shrink-0 ${
-            onOpenSubmit
-              ? 'hover:bg-orange-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
-              : 'cursor-default'
-          }`}
-          title={`${totalChanges} uncommitted change${
-            totalChanges === 1 ? '' : 's'
-          } (staged, unstaged, untracked).${onOpenSubmit ? ' Click to commit.' : ''}`}
-        >
-          <FileEdit className="w-3 h-3 text-orange-500 shrink-0" />
-          <span>{totalChanges}</span>
-          <span className="hidden min-[1400px]:inline">&nbsp;uncommitted</span>
-        </button>
+        onOpenSubmit ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSubmit();
+            }}
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30 hover:bg-orange-500/25 transition-all shadow-soft-xs cursor-pointer active:scale-95 shrink-0"
+            title={`${totalChanges} uncommitted change${
+              totalChanges === 1 ? '' : 's'
+            } (staged, unstaged, untracked). Click to commit.`}
+          >
+            <FileEdit className="w-3 h-3 text-orange-500 shrink-0" />
+            <span>{totalChanges}</span>
+            <span className="hidden min-[1400px]:inline">&nbsp;uncommitted</span>
+          </button>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30 transition-all shrink-0"
+            title={`${totalChanges} uncommitted change${
+              totalChanges === 1 ? '' : 's'
+            } (staged, unstaged, untracked).`}
+          >
+            <FileEdit className="w-3 h-3 text-orange-500 shrink-0" />
+            <span>{totalChanges}</span>
+            <span className="hidden min-[1400px]:inline">&nbsp;uncommitted</span>
+          </span>
+        )
       )}
 
       {/* 4. Flag: Unpushed Commits */}
       {unpushed > 0 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenSubmit?.();
-          }}
-          disabled={!onOpenSubmit}
-          className={`inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 transition-all shrink-0 ${
-            onOpenSubmit
-              ? 'hover:bg-blue-500/25 cursor-pointer hover:shadow-soft-xs active:scale-95'
-              : 'cursor-default'
-          }`}
-          title={`${unpushed} local commit${
-            unpushed === 1 ? '' : 's'
-          } not yet pushed to remote.${onOpenSubmit ? ' Click to push.' : ''}`}
-        >
-          <ArrowUp className="w-3 h-3 text-blue-500 shrink-0" />
-          <span>{unpushed}</span>
-          <span className="hidden min-[1400px]:inline">&nbsp;unpushed</span>
-        </button>
+        onOpenSubmit ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSubmit();
+            }}
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 transition-all shadow-soft-xs cursor-pointer active:scale-95 shrink-0"
+            title={`${unpushed} local commit${
+              unpushed === 1 ? '' : 's'
+            } not yet pushed to remote. Click to push.`}
+          >
+            <ArrowUp className="w-3 h-3 text-blue-500 shrink-0" />
+            <span>{unpushed}</span>
+            <span className="hidden min-[1400px]:inline">&nbsp;unpushed</span>
+          </button>
+        ) : (
+          <span
+            className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30 transition-all shrink-0"
+            title={`${unpushed} local commit${
+              unpushed === 1 ? '' : 's'
+            } not yet pushed to remote.`}
+          >
+            <ArrowUp className="w-3 h-3 text-blue-500 shrink-0" />
+            <span>{unpushed}</span>
+            <span className="hidden min-[1400px]:inline">&nbsp;unpushed</span>
+          </span>
+        )
       )}
 
       {/* 5. Direct Action: Create PR / MR */}
