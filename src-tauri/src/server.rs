@@ -150,36 +150,38 @@ pub fn discover_node_binary(app: &AppHandle) -> Option<PathBuf> {
         }
     }
 
-    // 2. Check local dev sidecar folder (src-tauri/bin/node-...)
-    if let Ok(cwd) = std::env::current_dir() {
-        let target_triple = if cfg!(windows) {
-            "x86_64-pc-windows-msvc"
-        } else {
-            "aarch64-apple-darwin"
-        };
-        let sidecar_name = if cfg!(windows) {
-            format!("node-{target_triple}.exe")
-        } else {
-            format!("node-{target_triple}")
-        };
-        let candidates = [
-            cwd.join("src-tauri").join("bin").join(&sidecar_name),
-            cwd.join("bin").join(&sidecar_name),
-        ];
-        for c in &candidates {
-            if c.is_file() {
-                return Some(c.clone());
-            }
-        }
-    }
-
-    // 3. Check current executable directory
+    // 2. Check current executable directory (standard for bundled externalBin in Tauri)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(parent) = current_exe.parent() {
             let exe_name = if cfg!(windows) { "node.exe" } else { "node" };
             let p = parent.join(exe_name);
             if p.is_file() {
                 return Some(p);
+            }
+        }
+    }
+
+    // 3. Check local dev sidecar folder (src-tauri/bin/node-...) in development mode
+    if crate::is_dev() {
+        if let Ok(cwd) = std::env::current_dir() {
+            let target_triple = if cfg!(windows) {
+                "x86_64-pc-windows-msvc"
+            } else {
+                "aarch64-apple-darwin"
+            };
+            let sidecar_name = if cfg!(windows) {
+                format!("node-{target_triple}.exe")
+            } else {
+                format!("node-{target_triple}")
+            };
+            let candidates = [
+                cwd.join("src-tauri").join("bin").join(&sidecar_name),
+                cwd.join("bin").join(&sidecar_name),
+            ];
+            for c in &candidates {
+                if c.is_file() {
+                    return Some(c.clone());
+                }
             }
         }
     }
@@ -387,7 +389,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     cmd.current_dir(&entry.app_root);
     cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::inherit());
-    cmd.stderr(std::process::Stdio::inherit());
+    cmd.stderr(std::process::Stdio::piped());
 
     let parent_pid = std::process::id();
     cmd.env("RAFT_PARENT_PID", parent_pid.to_string());
@@ -405,9 +407,29 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn server process: {e}"))?;
+
+    let stderr = child.stderr.take();
+    let stderr_lines = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let stderr_lines_clone = stderr_lines.clone();
+
+    if let Some(err_stream) = stderr {
+        std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(err_stream);
+            for line in reader.lines().flatten() {
+                eprintln!("{line}");
+                if let Ok(mut buf) = stderr_lines_clone.lock() {
+                    if buf.len() >= 30 {
+                        buf.remove(0);
+                    }
+                    buf.push(line);
+                }
+            }
+        });
+    }
 
     let pid = child.id();
     {
@@ -429,13 +451,25 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     while start_time.elapsed() < timeout {
         tokio::time::sleep(Duration::from_millis(250)).await;
 
-        {
+        let exit_status = {
             let mut proc_guard = SERVER_PROCESS.lock().unwrap();
-            if let Some(ref mut proc) = *proc_guard {
-                if let Ok(Some(status)) = proc.child.try_wait() {
-                    return Err(format!("Server process exited prematurely with status: {status}"));
+            proc_guard
+                .as_mut()
+                .and_then(|proc| proc.child.try_wait().ok().flatten())
+        };
+
+        if let Some(status) = exit_status {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let details = if let Ok(buf) = stderr_lines.lock() {
+                if buf.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n\n{}", buf.join("\n"))
                 }
-            }
+            } else {
+                String::new()
+            };
+            return Err(format!("Server process exited prematurely with status: {status}{details}"));
         }
 
         if let Ok(resp) = client.get(&health_url).send().await {

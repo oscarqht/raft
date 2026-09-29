@@ -103,15 +103,28 @@ try {
 const nodeBinaryName = process.platform === 'win32' ? `node-${targetTriple}.exe` : `node-${targetTriple}`;
 const nodeBinaryPath = path.join(binDir, nodeBinaryName);
 
-if (!fs.existsSync(nodeBinaryPath)) {
-  console.log(`Staging local Node.js binary as sidecar: ${nodeBinaryName}`);
+let shouldStage = !fs.existsSync(nodeBinaryPath);
+if (!shouldStage) {
+  try {
+    const existingVer = execSync(`"${nodeBinaryPath}" -v`, { encoding: 'utf8' }).trim();
+    if (existingVer !== process.version) {
+      console.log(`Sidecar Node binary version mismatch: present=${existingVer}, expected=${process.version}. Re-staging...`);
+      shouldStage = true;
+    }
+  } catch {
+    shouldStage = true;
+  }
+}
+
+if (shouldStage) {
+  console.log(`Staging local Node.js binary (${process.version}) as sidecar: ${nodeBinaryName}`);
   fs.copyFileSync(process.execPath, nodeBinaryPath);
   if (process.platform !== 'win32') {
     fs.chmodSync(nodeBinaryPath, 0o755);
   }
   console.log(`✓ Staged Node.js binary at ${nodeBinaryPath}`);
 } else {
-  console.log(`✓ Sidecar Node binary already present at ${nodeBinaryPath}`);
+  console.log(`✓ Sidecar Node binary (${process.version}) already present at ${nodeBinaryPath}`);
 }
 
 if (process.platform === 'darwin') {
