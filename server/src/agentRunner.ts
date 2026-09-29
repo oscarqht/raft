@@ -1346,6 +1346,18 @@ export function spawnAgentCli(
                   const cleanOut = truncateOutput(rawOutput);
                   const isErr = step.state === 'ERROR' || Boolean(step.tool_info?.error) || /command failed|exit code [1-9]|error:/i.test(cleanOut);
 
+                  let cleanError: string | undefined;
+                  const rawError = step.tool_info?.error;
+                  if (typeof rawError === 'string') {
+                    cleanError = truncateOutput(rawError);
+                  } else if (rawError && typeof rawError === 'object') {
+                    cleanError = (rawError as any).message || truncateOutput(JSON.stringify(rawError, null, 2));
+                  } else if (typeof rawError === 'boolean' && rawError) {
+                    cleanError = cleanOut ? undefined : 'Tool execution failed';
+                  } else if (isErr && !cleanOut) {
+                    cleanError = 'Tool execution failed';
+                  }
+
                   const agentStep: AgentStep = {
                     id: stepId,
                     type: 'tool',
@@ -1356,7 +1368,7 @@ export function spawnAgentCli(
                     status: isErr ? 'failed' : 'completed',
                     duration: typeof step.duration_seconds === 'number' ? Math.round(step.duration_seconds * 10) / 10 : undefined,
                     output: cleanOut,
-                    error: step.tool_info?.error,
+                    error: cleanError,
                     endTime: Date.now(),
                   };
 

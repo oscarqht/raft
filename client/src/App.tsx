@@ -9,6 +9,7 @@ import { HomePage } from './pages/HomePage';
 import { ProjectPage } from './pages/ProjectPage';
 import { TaskPage } from './pages/TaskPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -184,75 +185,77 @@ export default function App() {
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-        <Routes>
-          <Route
-            path="/"
-            element={
-              <HomePage
-                onSelectProject={(id) => navigate(`/projects/${id}`)}
-                settings={settings}
-                ws={ws}
-              />
-            }
-          />
+        <ErrorBoundary>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <HomePage
+                  onSelectProject={(id) => navigate(`/projects/${id}`)}
+                  settings={settings}
+                  ws={ws}
+                />
+              }
+            />
 
-          <Route
-            path="/settings"
-            element={
-              <SettingsPage
-                settings={settings}
-                onUpdateSettings={(s) => setSettings(s)}
-                clis={clis}
-                onRefreshClis={() => getClis().then(setClis).catch(() => {})}
-                ws={ws}
-              />
-            }
-          />
+            <Route
+              path="/settings"
+              element={
+                <SettingsPage
+                  settings={settings}
+                  onUpdateSettings={(s) => setSettings(s)}
+                  clis={clis}
+                  onRefreshClis={() => getClis().then(setClis).catch(() => {})}
+                  ws={ws}
+                />
+              }
+            />
 
-          <Route
-            path="/projects/:projectId"
-            element={
-              <ProjectPage
-                onBack={() => navigate('/')}
-                onSelectTask={(taskId, task) => {
-                  if (currentProjectId) {
-                    navigate(`/projects/${currentProjectId}/tasks/${taskId}`, { state: { task } });
-                  }
-                }}
-                settings={settings}
-                ws={ws}
-              />
-            }
-          />
+            <Route
+              path="/projects/:projectId"
+              element={
+                <ProjectPage
+                  onBack={() => navigate('/')}
+                  onSelectTask={(taskId, task) => {
+                    if (currentProjectId) {
+                      navigate(`/projects/${currentProjectId}/tasks/${taskId}`, { state: { task } });
+                    }
+                  }}
+                  settings={settings}
+                  ws={ws}
+                />
+              }
+            />
 
-          <Route
-            path="/projects/:projectId/tasks/:taskId"
-            element={
-              <TaskPage
-                settings={settings}
-                clis={clis}
-                ws={ws}
-                onDeleteTask={handleDeleteActiveTask}
-                isDeletingTask={isDeletingTask}
-              />
-            }
-          />
+            <Route
+              path="/projects/:projectId/tasks/:taskId"
+              element={
+                <TaskPage
+                  settings={settings}
+                  clis={clis}
+                  ws={ws}
+                  onDeleteTask={handleDeleteActiveTask}
+                  isDeletingTask={isDeletingTask}
+                />
+              }
+            />
 
-          <Route
-            path="/tasks/:taskId"
-            element={
-              <TaskPage
-                settings={settings}
-                clis={clis}
-                ws={ws}
-                onDeleteTask={handleDeleteActiveTask}
-                isDeletingTask={isDeletingTask}
-              />
-            }
-          />
+            <Route
+              path="/tasks/:taskId"
+              element={
+                <TaskPage
+                  settings={settings}
+                  clis={clis}
+                  ws={ws}
+                  onDeleteTask={handleDeleteActiveTask}
+                  isDeletingTask={isDeletingTask}
+                />
+              }
+            />
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       {/* Edit Task Modal triggered from Header breadcrumb */}

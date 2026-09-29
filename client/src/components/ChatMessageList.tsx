@@ -9,6 +9,7 @@ import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload } fro
 import Ansi from 'ansi-to-react';
 import { MarkdownView } from './MarkdownView';
 import { HumanInputCard } from './HumanInputCard';
+import { ErrorBoundary } from './ErrorBoundary';
 import {
   isImageAttachment,
   isCodeOrTextAttachment,
@@ -24,6 +25,7 @@ export function stripAnsi(text: string): string {
 }
 
 export function parseLegacyActionLine(line: string, index = 0): AgentStep | null {
+  if (!line || typeof line !== 'string') return null;
   const clean = stripAnsi(line).trim();
   if (!clean) return null;
   const isArrow = clean.startsWith('→') || clean.startsWith('->');
@@ -104,7 +106,7 @@ export function parseLegacyActionLine(line: string, index = 0): AgentStep | null
 }
 
 export function parseLegacyThoughtToSteps(thoughtText: string): AgentStep[] {
-  if (!thoughtText) return [];
+  if (!thoughtText || typeof thoughtText !== 'string') return [];
   const lines = thoughtText.split('\n');
   const steps: AgentStep[] = [];
   let currentThought = '';
@@ -432,16 +434,49 @@ const LiveElapsedTimer: React.FC<{ startTime?: number }> = ({ startTime }) => {
   return <span>{elapsed.toFixed(1)}s</span>;
 };
 
+export function normalizeStepOutput(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'boolean') return '';
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    if ('message' in (val as any) && typeof (val as any).message === 'string') {
+      return (val as any).message;
+    }
+    try {
+      return JSON.stringify(val, null, 2);
+    } catch {
+      return String(val);
+    }
+  }
+  return String(val);
+}
+
 const StepOutputDrawer: React.FC<{
-  output?: string;
-  error?: string;
+  output?: unknown;
+  error?: unknown;
   status: 'running' | 'completed' | 'failed';
 }> = ({ output, error, status }) => {
   const [copied, setCopied] = useState(false);
   const [expandedFull, setExpandedFull] = useState(false);
-  const text = error || output || '';
 
-  const lines = useMemo(() => text.split('\n'), [text]);
+  const text = useMemo(() => {
+    const errText = normalizeStepOutput(error);
+    const outText = normalizeStepOutput(output);
+
+    if (errText && outText && errText !== outText) {
+      return `${errText}\n\n${outText}`;
+    }
+    const combined = errText || outText;
+    if (combined) return combined;
+
+    if (status === 'failed' || error === true) {
+      return 'Operation failed without additional output details.';
+    }
+    return '';
+  }, [error, output, status]);
+
+  const lines = useMemo(() => (text ? text.split('\n') : []), [text]);
   const isTruncated = lines.length > 25;
   const displayLines = expandedFull || !isTruncated ? lines : lines.slice(0, 20);
   const displayText = displayLines.join('\n');
@@ -534,7 +569,7 @@ const StepCard: React.FC<{
 }> = ({ step, isExpanded, onToggleExpand, onAbort }) => {
   const isRunning = step.status === 'running';
   const isFailed = step.status === 'failed';
-  const hasDetails = Boolean(step.output || step.error);
+  const hasDetails = Boolean(step.output || step.error || isFailed);
 
   const getCategoryIcon = () => {
     switch (step.category) {
@@ -561,7 +596,7 @@ const StepCard: React.FC<{
           <span>Reasoning</span>
         </div>
         <div className="italic text-cozy-muted text-xs whitespace-pre-wrap">
-          {step.thought || step.title}
+          {typeof step.thought === 'string' ? step.thought : (typeof step.title === 'string' ? step.title : JSON.stringify(step.thought || step.title || ''))}
         </div>
       </div>
     );
@@ -586,7 +621,7 @@ const StepCard: React.FC<{
         </div>
 
         <span className="font-mono text-xs text-cozy-text truncate select-text flex-1">
-          {step.title}
+          {typeof step.title === 'string' ? step.title : String(step.title || '')}
         </span>
 
         {/* Live Elapsed / Duration */}
@@ -638,7 +673,15 @@ const StepCard: React.FC<{
 
       {/* Output preview drawer */}
       {isExpanded && hasDetails && (
-        <StepOutputDrawer output={step.output} error={step.error} status={step.status} />
+        <ErrorBoundary
+          fallback={
+            <div className="mt-2 p-3 rounded-xl border border-rose-500/30 bg-rose-500/5 text-rose-300 text-xs font-mono">
+              Unable to render output preview.
+            </div>
+          }
+        >
+          <StepOutputDrawer output={step.output} error={step.error} status={step.status} />
+        </ErrorBoundary>
       )}
     </div>
   );
@@ -793,7 +836,10 @@ const AgentActivityView: React.FC<{
       .map((s) => {
         let line = `[${s.status.toUpperCase()}] ${s.title}`;
         if (s.duration) line += ` (${s.duration}s)`;
-        if (s.output) line += `\nOutput:\n${s.output}\n`;
+        const outStr = normalizeStepOutput(s.output);
+        const errStr = normalizeStepOutput(s.error);
+        if (outStr) line += `\nOutput:\n${outStr}\n`;
+        if (errStr && errStr !== outStr) line += `\nError:\n${errStr}\n`;
         return line;
       })
       .join('\n---\n');
@@ -1159,13 +1205,14 @@ const MessageItem: React.FC<{
   const { thoughts, cleanContent, detectedSkills } = useMemo(() => {
     let t: string | null = null;
     let c = '';
+    const rawContent = typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : '');
 
-    const thoughtMatch = msg.content.match(/<thought>([\s\S]*?)<\/thought>/);
+    const thoughtMatch = rawContent.match(/<thought>([\s\S]*?)<\/thought>/);
     if (thoughtMatch) {
       t = thoughtMatch[1].trim();
-      c = msg.content.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+      c = rawContent.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
     } else if (!isUser) {
-      const lines = msg.content.split('\n');
+      const lines = rawContent.split('\n');
       const thoughtLines: string[] = [];
       const contentLines: string[] = [];
       let inThoughts = true;
