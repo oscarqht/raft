@@ -51,6 +51,7 @@ export interface Task {
   base_branch: string;
   worktree_path: string;
   status: 'active' | 'completed' | 'archived';
+  agent_status?: 'WIP' | 'idle';
   created_at: number;
   updated_at: number;
   project?: Project;
@@ -225,6 +226,7 @@ export interface TaskGitStatus {
   branch?: string;
   lifecycleStage?: 'in_progress' | 'pr_open' | 'merged' | 'clean';
   remoteUrl?: string;
+  agent_status?: 'WIP' | 'idle';
   checkedAt?: number;
 }
 

@@ -94,6 +94,15 @@ export default function App() {
         setWs(socket);
       };
 
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'task_agent_status') {
+            window.dispatchEvent(new CustomEvent('task-agent-status-updated', { detail: data }));
+          }
+        } catch {}
+      };
+
       socket.onclose = () => {
         setWs(null);
         reconnectTimeout = setTimeout(connect, 3000);

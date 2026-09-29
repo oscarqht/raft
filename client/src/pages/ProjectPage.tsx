@@ -88,9 +88,27 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       }
     };
     const handleStatusUpdate = () => loadTasksStatus(true);
+    const handleAgentStatusUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.taskId) return;
+      setTasks((prev) =>
+        prev.map((t) => (t.id === detail.taskId ? { ...t, agent_status: detail.agentStatus } : t))
+      );
+      setTasksStatus((prev) => {
+        if (!prev[detail.taskId]) return prev;
+        return {
+          ...prev,
+          [detail.taskId]: {
+            ...prev[detail.taskId],
+            agent_status: detail.agentStatus,
+          },
+        };
+      });
+    };
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('task-status-updated', handleStatusUpdate);
+    window.addEventListener('task-agent-status-updated', handleAgentStatusUpdate);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const interval = setInterval(() => {
@@ -101,10 +119,38 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('task-status-updated', handleStatusUpdate);
+      window.removeEventListener('task-agent-status-updated', handleAgentStatusUpdate);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
   }, [loadTasksStatus]);
+
+  // Handle direct WebSocket messages for task agent status
+  useEffect(() => {
+    if (!ws) return;
+    const handleWsMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'task_agent_status' && data.taskId) {
+          setTasks((prev) =>
+            prev.map((t) => (t.id === data.taskId ? { ...t, agent_status: data.agentStatus } : t))
+          );
+          setTasksStatus((prev) => {
+            if (!prev[data.taskId]) return prev;
+            return {
+              ...prev,
+              [data.taskId]: {
+                ...prev[data.taskId],
+                agent_status: data.agentStatus,
+              },
+            };
+          });
+        }
+      } catch {}
+    };
+    ws.addEventListener('message', handleWsMessage);
+    return () => ws.removeEventListener('message', handleWsMessage);
+  }, [ws]);
 
   // Refresh relative timestamps periodically
   const [, setTimeTick] = useState(0);
@@ -326,6 +372,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                     <div className="mt-2.5">
                       <TaskStatusBadges
                         status={tasksStatus[t.id]}
+                        agentStatus={tasksStatus[t.id]?.agent_status || t.agent_status || 'idle'}
                         loading={loadingStatus && !tasksStatus[t.id]}
                         compact={true}
                       />
