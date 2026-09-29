@@ -396,6 +396,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     cmd.env("NODE_ENV", "production");
     cmd.env("PATH", augmented_path());
     cmd.env("RAFT_INTERNAL_TOKEN", &internal_token);
+    cmd.env("RAFT_VERSION", app.package_info().version.to_string());
 
     #[cfg(windows)]
     {

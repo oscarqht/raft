@@ -343,6 +343,10 @@
 
     function updateStatus(newStatus) {
       if (!newStatus) return;
+      // Prevent Downloading status from overwriting Downloaded state
+      if (currentStatus && currentStatus.status === 'Downloaded' && newStatus.status === 'Downloading') {
+        return;
+      }
       // Prevent download progress from regressing backwards during downloading
       if (
         currentStatus &&
