@@ -10,7 +10,7 @@ import { ProjectPage } from './pages/ProjectPage';
 import { TaskPage } from './pages/TaskPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Square, X } from 'lucide-react';
 
 export default function App() {
   const location = useLocation();
@@ -24,6 +24,23 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [clis, setClis] = useState<CliInfo[]>([]);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ id: number; text: string } | null>(null);
+
+  useEffect(() => {
+    const handleToast = (e: Event) => {
+      const customEvent = e as CustomEvent<{ taskId: string; taskName?: string }>;
+      const taskName = customEvent.detail?.taskName || 'Task';
+      const text = `Dev server stopped for ${taskName}`;
+      const toastId = Date.now();
+      setToastMessage({ id: toastId, text });
+      setTimeout(() => {
+        setToastMessage((cur) => (cur?.id === toastId ? null : cur));
+      }, 3500);
+    };
+
+    window.addEventListener('show-dev-server-stopped-toast', handleToast);
+    return () => window.removeEventListener('show-dev-server-stopped-toast', handleToast);
+  }, []);
 
   // Extract current project/task IDs from URL pathname
   const projectTaskMatch = matchPath('/projects/:projectId/tasks/:taskId', location.pathname);
@@ -281,6 +298,24 @@ export default function App() {
               Cleaning up git worktree and removing task data... Please wait.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Floating Bottom Dev Server Stopped Toast */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-cozy-surface/95 dark:bg-zinc-900/95 border border-cozy-border/80 shadow-soft-xl text-xs text-cozy-text backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200 select-none">
+          <div className="w-5 h-5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+            <Square className="w-3 h-3 fill-current" />
+          </div>
+          <span className="font-medium text-cozy-text">{toastMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40 transition-colors ml-1"
+            title="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>

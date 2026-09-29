@@ -341,9 +341,33 @@ export async function startDevServer(taskId: string): Promise<DevServerState> {
   return res.json();
 }
 
-export async function stopDevServer(taskId: string): Promise<{ success: boolean }> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/stop`, { method: 'POST' });
+export async function stopDevServer(
+  taskId: string,
+  options?: { onlyIfNoSubscribers?: boolean }
+): Promise<{ success: boolean; wasRunning?: boolean }> {
+  const query = options?.onlyIfNoSubscribers ? '?onlyIfNoSubscribers=true' : '';
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/stop${query}`, { method: 'POST' });
   return res.json();
+}
+
+export function scheduleDevServerStop(taskId: string, graceMs: number = 3000): void {
+  const url = `${API_BASE}/tasks/${taskId}/dev-server/schedule-stop?graceMs=${graceMs}`;
+  if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try {
+      navigator.sendBeacon(url);
+      return;
+    } catch {}
+  }
+  fetch(url, { method: 'POST', keepalive: true }).catch(() => {});
+}
+
+export async function cancelDevServerStop(taskId: string): Promise<{ cancelled: boolean }> {
+  try {
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/cancel-stop`, { method: 'POST' });
+    return res.json();
+  } catch {
+    return { cancelled: false };
+  }
 }
 
 export async function restartDevServer(taskId: string): Promise<DevServerState> {
