@@ -11,6 +11,8 @@ export interface AlphaDeviceStatus {
   connected: boolean;
   status: 'connected' | 'connecting' | 'needs_auth' | 'pairing' | 'disconnected';
   clientId?: string;
+  clientName?: string;
+  userEmail?: string;
   loginUrl?: string;
   error?: string;
   lastConnectedAt?: number;
@@ -31,6 +33,20 @@ export interface AlphaTokenRecord {
   };
 }
 
+function extractEmailFromJwt(token?: string): string | undefined {
+  if (!token) return undefined;
+  try {
+    const parts = token.split('.');
+    if (parts.length >= 2) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+      return payload.email || undefined;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 600_000;
 const RECONNECT_DELAY_MS = 5_000;
@@ -39,6 +55,8 @@ export class AlphaDeviceService extends EventEmitter {
   private socket: WebSocket | null = null;
   private status: AlphaDeviceStatus['status'] = 'disconnected';
   private clientId?: string;
+  private clientName?: string;
+  private userEmail?: string;
   private loginUrl?: string;
   private lastError?: string;
   private lastConnectedAt?: number;
@@ -50,6 +68,7 @@ export class AlphaDeviceService extends EventEmitter {
   constructor() {
     super();
     this.tokenFilePath = join(homedir(), '.raft', 'alphamouse_credentials.json');
+    this.loadTokens().catch(() => {});
   }
 
   private tokenFilePath: string;
@@ -72,11 +91,37 @@ export class AlphaDeviceService extends EventEmitter {
     return this.clientId;
   }
 
+  public async getUserEmail(): Promise<string | undefined> {
+    if (this.userEmail) {
+      return this.userEmail;
+    }
+    const tokens = await this.loadTokens();
+    if (tokens) {
+      this.populateFromTokens(tokens);
+    }
+    return this.userEmail;
+  }
+
+  private populateFromTokens(tokens: AlphaTokenRecord): void {
+    if (tokens.clientId && !this.clientId) {
+      this.clientId = tokens.clientId;
+    }
+    if (tokens.client?.name && !this.clientName) {
+      this.clientName = tokens.client.name;
+    }
+    const email = extractEmailFromJwt(tokens.token) || extractEmailFromJwt(tokens.refreshToken);
+    if (email && !this.userEmail) {
+      this.userEmail = email;
+    }
+  }
+
   public getStatus(): AlphaDeviceStatus {
     return {
       connected: this.status === 'connected',
       status: this.status,
       clientId: this.clientId,
+      clientName: this.clientName,
+      userEmail: this.userEmail,
       loginUrl: this.loginUrl,
       error: this.lastError,
       lastConnectedAt: this.lastConnectedAt,
@@ -143,6 +188,7 @@ export class AlphaDeviceService extends EventEmitter {
         const data = await readFile(path, 'utf8');
         const parsed = JSON.parse(data) as AlphaTokenRecord;
         if (parsed && (parsed.token || parsed.clientId)) {
+          this.populateFromTokens(parsed);
           return parsed;
         }
       } catch {
@@ -346,10 +392,15 @@ export class AlphaDeviceService extends EventEmitter {
       if (data.type === 'auth_result' && data.client) {
         this.status = 'connected';
         this.clientId = data.client.clientId;
+        this.clientName = data.client.name;
         this.lastConnectedAt = Date.now();
         this.loginUrl = undefined;
         this.lastError = undefined;
-        console.log(`[AlphaDevice] Successfully connected as ${this.clientId}`);
+        if (data.token) {
+          const email = extractEmailFromJwt(data.token);
+          if (email) this.userEmail = email;
+        }
+        console.log(`[AlphaDevice] Successfully connected as ${this.clientId} (${this.clientName || 'unnamed'})`);
         this.notifyStatusChange();
 
         if (data.token && data.refreshToken) {
@@ -364,6 +415,9 @@ export class AlphaDeviceService extends EventEmitter {
           await this.saveTokens(newTokens);
         } else if (currentTokens) {
           this.clientId = currentTokens.clientId;
+          if (currentTokens.client?.name) {
+            this.clientName = currentTokens.client.name;
+          }
         }
         return;
       }

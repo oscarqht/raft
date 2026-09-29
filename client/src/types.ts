@@ -114,6 +114,7 @@ export interface Settings {
   tailscale_https_url?: string | null;
   alpha_intelligence_api_url?: string;
   alpha_intelligence_api_key?: string;
+  alpha_intelligence_email?: string;
 }
 
 export interface AlphaDeviceStatus {
@@ -121,6 +122,8 @@ export interface AlphaDeviceStatus {
   status: 'disconnected' | 'connecting' | 'pairing' | 'needs_auth' | 'connected' | 'error';
   loginUrl?: string;
   clientId?: string;
+  clientName?: string;
+  userEmail?: string;
   error?: string;
 }
 

@@ -1097,10 +1097,15 @@ You have access to terminal commands via your connected local desktop device.
               <div className="p-3.5 rounded-xl bg-cozy-surface/60 border border-cozy-border/80 text-xs space-y-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <span className="text-cozy-muted">
-                    Device Client ID:{' '}
+                    Device:{' '}
                     <span className="font-mono text-cozy-text font-semibold">
-                      {alphaStatus?.device?.clientId || 'Not registered yet'}
+                      {alphaStatus?.device?.clientName ? `${alphaStatus.device.clientName} (${alphaStatus.device.clientId})` : (alphaStatus?.device?.clientId || 'Not registered yet')}
                     </span>
+                    {alphaStatus?.device?.userEmail && (
+                      <span className="ml-2 text-sky-600 dark:text-sky-400 font-sans font-medium">
+                        • {alphaStatus.device.userEmail}
+                      </span>
+                    )}
                   </span>
                   {!alphaStatus?.device?.connected && (
                     <button
@@ -1653,11 +1658,17 @@ You have access to terminal commands via your connected local desktop device.
           </div>
 
           <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 text-xs text-cozy-text space-y-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <div>
-                <span className="text-cozy-muted block text-[11px] font-medium">Device Client ID</span>
+                <span className="text-cozy-muted block text-[11px] font-medium">Device Client</span>
                 <span className="font-mono text-cozy-text text-xs">
-                  {alphaStatus?.device?.clientId || 'Not registered yet'}
+                  {alphaStatus?.device?.clientName ? `${alphaStatus.device.clientName} (${alphaStatus.device.clientId})` : (alphaStatus?.device?.clientId || 'Not registered yet')}
+                </span>
+              </div>
+              <div>
+                <span className="text-cozy-muted block text-[11px] font-medium">Connected Alpha Account</span>
+                <span className="text-cozy-text text-xs font-semibold text-sky-600 dark:text-sky-400">
+                  {alphaStatus?.device?.userEmail || 'Auto-detected on connection'}
                 </span>
               </div>
               <div>

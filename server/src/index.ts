@@ -2617,6 +2617,7 @@ wss.on('connection', (ws: WebSocket) => {
           runAlphaIntelligenceTurn({
             apiUrl,
             apiKey,
+            userEmail: getSetting<string>('alpha_intelligence_email', '') || undefined,
             prompt: effectivePrompt,
             conversationId: cliSessionIdToResume || undefined,
             worktreePath: effectiveWorktreePath,

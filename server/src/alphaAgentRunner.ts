@@ -14,6 +14,7 @@ export interface HitlRequiredPayload {
 export interface RunAlphaOptions {
   apiUrl: string;
   apiKey: string;
+  userEmail?: string;
   prompt: string;
   conversationId?: string;
   worktreePath?: string;
@@ -68,7 +69,7 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
   conversationId?: string;
   steps: AgentStep[];
 }> {
-  const { apiUrl, apiKey, prompt, conversationId, worktreePath, sessionId, messageId, signal, onEvent, onHitlRequired, onConversationId } = options;
+  const { apiUrl, apiKey, userEmail, prompt, conversationId, worktreePath, sessionId, messageId, signal, onEvent, onHitlRequired, onConversationId } = options;
 
   if (worktreePath) {
     alphaDeviceService.setActiveWorktree(worktreePath);
@@ -94,7 +95,9 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
     onEvent(evt);
   };
 
-  const requestBody = {
+  const resolvedEmail = userEmail?.trim() || (await alphaDeviceService.getUserEmail());
+
+  const requestBody: Record<string, any> = {
     query: prompt,
     inputs: {
       query: prompt,
@@ -102,12 +105,19 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
     conversation_id: conversationId || undefined,
   };
 
+  if (resolvedEmail) {
+    requestBody.metadata = {
+      employee_email: resolvedEmail,
+    };
+  }
+
   const response = await fetch(runUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey.trim()}`,
       Accept: 'text/event-stream',
+      'X-Agent-Mode': 'advanced',
     },
     body: JSON.stringify(requestBody),
     signal,
@@ -206,6 +216,30 @@ interface SseContext {
   onConversationId?: (cid: string) => void;
 }
 
+function parseToolOutput(rawResult: any): string | undefined {
+  if (rawResult === undefined || rawResult === null) return undefined;
+  let str = typeof rawResult === 'string' ? rawResult : JSON.stringify(rawResult, null, 2);
+  try {
+    const parsed = typeof rawResult === 'string' ? JSON.parse(rawResult) : rawResult;
+    if (parsed && typeof parsed.text === 'string') {
+      try {
+        const inner = JSON.parse(parsed.text);
+        if (inner && (typeof inner.stdout === 'string' || typeof inner.stderr === 'string')) {
+          const parts: string[] = [];
+          if (inner.stdout) parts.push(inner.stdout);
+          if (inner.stderr) parts.push(`[stderr]\n${inner.stderr}`);
+          return parts.join('\n') || `(Exit code: ${inner.exitCode ?? 0})`;
+        }
+      } catch {
+        return parsed.text;
+      }
+    }
+  } catch {
+    // keep str
+  }
+  return str;
+}
+
 async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
   const { event, data, sessionId, messageId, steps, stepMap, onEvent, onHitlRequired, onConversationId } = ctx;
 
@@ -271,17 +305,37 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
       const stepStatus: AgentStep['status'] =
         toolCall.status === 'failed' ? 'failed' : isFinished ? 'completed' : 'running';
 
-      const toolArgs = toolCall.argument_delta || toolCall.arguments || toolCall.input;
-      const formattedArgs = toolArgs ? (typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs)) : undefined;
-      const toolOutput = toolCall.result !== undefined ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)) : undefined;
+      const rawToolName = toolCall.name || toolCall.client?.tool_name || 'Terminal';
+      const isRunCommand = rawToolName.endsWith('run_command') || toolCall.client?.tool_name === 'run_command' || rawToolName === 'run_command';
+
+      let parsedCmd: string | undefined;
+      let rawArgs = toolCall.arguments || toolCall.argument_delta || toolCall.input;
+      if (toolCall.arguments) {
+        try {
+          const parsed = typeof toolCall.arguments === 'string' ? JSON.parse(toolCall.arguments) : toolCall.arguments;
+          if (parsed && typeof parsed.command === 'string') {
+            const extra = Array.isArray(parsed.args) ? parsed.args.join(' ') : '';
+            parsedCmd = `${parsed.command} ${extra}`.trim();
+          }
+        } catch {}
+      }
+
+      const formattedArgs = parsedCmd || (rawArgs ? (typeof rawArgs === 'string' ? rawArgs : JSON.stringify(rawArgs)) : undefined);
+      const toolOutput = parseToolOutput(toolCall.result);
+
+      const title = isRunCommand
+        ? parsedCmd
+          ? `Run: ${parsedCmd}`
+          : 'Run terminal command'
+        : `Tool: ${rawToolName}`;
 
       if (!step) {
         step = {
           id: stepId,
           type: 'tool',
-          category: 'command',
-          toolName: toolCall.name || 'Terminal',
-          title: `Tool: ${toolCall.name || 'Terminal'}`,
+          category: isRunCommand ? 'command' : 'other',
+          toolName: isRunCommand ? 'Terminal' : rawToolName,
+          title,
           detail: formattedArgs,
           status: stepStatus,
           startTime: Date.now(),
@@ -291,7 +345,10 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
         steps.push(step);
       } else {
         step.status = stepStatus;
-        if (formattedArgs && !step.detail) {
+        if (title && step.title !== title && (parsedCmd || !step.title.startsWith('Run: '))) {
+          step.title = title;
+        }
+        if (formattedArgs) {
           step.detail = formattedArgs;
         }
         if (toolOutput !== undefined) {
@@ -353,6 +410,17 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
   }
 
   // 3. Human-in-the-Loop & Device Selection
+  if (event === 'input.completed') {
+    if (data?.client) {
+      const clientName = data.client.name || data.client.clientId;
+      onEvent({
+        type: 'thought',
+        content: `\n[Using local device: ${clientName}]\n`,
+      });
+    }
+    return;
+  }
+
   if (
     event === 'input.required' ||
     event === 'message.input.required'
@@ -361,7 +429,23 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
 
     // Check if this is a local device selection prompt
     if (isDeviceSelectionInput(data)) {
-      const clientId = alphaDeviceService.getClientId();
+      let clientId = alphaDeviceService.getClientId();
+      if (!clientId) {
+        const elements = data?.widget?.elements;
+        if (Array.isArray(elements)) {
+          for (const el of elements) {
+            if (el?.type === 'button_group' && Array.isArray(el?.button_group)) {
+              const raftBtn = el.button_group.find((btn: any) =>
+                btn?.text?.toLowerCase()?.includes('raft') || btn?.title?.toLowerCase()?.includes('raft')
+              ) || el.button_group[0];
+              if (raftBtn?.value) {
+                clientId = raftBtn.value;
+                break;
+              }
+            }
+          }
+        }
+      }
       console.log(`[AlphaRunner] Device selection prompt detected. Raft connected clientId=${clientId}`);
 
       if (clientId && data.callback_url) {
