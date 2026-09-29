@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2 } from 'lucide-react';
 import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus, updateTask } from '../api';
-import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
 
@@ -244,11 +243,6 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        <TaskQuickSwitcher
-          currentTaskId={currentPath?.taskId}
-          currentTaskName={currentPath?.taskName}
-          onNavigate={handleNav}
-        />
 
         {settings && (
           <Link

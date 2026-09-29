@@ -38,6 +38,9 @@ interface ChatPaneProps {
   onOpenScripts?: () => void;
   onDeleteTask?: () => void;
   isDeletingTask?: boolean;
+  isPreviewOpen?: boolean;
+  onTogglePreview?: () => void;
+  isDevRunning?: boolean;
 }
 
 export const ChatPane: React.FC<ChatPaneProps> = ({
@@ -50,6 +53,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   onOpenScripts,
   onDeleteTask,
   isDeletingTask,
+  isPreviewOpen = false,
+  onTogglePreview,
+  isDevRunning = false,
 }) => {
   const navigate = useNavigate();
   // Synchronous cache initialization for 0ms instantaneous load
@@ -1194,6 +1200,30 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <UploadCloud className="w-3.5 h-3.5" />
             <span>Submit</span>
           </button>
+
+          {onTogglePreview && (
+            <button
+              type="button"
+              onClick={onTogglePreview}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shadow-soft-sm cursor-pointer ${
+                isPreviewOpen
+                  ? 'bg-teal-500/15 border-teal-400/40 text-teal-600 dark:text-teal-400 font-semibold'
+                  : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted hover:text-cozy-text hover:border-teal-400/30'
+              }`}
+              title={isPreviewOpen ? 'Hide preview pane' : 'Open preview pane'}
+            >
+              <Globe className="w-3.5 h-3.5 text-teal-500" />
+              <span>Preview</span>
+              <span
+                className={`w-2 h-2 rounded-full transition-all ${
+                  isDevRunning
+                    ? 'bg-emerald-400 shadow-glow-mint'
+                    : 'bg-zinc-400/40'
+                }`}
+                title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
+              />
+            </button>
+          )}
         </div>
 
         {/* Mobile Dropdown Action Menu */}
@@ -1208,7 +1238,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </button>
 
           {showMobileActionsMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
+            <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
+              {onTogglePreview && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileActionsMenu(false);
+                    onTogglePreview();
+                  }}
+                  className="flex items-center justify-between px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Globe className="w-3.5 h-3.5 text-teal-500" />
+                    <span>{isPreviewOpen ? 'Hide Preview' : 'Show Preview'}</span>
+                  </div>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isDevRunning ? 'bg-emerald-400 shadow-glow-mint' : 'bg-zinc-400/40'
+                    }`}
+                  />
+                </button>
+              )}
               {onOpenScripts && (
                 <button
                   type="button"

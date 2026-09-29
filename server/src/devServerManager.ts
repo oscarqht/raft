@@ -52,6 +52,21 @@ class DevServerManager extends EventEmitter {
     return this.subscribers.get(taskId)?.size || 0;
   }
 
+  getActiveDevServerTaskIds(): string[] {
+    const active: string[] = [];
+    for (const [taskId, entry] of this.servers.entries()) {
+      if (entry.state.status === 'running' || entry.state.status === 'starting') {
+        active.push(taskId);
+      }
+    }
+    return active;
+  }
+
+  private emitState(taskId: string, state: DevServerState): void {
+    this.emit(`state:${taskId}`, state);
+    this.emit('state_change', state);
+  }
+
   schedulePendingStop(taskId: string, delayMs: number = 3000): boolean {
     const entry = this.servers.get(taskId);
     if (!entry || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
@@ -143,7 +158,7 @@ class DevServerManager extends EventEmitter {
           state.port = detectedPort;
           state.url = `http://localhost:${detectedPort}`;
           state.status = 'running';
-          this.emit(`state:${taskId}`, state);
+          this.emitState(taskId, state);
           this.ensureProxy(taskId, detectedPort);
         }
       }
@@ -154,7 +169,7 @@ class DevServerManager extends EventEmitter {
       addLog(text);
       if (state.status === 'starting') {
         state.status = 'running';
-        this.emit(`state:${taskId}`, state);
+        this.emitState(taskId, state);
       }
     });
 
@@ -166,17 +181,17 @@ class DevServerManager extends EventEmitter {
     proc.on('close', (code) => {
       addLog(`\n[Dev Server process exited with code ${code}]\n`);
       state.status = 'stopped';
-      this.emit(`state:${taskId}`, state);
+      this.emitState(taskId, state);
     });
 
     proc.on('error', (err) => {
       addLog(`\n[Dev Server error: ${err.message}]\n`);
       state.status = 'error';
-      this.emit(`state:${taskId}`, state);
+      this.emitState(taskId, state);
     });
 
     this.servers.set(taskId, { proc, state, proxy: null });
-    this.emit(`state:${taskId}`, state);
+    this.emitState(taskId, state);
     this.ensureProxy(taskId, defaultPort);
     return state;
   }
@@ -200,7 +215,7 @@ class DevServerManager extends EventEmitter {
       entry.proxy = proxy;
       entry.state.proxyPort = proxy.port;
       entry.state.proxyUrl = `http://localhost:${proxy.port}`;
-      this.emit(`state:${taskId}`, entry.state);
+      this.emitState(taskId, entry.state);
     } catch (err: any) {
       console.error(`[DevServerManager] Failed to start preview proxy for task ${taskId}:`, err);
     }
@@ -250,7 +265,7 @@ class DevServerManager extends EventEmitter {
 
     entry.state.status = 'stopped';
     entry.proc = null;
-    this.emit(`state:${taskId}`, entry.state);
+    this.emitState(taskId, entry.state);
     return wasRunning;
   }
 

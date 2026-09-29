@@ -9,6 +9,7 @@ interface DraggableSplitProps {
   storageKey?: string;
   mobileActivePane?: 'left' | 'right';
   mobileBreakpoint?: number;
+  rightCollapsed?: boolean;
 }
 
 export const DraggableSplit: React.FC<DraggableSplitProps> = ({
@@ -20,6 +21,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   storageKey = 'raft:split-ratio',
   mobileActivePane = 'left',
   mobileBreakpoint = 1200,
+  rightCollapsed = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < mobileBreakpoint);
@@ -148,7 +150,9 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       {/* Left Pane */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 7px)`,
+          width: isMobile
+            ? mobileActivePane === 'left' ? '100%' : '0px'
+            : rightCollapsed ? '100%' : `calc(${ratio * 100}% - 7px)`,
           display: isMobile && mobileActivePane !== 'left' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
@@ -162,7 +166,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       </div>
 
       {/* Draggable Divider with Airy Gutter */}
-      {!isMobile && (
+      {!isMobile && !rightCollapsed && (
         <div
           onPointerDown={handlePointerDown}
           className={`relative w-3 h-full cursor-col-resize transition-all flex items-center justify-center shrink-0 z-20 select-none group touch-none mx-0.5 rounded-full ${
@@ -186,8 +190,13 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       {/* Right Pane */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 7px)`,
-          display: isMobile && mobileActivePane !== 'right' ? 'none' : 'flex',
+          width: isMobile
+            ? mobileActivePane === 'right' ? '100%' : '0px'
+            : rightCollapsed ? '0px' : `calc(${(1 - ratio) * 100}% - 7px)`,
+          display:
+            (isMobile && mobileActivePane !== 'right') || (!isMobile && rightCollapsed)
+              ? 'none'
+              : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
         className={`h-full flex flex-col min-w-0 overflow-hidden relative ${
