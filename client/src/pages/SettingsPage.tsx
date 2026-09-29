@@ -759,50 +759,50 @@ You have access to terminal commands via your connected local desktop device.
         </div>
 
         {/* 4 Navigation Tabs: AI Agents, Alpha Intelligence, Skills, Git Integration */}
-        <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm max-w-2xl">
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm w-full max-w-4xl overflow-x-auto">
           <button
             type="button"
             onClick={() => handleTabChange('agents')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'agents'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <Bot className="w-4 h-4" />
-            <span>AI Agents</span>
+            <Bot className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">AI Agents</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('alpha')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'alpha'
                 ? 'bg-sky-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <Radio className="w-4 h-4" />
-            <span>Alpha Intelligence</span>
+            <Radio className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Alpha Intelligence</span>
             {Boolean(settings.alpha_intelligence_api_url && settings.alpha_intelligence_api_key) && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
             )}
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('skills')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'skills'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Skills</span>
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Skills</span>
             {skills.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none shrink-0 ${
                   activeTab === 'skills'
                     ? 'bg-white/20 text-white'
                     : 'bg-cozy-subtle text-cozy-muted'
@@ -816,17 +816,17 @@ You have access to terminal commands via your connected local desktop device.
           <button
             type="button"
             onClick={() => handleTabChange('git')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'git'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <GitBranch className="w-4 h-4" />
-            <span>Git Integration</span>
+            <GitBranch className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Git Integration</span>
             {gitAccounts.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none shrink-0 ${
                   activeTab === 'git'
                     ? 'bg-white/20 text-white'
                     : 'bg-cozy-subtle text-cozy-muted'
