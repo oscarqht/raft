@@ -40,9 +40,21 @@ export function normalizeAlphaApiUrl(rawUrl: string): string {
   try {
     const url = new URL(rawUrl.trim());
     let pathname = url.pathname.replace(/\/+$/, '');
-    if (!pathname.endsWith('/run')) {
+
+    // Portal or page URL: e.g. /superagents/27785 or /app/superagents/27785 or /chatflows/12345
+    const pageMatch = pathname.match(/(?:\/app)?\/(superagents|chatflows)\/(\d+|[a-zA-Z0-9_-]+)$/i);
+    if (pageMatch) {
+      const [, kind, id] = pageMatch;
+      pathname = `/api/${kind.toLowerCase()}/${id}/run`;
+    } else if (pathname.match(/(?:\/app)?\/(superagents|chatflows)\/(\d+|[a-zA-Z0-9_-]+)\/run(?:\/.*)?$/i)) {
+      // It's already an explicit /run or /run/... endpoint
+      if (!pathname.startsWith('/api') && !pathname.startsWith('/webapi')) {
+        pathname = `/api${pathname.replace(/^\/app/, '')}`;
+      }
+    } else if (!pathname.includes('/run')) {
       pathname = `${pathname}/run`;
     }
+
     url.pathname = pathname;
     url.searchParams.set('stream', 'true');
     return url.toString();
@@ -69,6 +81,18 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
   let fullContent = '';
   const steps: AgentStep[] = [];
   const stepMap = new Map<string, AgentStep>();
+  let doneEmitted = false;
+
+  const emitEvent = (evt: StreamEvent) => {
+    if (evt.type === 'done') {
+      if (doneEmitted) return;
+      doneEmitted = true;
+    }
+    if (evt.type === 'chunk' && evt.content) {
+      fullContent += evt.content;
+    }
+    onEvent(evt);
+  };
 
   const requestBody = {
     query: prompt,
@@ -138,12 +162,7 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
               messageId,
               steps,
               stepMap,
-              onEvent: (evt) => {
-                if (evt.type === 'chunk' && evt.content) {
-                  fullContent += evt.content;
-                }
-                onEvent(evt);
-              },
+              onEvent: emitEvent,
               onHitlRequired,
               onConversationId: (cid) => {
                 currentConvId = cid;
@@ -155,6 +174,10 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
           }
         }
       }
+    }
+
+    if (!doneEmitted) {
+      emitEvent({ type: 'done' });
     }
   } catch (err: any) {
     if (signal?.aborted) {
@@ -186,40 +209,71 @@ interface SseContext {
 async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
   const { event, data, sessionId, messageId, steps, stepMap, onEvent, onHitlRequired, onConversationId } = ctx;
 
-  // 1. Invocation events
+  // 1. Invocation and start events
   if (
+    event === 'message.start' ||
     event === 'superagent.invoked' ||
     event === 'chatflow.invoked' ||
     event === 'workflow.invoked'
   ) {
-    if (data.conversation_id) {
-      onConversationId?.(data.conversation_id);
+    const convId = data?.conversation_id || data?.conversationId;
+    if (convId) {
+      onConversationId?.(convId);
     }
     return;
   }
 
-  // 2. Stream chunks (text, reasoning, tool_call, sub_agent)
+  // 2. Stream message chunks (text, reasoning, tool_call, sub_agent, action_summary)
   if (event === 'message') {
-    const msgType = data.type;
+    const apiMessage = data?.message || {};
+    const msgType = apiMessage.type || data?.type || (data?.text ? 'text' : undefined);
+    const textContent = typeof apiMessage.text === 'string' ? apiMessage.text : typeof data?.text === 'string' ? data.text : '';
+    const reasoningContent = typeof apiMessage.reasoning === 'string' ? apiMessage.reasoning : typeof data?.reasoning === 'string' ? data.reasoning : '';
+    const convId = data?.conversation_id || data?.conversationId || apiMessage.conversation_id;
+    if (convId) {
+      onConversationId?.(convId);
+    }
 
-    if (msgType === 'text' && typeof data.text === 'string') {
-      onEvent({ type: 'chunk', content: data.text });
+    // Skip metadata / frame headers
+    if (msgType === 'meta' || msgType === 'final_result') {
       return;
     }
 
-    if (msgType === 'reasoning' && typeof data.reasoning === 'string') {
-      onEvent({ type: 'thought', content: data.reasoning });
+    if (msgType === 'text' || (!msgType && textContent)) {
+      if (textContent) {
+        onEvent({ type: 'chunk', content: textContent });
+      }
+      return;
+    }
+
+    if (msgType === 'reasoning' || msgType === 'thought' || msgType?.startsWith?.('react.')) {
+      const thought = reasoningContent || textContent;
+      if (thought) {
+        onEvent({ type: 'thought', content: thought });
+      }
+      return;
+    }
+
+    if (msgType === 'action_summary') {
+      const summary = textContent || reasoningContent;
+      if (summary) {
+        onEvent({ type: 'thought', content: `\n[${summary}]\n` });
+      }
       return;
     }
 
     if (msgType === 'tool_call') {
-      const toolCall = data.tool_call || data;
+      const toolCall = apiMessage.tool || data?.tool_call || data?.tool || data;
       const stepId = String(toolCall.id || toolCall.name || `tool_${steps.length}`);
       let step = stepMap.get(stepId);
 
-      const isFinished = toolCall.status === 'completed' || toolCall.status === 'failed' || Boolean(toolCall.result);
+      const isFinished = toolCall.status === 'completed' || toolCall.status === 'failed' || toolCall.result !== undefined;
       const stepStatus: AgentStep['status'] =
         toolCall.status === 'failed' ? 'failed' : isFinished ? 'completed' : 'running';
+
+      const toolArgs = toolCall.argument_delta || toolCall.arguments || toolCall.input;
+      const formattedArgs = toolArgs ? (typeof toolArgs === 'string' ? toolArgs : JSON.stringify(toolArgs)) : undefined;
+      const toolOutput = toolCall.result !== undefined ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)) : undefined;
 
       if (!step) {
         step = {
@@ -228,17 +282,20 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
           category: 'command',
           toolName: toolCall.name || 'Terminal',
           title: `Tool: ${toolCall.name || 'Terminal'}`,
-          detail: toolCall.arguments ? (typeof toolCall.arguments === 'string' ? toolCall.arguments : JSON.stringify(toolCall.arguments)) : undefined,
+          detail: formattedArgs,
           status: stepStatus,
           startTime: Date.now(),
-          output: toolCall.result ? (typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2)) : undefined,
+          output: toolOutput,
         };
         stepMap.set(stepId, step);
         steps.push(step);
       } else {
         step.status = stepStatus;
-        if (toolCall.result) {
-          step.output = typeof toolCall.result === 'string' ? toolCall.result : JSON.stringify(toolCall.result, null, 2);
+        if (formattedArgs && !step.detail) {
+          step.detail = formattedArgs;
+        }
+        if (toolOutput !== undefined) {
+          step.output = toolOutput;
         }
         if (isFinished && step.startTime && !step.duration) {
           step.duration = Math.round(((Date.now() - step.startTime) / 1000) * 10) / 10;
@@ -253,10 +310,10 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
     }
 
     if (msgType === 'sub_agent') {
-      const subAgent = data.sub_agent || data;
+      const subAgent = apiMessage.sub_agent || data?.sub_agent || data;
       const stepId = String(subAgent.id || subAgent.name || `subagent_${steps.length}`);
       let step = stepMap.get(stepId);
-      const isFinished = subAgent.status === 'completed' || subAgent.status === 'failed';
+      const isFinished = subAgent.status === 'completed' || subAgent.status === 'failed' || subAgent.output !== undefined;
 
       if (!step) {
         step = {
@@ -267,11 +324,15 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
           title: `Subagent: ${subAgent.name || 'Agent'}`,
           status: isFinished ? (subAgent.status === 'failed' ? 'failed' : 'completed') : 'running',
           startTime: Date.now(),
+          output: subAgent.output ? (typeof subAgent.output === 'string' ? subAgent.output : JSON.stringify(subAgent.output, null, 2)) : undefined,
         };
         stepMap.set(stepId, step);
         steps.push(step);
       } else {
         step.status = isFinished ? (subAgent.status === 'failed' ? 'failed' : 'completed') : 'running';
+        if (subAgent.output !== undefined) {
+          step.output = typeof subAgent.output === 'string' ? subAgent.output : JSON.stringify(subAgent.output, null, 2);
+        }
         if (isFinished && step.startTime && !step.duration) {
           step.duration = Math.round(((Date.now() - step.startTime) / 1000) * 10) / 10;
         }
@@ -281,6 +342,12 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
         type: 'step',
         step,
       });
+      return;
+    }
+
+    if (msgType === 'error' || msgType === 'warning') {
+      const errText = textContent || data?.error?.message || (typeof data?.error === 'string' ? data.error : 'Agent error');
+      onEvent({ type: 'error', content: errText });
       return;
     }
   }
@@ -334,12 +401,19 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
 
   // 4. Completion & Abort events
   if (
+    event === 'message.end' ||
     event === 'superagent.completed' ||
     event === 'chatflow.completed' ||
     event === 'workflow.completed'
   ) {
-    if (data.conversation_id) {
-      onConversationId?.(data.conversation_id);
+    const convId = data?.conversation_id || data?.conversationId;
+    if (convId) {
+      onConversationId?.(convId);
+    }
+    if (data?.error) {
+      const errorMsg = data.error.message || (typeof data.error === 'string' ? data.error : 'Execution failed');
+      onEvent({ type: 'error', content: errorMsg });
+      return;
     }
     onEvent({ type: 'done' });
     return;
@@ -347,9 +421,10 @@ async function handleAlphaSseEvent(ctx: SseContext): Promise<void> {
 
   if (
     event === 'superagent.aborted' ||
+    event === 'chatflow.aborted' ||
     event === 'workflow.aborted'
   ) {
-    const errorMsg = data?.error?.message || 'Agent workflow aborted';
+    const errorMsg = data?.error?.message || (typeof data?.error === 'string' ? data.error : 'Agent workflow aborted');
     onEvent({ type: 'error', content: errorMsg });
     return;
   }

@@ -19,6 +19,26 @@ test('normalizes Alpha Intelligence API URLs correctly', () => {
     normalizeAlphaApiUrl('https://alpha.example.com/api/chatflows/chatflow-456/run/'),
     'https://alpha.example.com/api/chatflows/chatflow-456/run?stream=true'
   );
+  assert.equal(
+    normalizeAlphaApiUrl('https://ai.insea.io/api/superagents/27785/run?stream=true'),
+    'https://ai.insea.io/api/superagents/27785/run?stream=true'
+  );
+  assert.equal(
+    normalizeAlphaApiUrl('https://ai.insea.io/api/superagents/27785/run/dev?stream=true'),
+    'https://ai.insea.io/api/superagents/27785/run/dev?stream=true'
+  );
+  assert.equal(
+    normalizeAlphaApiUrl('https://ai.insea.io/superagents/27785'),
+    'https://ai.insea.io/api/superagents/27785/run?stream=true'
+  );
+  assert.equal(
+    normalizeAlphaApiUrl('https://ai.insea.io/app/superagents/27785'),
+    'https://ai.insea.io/api/superagents/27785/run?stream=true'
+  );
+  assert.equal(
+    normalizeAlphaApiUrl('https://ai.insea.io/chatflows/12345'),
+    'https://ai.insea.io/api/chatflows/12345/run?stream=true'
+  );
 });
 
 test('detects AlphaMouse device selection prompt accurately', () => {
