@@ -130,6 +130,82 @@ function getEffectiveAgentCli(): string {
   return readyCli ? readyCli.name : 'codex';
 }
 
+// Updater state & loopback sync
+let currentUpdaterStatus: any = { status: 'Idle' };
+let pendingUpdaterAction: 'check' | 'install' | null = null;
+const internalAuthToken = process.env.RAFT_INTERNAL_TOKEN || '';
+
+function getRaftVersion(): string {
+  if (typeof process.env.RAFT_VERSION === 'string' && process.env.RAFT_VERSION) {
+    return process.env.RAFT_VERSION;
+  }
+  const candidatePkgPaths = [
+    path.resolve(process.cwd(), 'package.json'),
+    path.resolve(process.cwd(), '../package.json'),
+    path.resolve(__dirname, 'package.json'),
+    path.resolve(__dirname, '../package.json'),
+    path.resolve(__dirname, '../../package.json'),
+  ];
+  for (const pkgPath of candidatePkgPaths) {
+    try {
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg.name === 'raft' && pkg.version) {
+          return pkg.version;
+        }
+        if (pkg.version && pkg.name !== 'raft-server') {
+          return pkg.version;
+        }
+      }
+    } catch {}
+  }
+  return '0.19.0';
+}
+
+// Public Updater endpoints (for Web Client HeaderUpdater)
+app.get('/api/updater/status', (_req: Request, res: Response) => {
+  res.json({
+    current_version: getRaftVersion(),
+    status: currentUpdaterStatus,
+  });
+});
+
+app.post('/api/updater/check', (_req: Request, res: Response) => {
+  pendingUpdaterAction = 'check';
+  if (
+    !currentUpdaterStatus ||
+    currentUpdaterStatus.status === 'Idle' ||
+    currentUpdaterStatus.status === 'UpToDate' ||
+    currentUpdaterStatus.status === 'Error'
+  ) {
+    currentUpdaterStatus = { status: 'Checking' };
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/updater/install', (_req: Request, res: Response) => {
+  pendingUpdaterAction = 'install';
+  res.json({ success: true });
+});
+
+// Internal Updater endpoints (polled/pushed by Tauri loopback sync)
+app.post('/api/internal/updater-status', (req: Request, res: Response) => {
+  if (internalAuthToken && req.headers['x-raft-token'] !== internalAuthToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  currentUpdaterStatus = req.body;
+  res.json({ success: true });
+});
+
+app.get('/api/internal/updater-action', (req: Request, res: Response) => {
+  if (internalAuthToken && req.headers['x-raft-token'] !== internalAuthToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const action = pendingUpdaterAction;
+  pendingUpdaterAction = null;
+  res.json({ action });
+});
+
 // Settings
 app.get('/api/settings', async (_req: Request, res: Response) => {
   const agent_cli = getEffectiveAgentCli();

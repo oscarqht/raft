@@ -3065,7 +3065,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "raft"
-version = "0.17.0"
+version = "0.19.0"
 dependencies = [
  "dirs 6.0.0",
  "libc",
@@ -3082,6 +3082,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
