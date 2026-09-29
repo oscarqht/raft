@@ -197,9 +197,8 @@ pub async fn check_and_download(app: &AppHandle, show_window: bool, force: bool)
                         };
 
                         let elapsed = last_emit.elapsed();
-                        if pct == 100
-                            || (elapsed >= Duration::from_millis(100)
-                                && (pct != last_pct || elapsed >= Duration::from_millis(300)))
+                        if pct < 100
+                            && (pct != last_pct || elapsed >= Duration::from_millis(250))
                         {
                             last_pct = pct;
                             last_emit = std::time::Instant::now();
@@ -211,14 +210,12 @@ pub async fn check_and_download(app: &AppHandle, show_window: bool, force: bool)
                                 total: content_length,
                                 percent: pct,
                             };
-                            let state_arc_clone = state_arc.clone();
-                            let app_clone_inner = app_clone.clone();
-                            let status_clone = status.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let mut mgr = state_arc_clone.lock().await;
-                                mgr.status = status_clone.clone();
-                                let _ = app_clone_inner.emit("raft://update-status", &status_clone);
-                            });
+                            if let Ok(mut mgr) = state_arc.try_lock() {
+                                if !matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
+                                    mgr.status = status.clone();
+                                }
+                            }
+                            let _ = app_clone.emit("raft://update-status", &status);
                         }
                     },
                     || {
