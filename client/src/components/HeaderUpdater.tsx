@@ -33,7 +33,12 @@ export const HeaderUpdater: React.FC = () => {
         setCurrentVersion(data.current_version);
       }
       if (data.status) {
-        setStatus(data.status);
+        setStatus((prev) => {
+          if (prev.status === 'Downloaded' && data.status.status === 'Downloading') {
+            return prev;
+          }
+          return data.status;
+        });
       }
     } catch {
       // Backend may be restarting
