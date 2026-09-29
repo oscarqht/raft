@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
@@ -10,6 +10,9 @@ interface SubmitModalProps {
   ws: WebSocket | null;
 }
 
+const getDefaultCommitMessage = (task: Task) =>
+  task.name ? `feat(${task.name}): implement updates` : `feat(${task.branch || 'task'}): implement updates`;
+
 export const SubmitModal: React.FC<SubmitModalProps> = ({
   task,
   isOpen,
@@ -17,7 +20,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   ws,
 }) => {
   const [gitStatus, setGitStatus] = useState<GitStatus>({ staged: [], unstaged: [], untracked: [] });
-  const [commitMessage, setCommitMessage] = useState(`feat(${task.name}): implement updates`);
+  const [commitMessage, setCommitMessage] = useState(() => getDefaultCommitMessage(task));
   const [commitDetails, setCommitDetails] = useState('');
   const [isLargeChange, setIsLargeChange] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -27,17 +30,41 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const hasUserEditedRef = useRef(false);
+  const prevTaskIdRef = useRef(task.id);
+  const prevProjectIdRef = useRef(task.project_id);
+
+  const resetToDefault = useCallback((t: Task) => {
+    hasUserEditedRef.current = false;
+    setCommitMessage(getDefaultCommitMessage(t));
+    setCommitDetails('');
+    setIsLargeChange(false);
+    setIsGenerating(false);
+    setIsSubmitting(false);
+    setLogs([]);
+    setIsSuccess(null);
+    setGitStatus({ staged: [], unstaged: [], untracked: [] });
+  }, []);
+
+  // Clear previous content and reset to default when switching to another project or task
+  useEffect(() => {
+    if (task.id !== prevTaskIdRef.current || task.project_id !== prevProjectIdRef.current) {
+      prevTaskIdRef.current = task.id;
+      prevProjectIdRef.current = task.project_id;
+      resetToDefault(task);
+    }
+  }, [task.id, task.project_id, task.name, task.branch, resetToDefault, task]);
 
   const totalChanges = gitStatus.staged.length + gitStatus.unstaged.length + gitStatus.untracked.length;
   const unpushedCount = gitStatus.unpushedCount || 0;
   const isPushOnly = totalChanges === 0 && unpushedCount > 0;
   const hasNothingToSubmit = totalChanges === 0 && unpushedCount === 0;
 
-  const handleGenerateAiCommit = async (force = false) => {
+  const handleGenerateAiCommit = async (force = false, forTaskId = task.id) => {
     if (isGenerating || isSubmitting) return;
     setIsGenerating(true);
     try {
-      const res = await generateTaskCommitMessage(task.id);
+      const res = await generateTaskCommitMessage(forTaskId);
+      if (prevTaskIdRef.current !== forTaskId) return;
       if (force || !hasUserEditedRef.current) {
         if (res.title) {
           setCommitMessage(res.title);
@@ -46,25 +73,37 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
         setIsLargeChange(Boolean(res.isLargeChange));
       }
     } catch (err) {
-      console.error('Failed to generate commit message:', err);
+      if (prevTaskIdRef.current === forTaskId) {
+        console.error('Failed to generate commit message:', err);
+      }
     } finally {
-      setIsGenerating(false);
+      if (prevTaskIdRef.current === forTaskId) {
+        setIsGenerating(false);
+      }
     }
   };
 
   useEffect(() => {
     if (isOpen) {
-      hasUserEditedRef.current = false;
-      setIsSuccess(null);
-      setLogs([]);
-      setIsSubmitting(false);
+      if (task.id !== prevTaskIdRef.current || task.project_id !== prevProjectIdRef.current) {
+        prevTaskIdRef.current = task.id;
+        prevProjectIdRef.current = task.project_id;
+        resetToDefault(task);
+      } else {
+        hasUserEditedRef.current = false;
+        setIsSuccess(null);
+        setLogs([]);
+        setIsSubmitting(false);
+      }
 
-      getTaskGitStatus(task.id)
+      const targetTaskId = task.id;
+      getTaskGitStatus(targetTaskId)
         .then((status) => {
+          if (prevTaskIdRef.current !== targetTaskId) return;
           setGitStatus(status);
           const total = status.staged.length + status.unstaged.length + status.untracked.length;
           if (total > 0) {
-            handleGenerateAiCommit(false);
+            handleGenerateAiCommit(false, targetTaskId);
           } else {
             setCommitMessage('');
             setCommitDetails('');
@@ -72,7 +111,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
         })
         .catch(() => {});
     }
-  }, [isOpen, task.id]);
+  }, [isOpen, task.id, task.project_id, task, resetToDefault]);
 
   useEffect(() => {
     if (!ws) return;
@@ -223,7 +262,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={() => handleGenerateAiCommit(true)}
+                    onClick={() => handleGenerateAiCommit(true, task.id)}
                     disabled={isGenerating || isSubmitting || totalChanges === 0}
                     className="text-[11px] text-sky-400 hover:text-sky-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
                     title={totalChanges === 0 ? 'No local file changes to analyze' : 'Generate commit message using AI Agent'}

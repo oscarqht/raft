@@ -129,6 +129,13 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   }, [taskId]);
 
   useEffect(() => {
+    setIsSubmitOpen(false);
+    setIsRebaseOpen(false);
+    setIsRunScriptOpen(false);
+    setIsManageScriptsOpen(false);
+  }, [taskId]);
+
+  useEffect(() => {
     const handleOpenRebase = () => setIsRebaseOpen(true);
     const handleOpenSubmit = () => setIsSubmitOpen(true);
 
@@ -267,6 +274,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
         {/* Slide-over Rebase & Conflict Resolution Drawer */}
         <RebaseDrawer
+          key={`rebase-${task.project_id}-${task.id}`}
           task={task}
           isOpen={isRebaseOpen}
           onClose={() => setIsRebaseOpen(false)}
@@ -275,6 +283,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
         {/* Submit Changes Modal */}
         <SubmitModal
+          key={`submit-${task.project_id}-${task.id}`}
           task={task}
           isOpen={isSubmitOpen}
           onClose={() => setIsSubmitOpen(false)}
