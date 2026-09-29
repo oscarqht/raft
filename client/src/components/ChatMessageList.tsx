@@ -5,9 +5,10 @@ import {
   CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp,
   KeyRound, RotateCcw
 } from 'lucide-react';
-import { ChatMessage, FileAttachment, CliInfo, AgentStep } from '../types';
+import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload } from '../types';
 import Ansi from 'ansi-to-react';
 import { MarkdownView } from './MarkdownView';
+import { HumanInputCard } from './HumanInputCard';
 import {
   isImageAttachment,
   isCodeOrTextAttachment,
@@ -901,6 +902,8 @@ interface ChatMessageListProps {
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
   onAbort?: () => void;
+  activeHitl?: AlphaHitlPayload | null;
+  onHitlSubmitted?: () => void;
 }
 
 export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
@@ -914,6 +917,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   onSwitchCliAndRetry,
   onOpenSettings,
   onAbort,
+  activeHitl,
+  onHitlSubmitted,
 }) => {
   const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
@@ -1036,6 +1041,18 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
           />
         );
       })}
+
+      {/* Human-in-the-loop input card */}
+      {activeHitl && (
+        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+          <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-sky-500/10 border border-sky-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
+            <Bot className="w-4 h-4 text-sky-500" />
+          </div>
+          <div className="w-full max-w-full min-[1200px]:max-w-[92%] min-[1200px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
+            <HumanInputCard hitl={activeHitl} onSubmitted={onHitlSubmitted} />
+          </div>
+        </div>
+      )}
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (

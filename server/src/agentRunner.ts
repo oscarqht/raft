@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { db, findGitAccountForRemote } from './db.js';
+import { db, findGitAccountForRemote, getSetting } from './db.js';
 import { GitService, sanitizeBranchName } from './gitService.js';
 
 export interface CliInstallGuide {
@@ -212,14 +212,36 @@ const CLI_INSTALL_GUIDES: Record<string, CliInstallGuide> = {
     authGuide: "Run 'codex login' in your terminal to sign in, or set OPENAI_API_KEY.",
     docsUrl: 'https://platform.openai.com/docs/codex',
   },
+  alpha: {
+    title: 'Alpha Intelligence Chatflow / SuperAgent',
+    description: 'Multi-agent platform with cloud intelligence and local terminal device execution.',
+    command: 'Configure in Settings > Alpha Intelligence',
+    commandMac: 'Configure in Settings > Alpha Intelligence',
+    commandWin: 'Configure in Settings > Alpha Intelligence',
+    authGuide: 'Enter your Chatflow or SuperAgent API URL and API Key in Settings.',
+    docsUrl: '',
+  },
 };
 
 export function getAvailableClis(): CliInfo[] {
-  const clis = ['codex', 'agy', 'claude'];
+  const clis = ['codex', 'agy', 'claude', 'alpha'];
   const isWin = process.platform === 'win32';
   const env = getCrossPlatformEnv();
 
   return clis.map((name) => {
+    if (name === 'alpha') {
+      const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+      const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+      const available = Boolean(apiUrl && apiKey);
+      return {
+        name,
+        path: apiUrl || 'Alpha Intelligence API',
+        available,
+        version: 'Cloud',
+        installGuide: CLI_INSTALL_GUIDES[name],
+      };
+    }
+
     const cliPath = resolveCliPath(name);
     let available = false;
     let version = '';
@@ -336,6 +358,16 @@ export async function getModelsForCli(cliName: string, forceRefresh = false): Pr
     result = await discoverAgyModels();
   } else if (normalizedCli === 'claude') {
     result = await discoverClaudeModels();
+  } else if (normalizedCli === 'alpha') {
+    result = [
+      {
+        id: 'latest',
+        name: 'Latest Version (Alpha Intelligence)',
+        description: 'Auto-runs the latest version of the configured Chatflow or SuperAgent',
+        reasoningEfforts: [],
+        discoveredFrom: 'Alpha Intelligence API',
+      },
+    ];
   } else {
     result = [];
   }
