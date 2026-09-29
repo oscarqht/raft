@@ -493,9 +493,103 @@ const AgentActivityView: React.FC<{
   const [isManuallyToggled, setIsManuallyToggled] = useState<boolean | null>(null);
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
   const [copiedAll, setCopiedAll] = useState(false);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
 
   // Default open while streaming; auto-collapse when completed
   const isExpanded = isManuallyToggled !== null ? isManuallyToggled : Boolean(isStreaming);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabled = useRef(true);
+  const scrollRafRef = useRef<number | null>(null);
+  const isSmoothScrollingRef = useRef(false);
+
+  const handleScroll = useCallback(() => {
+    if (isSmoothScrollingRef.current) return;
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const el = containerRef.current;
+      if (!el) return;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 40;
+      const hasOverflow = el.scrollHeight > el.clientHeight;
+      isAutoScrollEnabled.current = isNearBottom;
+      setShowScrollBottomBtn(!isNearBottom && hasOverflow);
+    });
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    isSmoothScrollingRef.current = true;
+    isAutoScrollEnabled.current = true;
+    setShowScrollBottomBtn(false);
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    setTimeout(() => {
+      isSmoothScrollingRef.current = false;
+      if (containerRef.current) {
+        const isNearBottom =
+          containerRef.current.scrollHeight -
+            containerRef.current.scrollTop -
+            containerRef.current.clientHeight <=
+          40;
+        isAutoScrollEnabled.current = isNearBottom;
+        const hasOverflow = containerRef.current.scrollHeight > containerRef.current.clientHeight;
+        setShowScrollBottomBtn(!isNearBottom && hasOverflow);
+      }
+    }, 400);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
+
+  // When expanding or when streaming status changes, if streaming, initialize auto-scroll
+  useEffect(() => {
+    if (isStreaming && isExpanded) {
+      isAutoScrollEnabled.current = true;
+      setShowScrollBottomBtn(false);
+    }
+  }, [isStreaming, isExpanded]);
+
+  // Auto-scroll to bottom as new content streams in
+  useEffect(() => {
+    if (!isExpanded || !isStreaming || !isAutoScrollEnabled.current) return;
+
+    const raf = requestAnimationFrame(() => {
+      const el = containerRef.current;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [steps, isStreaming, isExpanded]);
+
+  // Observe content size changes to auto-scroll during streaming and sync scroll button state
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !isExpanded) return;
+
+    const observer = new ResizeObserver(() => {
+      if (isStreaming && isAutoScrollEnabled.current) {
+        el.scrollTop = el.scrollHeight;
+      }
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 40;
+      const hasOverflow = el.scrollHeight > el.clientHeight;
+      setShowScrollBottomBtn(!isNearBottom && hasOverflow);
+    });
+
+    observer.observe(el);
+    if (contentRef.current) {
+      observer.observe(contentRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [isExpanded, isStreaming]);
 
   const toggleStepExpand = useCallback((id: string) => {
     setExpandedStepIds((prev) => {
@@ -583,35 +677,54 @@ const AgentActivityView: React.FC<{
 
       {/* Expanded Interactive Activity Container */}
       {isExpanded && (
-        <div className="mt-2 w-full p-3.5 sm:p-4 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 shadow-soft-inner flex flex-col gap-2 max-h-96 overflow-y-auto animate-in fade-in duration-200">
-          <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
-            <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
-              Agent Activity Timeline ({steps.length} {steps.length === 1 ? 'step' : 'steps'})
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleCopyActions}
-                className="flex items-center gap-1 text-[11px] text-cozy-muted hover:text-teal-500 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
-                title="Copy all actions and outputs"
-              >
-                {copiedAll ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                <span>{copiedAll ? 'Copied' : 'Copy log'}</span>
-              </button>
+        <div className="relative mt-2 w-full">
+          <div
+            ref={containerRef}
+            onScroll={handleScroll}
+            className="w-full p-3.5 sm:p-4 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 shadow-soft-inner flex flex-col gap-2 max-h-96 overflow-y-auto animate-in fade-in duration-200"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
+              <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
+                Agent Activity Timeline ({steps.length} {steps.length === 1 ? 'step' : 'steps'})
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyActions}
+                  className="flex items-center gap-1 text-[11px] text-cozy-muted hover:text-teal-500 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
+                  title="Copy all actions and outputs"
+                >
+                  {copiedAll ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedAll ? 'Copied' : 'Copy log'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div ref={contentRef} className="flex flex-col gap-1.5">
+              {steps.map((step) => (
+                <StepCard
+                  key={step.id}
+                  step={step}
+                  isExpanded={expandedStepIds.has(step.id)}
+                  onToggleExpand={() => toggleStepExpand(step.id)}
+                  onAbort={onAbort}
+                />
+              ))}
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            {steps.map((step) => (
-              <StepCard
-                key={step.id}
-                step={step}
-                isExpanded={expandedStepIds.has(step.id)}
-                onToggleExpand={() => toggleStepExpand(step.id)}
-                onAbort={onAbort}
-              />
-            ))}
-          </div>
+          {/* Floating Scroll to Bottom Button */}
+          {showScrollBottomBtn && (
+            <button
+              type="button"
+              onClick={scrollToBottom}
+              className="absolute bottom-3 right-4 p-1.5 rounded-full bg-cozy-surface/90 hover:bg-cozy-surface border border-cozy-border/80 shadow-soft-md hover:shadow-soft-lg text-cozy-muted hover:text-teal-500 backdrop-blur-sm transition-all duration-150 animate-in fade-in zoom-in-95 cursor-pointer z-10"
+              title="Scroll to bottom"
+              aria-label="Scroll to bottom"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          )}
         </div>
       )}
     </div>
