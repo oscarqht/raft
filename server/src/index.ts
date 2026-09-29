@@ -7,6 +7,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { spawn, execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import {
   db,
@@ -2634,6 +2638,8 @@ wss.on('connection', (ws: WebSocket) => {
 const candidateDistDirs = [
   path.resolve(process.cwd(), 'client/dist'),
   path.resolve(process.cwd(), '../client/dist'),
+  path.resolve(__dirname, 'client/dist'),
+  path.resolve(__dirname, '../client/dist'),
 ];
 const clientDistDir = candidateDistDirs.find((dir) => fs.existsSync(dir));
 
