@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -8,7 +9,7 @@ import os from 'node:os';
 
 export interface AlphaDeviceStatus {
   connected: boolean;
-  status: 'connected' | 'connecting' | 'needs_auth' | 'disconnected';
+  status: 'connected' | 'connecting' | 'needs_auth' | 'pairing' | 'disconnected';
   clientId?: string;
   loginUrl?: string;
   error?: string;
@@ -34,7 +35,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 600_000;
 const RECONNECT_DELAY_MS = 5_000;
 
-export class AlphaDeviceService {
+export class AlphaDeviceService extends EventEmitter {
   private socket: WebSocket | null = null;
   private status: AlphaDeviceStatus['status'] = 'disconnected';
   private clientId?: string;
@@ -47,10 +48,15 @@ export class AlphaDeviceService {
   private stopped: boolean = false;
 
   constructor() {
+    super();
     this.tokenFilePath = join(homedir(), '.raft', 'alphamouse_credentials.json');
   }
 
   private tokenFilePath: string;
+
+  private notifyStatusChange(): void {
+    this.emit('status_change', this.getStatus());
+  }
 
   public setActiveWorktree(worktreePath: string): void {
     if (worktreePath && worktreePath.trim()) {
@@ -112,6 +118,7 @@ export class AlphaDeviceService {
       this.socket = null;
     }
     this.status = 'disconnected';
+    this.notifyStatusChange();
   }
 
   private getTokenPaths(): string[] {
@@ -177,6 +184,7 @@ export class AlphaDeviceService {
 
     this.status = 'connecting';
     this.lastError = undefined;
+    this.notifyStatusChange();
 
     const tokens = await this.loadTokens();
     if (tokens?.token) {
@@ -208,6 +216,13 @@ export class AlphaDeviceService {
 
       socket.on('open', () => {
         console.log('[AlphaDevice] WebSocket opened (authenticated)');
+        this.status = 'connected';
+        if (tokens.clientId) {
+          this.clientId = tokens.clientId;
+        }
+        this.lastConnectedAt = Date.now();
+        this.lastError = undefined;
+        this.notifyStatusChange();
       });
 
       socket.on('message', (raw) => {
@@ -222,6 +237,7 @@ export class AlphaDeviceService {
           this.connectSetup();
         } else {
           this.status = 'disconnected';
+          this.notifyStatusChange();
           this.scheduleReconnect();
         }
       });
@@ -229,11 +245,13 @@ export class AlphaDeviceService {
       socket.on('error', (err) => {
         console.error('[AlphaDevice] Socket error:', err.message);
         this.lastError = err.message;
+        this.notifyStatusChange();
       });
     } catch (err: any) {
       console.error('[AlphaDevice] Connection failed:', err);
       this.lastError = err.message;
       this.status = 'disconnected';
+      this.notifyStatusChange();
       this.scheduleReconnect();
     }
   }
@@ -275,17 +293,20 @@ export class AlphaDeviceService {
         console.log(`[AlphaDevice] Setup closed (${code}): ${reason}`);
         this.socket = null;
         this.status = 'disconnected';
+        this.notifyStatusChange();
         this.scheduleReconnect();
       });
 
       socket.on('error', (err) => {
         console.error('[AlphaDevice] Setup error:', err.message);
         this.lastError = err.message;
+        this.notifyStatusChange();
       });
     } catch (err: any) {
       console.error('[AlphaDevice] Setup connection failed:', err);
       this.lastError = err.message;
       this.status = 'disconnected';
+      this.notifyStatusChange();
       this.scheduleReconnect();
     }
   }
@@ -317,6 +338,7 @@ export class AlphaDeviceService {
         const rawLoginUrl = data.loginURL || (data.loginPath ? `${this.baseUrl}${data.loginPath}` : undefined);
         this.loginUrl = rawLoginUrl ? this.withLoginSuccessRedirect(rawLoginUrl) : undefined;
         console.log(`[AlphaDevice] Auth required. Login URL: ${this.loginUrl}`);
+        this.notifyStatusChange();
         return;
       }
 
@@ -328,6 +350,7 @@ export class AlphaDeviceService {
         this.loginUrl = undefined;
         this.lastError = undefined;
         console.log(`[AlphaDevice] Successfully connected as ${this.clientId}`);
+        this.notifyStatusChange();
 
         if (data.token && data.refreshToken) {
           const newTokens: AlphaTokenRecord = {

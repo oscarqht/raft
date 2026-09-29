@@ -67,6 +67,7 @@ interface SettingsPageProps {
   onUpdateSettings: (newSettings: Settings) => void;
   clis: CliInfo[];
   onRefreshClis?: () => void;
+  ws?: WebSocket | null;
 }
 
 function stripAnsi(text: string): string {
@@ -78,6 +79,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   onUpdateSettings,
   clis,
   onRefreshClis,
+  ws,
 }) => {
   const [localClis, setLocalClis] = useState<CliInfo[]>(clis);
   const [agentCli, setAgentCli] = useState(settings.agent_cli);
@@ -438,6 +440,46 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     }
   }, [activeTab, agentCli]);
 
+  // Listen to WebSocket for real-time alpha device status updates
+  useEffect(() => {
+    if (!ws) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'alpha_device_status' && data.status) {
+          setAlphaStatus(data.status);
+        }
+      } catch {
+        // ignore non-json messages
+      }
+    };
+
+    ws.addEventListener('message', handleMessage);
+    return () => {
+      ws.removeEventListener('message', handleMessage);
+    };
+  }, [ws]);
+
+  // Adaptive polling while device status is 'connecting' or reconnecting
+  useEffect(() => {
+    const isAlphaActive = activeTab === 'alpha' || (activeTab === 'agents' && agentCli === 'alpha');
+    if (!isAlphaActive) return;
+
+    const isConnecting = alphaStatus?.device?.status === 'connecting' || isReconnectingDevice;
+    if (!isConnecting) return;
+
+    const interval = setInterval(() => {
+      getAlphaStatus()
+        .then((status) => {
+          setAlphaStatus(status);
+        })
+        .catch(() => {});
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [activeTab, agentCli, alphaStatus?.device?.status, isReconnectingDevice]);
+
   const handleSaveAlpha = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsSavingAlpha(true);
@@ -463,7 +505,10 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const handleReconnectDevice = async () => {
     setIsReconnectingDevice(true);
     try {
-      await reconnectAlphaDevice();
+      const res = await reconnectAlphaDevice();
+      if (res?.status) {
+        setAlphaStatus((prev) => (prev ? { ...prev, device: res.status } : prev));
+      }
       await loadAlphaStatus();
     } catch (err: any) {
       alert(err.message || 'Failed to reconnect device');
@@ -1024,7 +1069,7 @@ You have access to terminal commands via your connected local desktop device.
                     className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full ${
                       alphaStatus.device.connected
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-400/20'
-                        : alphaStatus.device.status === 'pairing'
+                        : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                         ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-400/20'
                         : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-500/20'
                     }`}
@@ -1033,14 +1078,14 @@ You have access to terminal commands via your connected local desktop device.
                       className={`w-1.5 h-1.5 rounded-full ${
                         alphaStatus.device.connected
                           ? 'bg-emerald-500'
-                          : alphaStatus.device.status === 'pairing'
+                          : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                           ? 'bg-amber-500 animate-pulse'
                           : 'bg-zinc-400'
                       }`}
                     />
                     {alphaStatus.device.connected
                       ? 'Connected'
-                      : alphaStatus.device.status === 'pairing'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                       ? 'Pairing Required'
                       : alphaStatus.device.status === 'connecting'
                       ? 'Connecting...'
@@ -1057,7 +1102,7 @@ You have access to terminal commands via your connected local desktop device.
                       {alphaStatus?.device?.clientId || 'Not registered yet'}
                     </span>
                   </span>
-                  {alphaStatus?.device?.status !== 'connected' && (
+                  {!alphaStatus?.device?.connected && (
                     <button
                       type="button"
                       onClick={handleReconnectDevice}
@@ -1579,7 +1624,7 @@ You have access to terminal commands via your connected local desktop device.
                   className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
                     alphaStatus.device.connected
                       ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
-                      : alphaStatus.device.status === 'pairing'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                       ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30'
                       : 'bg-cozy-subtle text-cozy-muted border border-cozy-border/50'
                   }`}
@@ -1588,7 +1633,7 @@ You have access to terminal commands via your connected local desktop device.
                     className={`w-2 h-2 rounded-full ${
                       alphaStatus.device.connected
                         ? 'bg-emerald-500 animate-pulse'
-                        : alphaStatus.device.status === 'pairing'
+                        : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                         ? 'bg-amber-500 animate-bounce'
                         : 'bg-cozy-muted'
                     }`}
@@ -1596,7 +1641,7 @@ You have access to terminal commands via your connected local desktop device.
                   <span>
                     {alphaStatus.device.connected
                       ? 'Terminal Device Connected'
-                      : alphaStatus.device.status === 'pairing'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
                       ? 'Pairing Authorization Needed'
                       : alphaStatus.device.status === 'connecting'
                       ? 'Connecting...'

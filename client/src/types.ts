@@ -118,7 +118,7 @@ export interface Settings {
 
 export interface AlphaDeviceStatus {
   connected: boolean;
-  status: 'disconnected' | 'connecting' | 'pairing' | 'connected' | 'error';
+  status: 'disconnected' | 'connecting' | 'pairing' | 'needs_auth' | 'connected' | 'error';
   loginUrl?: string;
   clientId?: string;
   error?: string;

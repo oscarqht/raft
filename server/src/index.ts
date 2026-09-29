@@ -1892,6 +1892,20 @@ scriptManager.on('global_dismissed', ({ id }) => {
   broadcastWs({ type: 'script_dismissed', executionId: id });
 });
 
+// Forward Alpha Intelligence device status changes to all connected clients
+alphaDeviceService.on('status_change', (deviceStatus) => {
+  const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+  const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+  broadcastWs({
+    type: 'alpha_device_status',
+    status: {
+      configured: Boolean(apiUrl && apiKey),
+      apiUrl,
+      device: deviceStatus,
+    },
+  });
+});
+
 app.patch('/api/chats/:id', async (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   const { title, agent_cli, model, thinking_effort } = req.body;
@@ -2006,9 +2020,39 @@ wss.on('connection', (ws: WebSocket) => {
     }
   };
 
+  // Send current Alpha Intelligence status on initial connection
+  try {
+    const initApiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+    const initApiKey = getSetting<string>('alpha_intelligence_api_key', '');
+    send({
+      type: 'alpha_device_status',
+      status: {
+        configured: Boolean(initApiUrl && initApiKey),
+        apiUrl: initApiUrl,
+        device: alphaDeviceService.getStatus(),
+      },
+    });
+  } catch {
+    // ignore
+  }
+
   ws.on('message', async (raw: string) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      if (msg.type === 'get_alpha_status') {
+        const curApiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+        const curApiKey = getSetting<string>('alpha_intelligence_api_key', '');
+        send({
+          type: 'alpha_device_status',
+          status: {
+            configured: Boolean(curApiUrl && curApiKey),
+            apiUrl: curApiUrl,
+            device: alphaDeviceService.getStatus(),
+          },
+        });
+        return;
+      }
 
       // 1. Discovery session
       if (msg.type === 'start_discovery') {
