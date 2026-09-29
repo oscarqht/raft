@@ -45,6 +45,13 @@ test('getAgentUsage handles unsupported CLI gracefully', async () => {
   assert.ok(snapshot.error?.includes('Unsupported CLI provider'));
 });
 
+test('getAgentUsage excludes alpha from codexbar usage check', async () => {
+  const snapshot = await getAgentUsage('alpha', true);
+  assert.strictEqual(snapshot.cli, 'alpha');
+  assert.strictEqual(snapshot.isAvailable, false);
+  assert.ok(snapshot.error?.includes('CodexBar'));
+});
+
 test('getAllAgentUsages aggregates all known providers', async () => {
   const all = await getAllAgentUsages(true);
   assert.ok('codex' in all);

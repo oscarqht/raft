@@ -480,6 +480,16 @@ export async function getAllAgentUsages(forceRefresh = false): Promise<Record<st
 
 export async function getAgentUsage(cli: string, forceRefresh = false): Promise<AgentUsageSnapshot> {
   const normalized = cli.toLowerCase().trim();
+  if (normalized === 'alpha') {
+    return {
+      cli: 'alpha',
+      providerName: 'Alpha Intelligence',
+      isAvailable: false,
+      error: 'CodexBar does not track Alpha Intelligence cloud provider usage.',
+      updatedAt: Date.now(),
+    };
+  }
+
   const all = await getAllAgentUsages(forceRefresh);
   if (all[normalized]) {
     return all[normalized];

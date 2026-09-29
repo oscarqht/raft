@@ -880,14 +880,16 @@ You have access to terminal commands via your connected local desktop device.
             })}
               </div>
 
-              {/* AI Agent Usage & Remaining Quotas (CodexBar) */}
-              <div className="pt-2 border-t border-cozy-border/60">
-                <AgentUsageCard
-                  activeCli={agentCli}
-                  clis={localClis}
-                  onSelectCli={handleSelectCli}
-                />
-              </div>
+              {/* AI Agent Usage & Remaining Quotas (CodexBar) - Excluded for Alpha */}
+              {agentCli.toLowerCase() !== 'alpha' && (
+                <div className="pt-2 border-t border-cozy-border/60">
+                  <AgentUsageCard
+                    activeCli={agentCli}
+                    clis={localClis}
+                    onSelectCli={handleSelectCli}
+                  />
+                </div>
+              )}
             </div>
 
         {/* 3. Provider Configuration / Installation */}
