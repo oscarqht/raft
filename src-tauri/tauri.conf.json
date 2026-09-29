@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Raft",
+  "productName": "Alpha Bro",
   "version": "0.26.0",
   "identifier": "com.oscarqht.raft",
   "build": {

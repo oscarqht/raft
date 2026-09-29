@@ -102,33 +102,33 @@ export const HomePage: React.FC<HomePageProps> = ({
           <span className="font-medium">Loading projects...</span>
         </div>
       ) : projects.length === 0 ? (
-        <div className="p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
-          <div className="w-20 h-20 rounded-2.5xl flex items-center justify-center mb-4 overflow-hidden drop-shadow-md">
-            <img src="/logo.png" alt="Raft otter" className="w-full h-full object-contain" />
+        <div className="p-10 text-center rounded-xl border border-dashed border-cozy-border bg-cozy-surface flex flex-col items-center">
+          <div className="w-16 h-16 rounded-xl flex items-center justify-center mb-4 overflow-hidden">
+            <img src="/logo.png" alt="Alpha Bro" className="w-full h-full object-contain" />
           </div>
-          <h3 className="text-base font-semibold text-cozy-text mb-1">Welcome to Raft</h3>
+          <h3 className="text-base font-semibold text-cozy-text mb-1">Welcome to Alpha Bro</h3>
           <p className="text-sm text-cozy-muted max-w-md mb-6 leading-relaxed">
             Add a local git repository to start using autonomous AI coding agents in clean git worktrees.
           </p>
           <button
             onClick={() => setIsAddOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add First Project</span>
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((p) => (
             <div
               key={p.id}
               onClick={() => handleSelect(p.id)}
-              className="group relative p-6 rounded-squircle glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 shadow-soft hover:shadow-soft-lg hover:-translate-y-1 transition-all cursor-pointer flex flex-col justify-between"
+              className="group relative p-5 rounded-xl border border-cozy-border bg-cozy-surface hover:border-teal-500/50 transition-colors cursor-pointer flex flex-col justify-between"
             >
               <div>
-                <div className="flex items-start justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shadow-soft-sm text-2xl select-none">
+                <div className="flex items-start justify-between mb-3.5">
+                  <div className="w-10 h-10 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 text-xl select-none">
                     {p.icon ? <span>{p.icon}</span> : <FolderGit2 className="w-6 h-6" />}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

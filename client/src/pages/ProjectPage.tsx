@@ -275,9 +275,9 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           <span className="font-medium">Loading tasks...</span>
         </div>
       ) : tasks.length === 0 ? (
-        <div className="p-8 sm:p-12 text-center rounded-squircle border border-dashed border-cozy-border/80 glass-panel shadow-soft flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center mb-3.5 shadow-soft-sm">
-            <GitBranch className="w-6 h-6 text-teal-500" />
+        <div className="p-8 sm:p-10 text-center rounded-xl border border-dashed border-cozy-border bg-cozy-surface flex flex-col items-center">
+          <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3">
+            <GitBranch className="w-5 h-5 text-teal-500" />
           </div>
           <h3 className="text-base font-semibold text-cozy-text mb-1">No tasks created yet</h3>
           <p className="text-xs text-cozy-muted max-w-sm mb-5 leading-relaxed">
@@ -285,14 +285,14 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           </p>
           <button
             onClick={() => setIsNewTaskOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Create First Task</span>
           </button>
         </div>
       ) : (
-        <div className="space-y-3.5">
+        <div className="space-y-2.5">
           {tasks.map((t) => {
             const isDeletingThis = deletingTaskId === t.id;
             return (
@@ -302,12 +302,12 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                   if (deletingTaskId) return;
                   onSelectTask(t.id, t);
                 }}
-                className={`group p-4 sm:p-5 rounded-2xl sm:rounded-2.5xl glass-card border border-white/80 dark:border-white/10 hover:border-teal-400/40 hover:shadow-soft-md hover:-translate-y-0.5 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 ${
+                className={`group p-4 rounded-xl border border-cozy-border bg-cozy-surface hover:border-teal-500/50 transition-colors cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                   isDeletingThis ? 'opacity-60 cursor-wait pointer-events-none' : ''
                 }`}
               >
-                <div className="flex items-start sm:items-center space-x-3 sm:space-x-3.5 min-w-0 flex-1">
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-teal-500/15 to-cyan-500/15 border border-teal-400/30 flex items-center justify-center shrink-0 shadow-soft-sm mt-0.5 sm:mt-0">
+                <div className="flex items-start sm:items-center space-x-3 min-w-0 flex-1">
+                  <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
                     <GitBranch className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                   </div>
                   <div className="min-w-0 flex-1">

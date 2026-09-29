@@ -35,21 +35,21 @@ export default {
         }
       },
       borderRadius: {
-        '2.5xl': '1.25rem',
-        'squircle': '1.75rem', // 28px
-        'squircle-lg': '2rem', // 32px
+        '2.5xl': '1rem',
+        'squircle': '0.75rem',
+        'squircle-lg': '1rem',
       },
       boxShadow: {
-        'soft-sm': '0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 4px -1px rgba(0, 0, 0, 0.02)',
-        'soft': '0 8px 24px -4px rgba(15, 23, 42, 0.04), 0 2px 8px -2px rgba(15, 23, 42, 0.02)',
-        'soft-md': '0 12px 32px -6px rgba(15, 23, 42, 0.06), 0 4px 12px -2px rgba(15, 23, 42, 0.03)',
-        'soft-lg': '0 20px 48px -10px rgba(15, 23, 42, 0.08), 0 8px 20px -4px rgba(15, 23, 42, 0.04)',
-        'soft-xl': '0 25px 60px -12px rgba(15, 23, 42, 0.12)',
-        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.06)',
-        'glass-hover': '0 14px 40px 0 rgba(31, 38, 135, 0.1)',
-        'glow-ocean': '0 0 25px -4px rgba(13, 148, 136, 0.28)',
-        'glow-peach': '0 0 25px -4px rgba(13, 148, 136, 0.28)',
-        'glow-mint': '0 0 25px -4px rgba(16, 185, 129, 0.22)',
+        'soft-sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+        'soft': '0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.05)',
+        'soft-md': '0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.05)',
+        'soft-lg': '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04)',
+        'soft-xl': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+        'glass': 'none',
+        'glass-hover': 'none',
+        'glow-ocean': 'none',
+        'glow-peach': 'none',
+        'glow-mint': 'none',
       },
       fontFamily: {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],

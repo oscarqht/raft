@@ -205,7 +205,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
-      <div className="flex-1 flex flex-row h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[1200px]:p-4 bg-cozy-bg">
+      <div className="flex-1 flex flex-row h-[calc(100vh-3rem)] overflow-hidden relative p-0 bg-cozy-bg">
         {/* Left Projects & Tasks Sidebar (Desktop) */}
         <div className="hidden min-[1200px]:flex h-full shrink-0">
           <ProjectsTasksSidebar
@@ -232,7 +232,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(false)}
-              className="hidden min-[1200px]:flex absolute top-3 left-3 z-30 w-7 h-7 rounded-lg bg-cozy-surface/90 hover:bg-cozy-surface border border-cozy-border/80 text-cozy-muted hover:text-cozy-text shadow-soft-sm items-center justify-center transition-all cursor-pointer backdrop-blur-sm"
+              className="hidden min-[1200px]:flex absolute top-2 left-2 z-30 w-7 h-7 rounded-md bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text items-center justify-center transition-colors cursor-pointer"
               title="Expand projects & tasks sidebar"
               aria-label="Expand sidebar"
             >

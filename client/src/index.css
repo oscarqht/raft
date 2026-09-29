@@ -4,73 +4,73 @@
 
 @layer base {
   :root {
-    --cozy-bg: 240 247 250;
+    --cozy-bg: 255 255 255;
     --cozy-surface: 255 255 255;
-    --cozy-subtle: 232 243 248;
-    --cozy-border: 215 228 238;
-    --cozy-text: 18 30 45;
-    --cozy-muted: 82 105 125;
-    --cozy-accent: 13 148 136;
-    --cozy-amber: 245 158 11;
-    --cozy-emerald: 16 185 129;
-    --cozy-sky: 8 145 178;
+    --cozy-subtle: 247 247 248;
+    --cozy-border: 229 231 235;
+    --cozy-text: 13 13 13;
+    --cozy-muted: 107 114 128;
+    --cozy-accent: 16 163 127;
+    --cozy-amber: 217 119 6;
+    --cozy-emerald: 16 163 127;
+    --cozy-sky: 2 132 199;
     color-scheme: light;
   }
 
   .dark {
-    --cozy-bg: 12 19 34;
-    --cozy-surface: 17 27 46;
-    --cozy-subtle: 23 37 60;
-    --cozy-border: 34 52 82;
-    --cozy-text: 238 245 252;
-    --cozy-muted: 130 156 182;
-    --cozy-accent: 45 212 191;
-    --cozy-amber: 251 191 36;
-    --cozy-emerald: 52 211 153;
+    --cozy-bg: 33 33 33;
+    --cozy-surface: 33 33 33;
+    --cozy-subtle: 47 47 47;
+    --cozy-border: 56 56 56;
+    --cozy-text: 236 236 236;
+    --cozy-muted: 156 163 175;
+    --cozy-accent: 16 163 127;
+    --cozy-amber: 245 158 11;
+    --cozy-emerald: 16 163 127;
     --cozy-sky: 56 189 248;
     color-scheme: dark;
   }
 
   body {
-    @apply transition-colors duration-200 antialiased font-sans selection:bg-teal-500/20 selection:text-teal-600 dark:selection:text-teal-300;
+    @apply transition-colors duration-150 antialiased font-sans selection:bg-teal-500/20 selection:text-teal-600 dark:selection:text-teal-300;
   }
 }
 
 @layer utilities {
   .glass-card {
-    background: rgba(255, 255, 255, 0.96);
-    border: 1px solid rgba(255, 255, 255, 0.8);
-    box-shadow: 0 10px 30px -5px rgba(8, 28, 48, 0.05), 0 4px 12px -2px rgba(8, 28, 48, 0.02);
+    background-color: rgb(var(--cozy-surface));
+    border: 1px solid rgb(var(--cozy-border));
+    box-shadow: none;
   }
 
   .dark .glass-card {
-    background: rgba(17, 27, 46, 0.92);
-    border: 1px solid rgba(56, 189, 248, 0.12);
-    box-shadow: 0 12px 36px -6px rgba(0, 8, 20, 0.55);
+    background-color: rgb(var(--cozy-surface));
+    border: 1px solid rgb(var(--cozy-border));
+    box-shadow: none;
   }
 
   .glass-panel {
-    background: rgba(255, 255, 255, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 12px 32px -6px rgba(8, 28, 48, 0.06), 0 4px 12px -2px rgba(8, 28, 48, 0.03);
+    background-color: rgb(var(--cozy-surface));
+    border: 1px solid rgb(var(--cozy-border));
+    box-shadow: none;
   }
 
   .dark .glass-panel {
-    background: rgba(14, 23, 40, 0.96);
-    border: 1px solid rgba(56, 189, 248, 0.12);
-    box-shadow: 0 16px 40px -8px rgba(0, 8, 20, 0.6);
+    background-color: rgb(var(--cozy-surface));
+    border: 1px solid rgb(var(--cozy-border));
+    box-shadow: none;
   }
 
   .popup-surface {
-    background-color: #ffffff;
-    border: 1px solid rgba(215, 228, 238, 0.95);
-    box-shadow: 0 20px 48px -8px rgba(8, 28, 48, 0.16), 0 4px 16px -2px rgba(8, 28, 48, 0.08);
+    background-color: rgb(var(--cozy-surface));
+    border: 1px solid rgb(var(--cozy-border));
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.1);
   }
 
   .dark .popup-surface {
-    background-color: #111b2e;
-    border: 1px solid rgba(56, 189, 248, 0.15);
-    box-shadow: 0 24px 56px -10px rgba(0, 8, 20, 0.75), 0 4px 20px -2px rgba(0, 8, 20, 0.45);
+    background-color: #262626;
+    border: 1px solid #383838;
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5);
   }
 }
 

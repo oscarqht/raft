@@ -83,7 +83,7 @@ pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
 
     let url = WebviewUrl::App("updater.html".into());
     let window = WebviewWindowBuilder::new(app, "updater", url)
-        .title("Raft Software Update")
+        .title("Alpha Bro Software Update")
         .inner_size(440.0, 420.0)
         .resizable(false)
         .center()
@@ -252,7 +252,7 @@ pub async fn check_and_download(app: &AppHandle, show_window: bool, force: bool)
                     let _ = app
                         .notification()
                         .builder()
-                        .title("Raft Update Ready")
+                        .title("Alpha Bro Update Ready")
                         .body(notif_body)
                         .show();
                 }

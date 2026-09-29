@@ -626,30 +626,30 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       )}
 
       {/* Top Address & Controls Toolbar */}
-      <div className="min-h-[64px] py-3.5 px-3 sm:px-4 md:px-5 border-b border-cozy-border/50 bg-cozy-surface/95 flex items-center justify-between shrink-0 gap-2 sm:gap-3 select-none">
+      <div className="h-11 px-3 border-b border-cozy-border bg-cozy-surface flex items-center justify-between shrink-0 gap-2 select-none">
         {/* Server Start/Stop/Restart */}
-        <div className="flex items-center space-x-1.5 shrink-0">
+        <div className="flex items-center space-x-1 shrink-0">
           {devState.status === 'running' ? (
             <button
               onClick={handleStop}
-              className={`flex items-center gap-1.5 rounded-full text-xs font-medium bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500/20 transition-all shadow-soft-sm ${
-                isCompact ? 'w-8 h-8 justify-center p-0' : 'px-3 py-1.5'
+              className={`flex items-center gap-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${
+                isCompact ? 'w-7 h-7 justify-center p-0' : 'h-7 px-2.5'
               }`}
               title="Stop dev server"
             >
-              <Square className="w-3.5 h-3.5 fill-current" />
+              <Square className="w-3 h-3 fill-current" />
               {!isCompact && <span>Stop</span>}
             </button>
           ) : (
             <button
               onClick={handleStart}
               disabled={isInstalling || installFailed}
-              className={`flex items-center gap-1.5 rounded-full text-xs font-medium transition-all ${
-                isCompact ? 'w-8 h-8 justify-center p-0' : 'px-3.5 py-1.5'
+              className={`flex items-center gap-1.5 rounded-lg text-xs font-medium transition-colors ${
+                isCompact ? 'w-7 h-7 justify-center p-0' : 'h-7 px-2.5'
               } ${
                 isInstalling || installFailed
-                  ? 'bg-cozy-subtle/80 border border-cozy-border text-cozy-muted cursor-not-allowed opacity-60'
-                  : 'bg-emerald-500/15 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-500/25 shadow-glow-mint'
+                  ? 'bg-cozy-subtle border border-cozy-border text-cozy-muted cursor-not-allowed opacity-60'
+                  : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/25'
               }`}
               title={
                 isInstalling
@@ -660,9 +660,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               }
             >
               {isInstalling ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                <Loader2 className="w-3 h-3 animate-spin text-teal-500" />
               ) : (
-                <Play className="w-3.5 h-3.5 fill-current" />
+                <Play className="w-3 h-3 fill-current" />
               )}
               {!isCompact && <span>{isInstalling ? 'Installing...' : 'Start'}</span>}
             </button>
@@ -671,7 +671,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           <button
             onClick={handleRestart}
             disabled={devState.status !== 'running'}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle disabled:opacity-30 transition-all"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors"
             title="Restart dev server"
             aria-label="Restart dev server"
           >
@@ -686,7 +686,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               type="button"
               onClick={handleNavigateBack}
               disabled={devState.status !== 'running' || !isServerReady || !canGoBack}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all cursor-pointer disabled:cursor-not-allowed"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               title="Back"
               aria-label="Back"
             >
@@ -696,7 +696,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               type="button"
               onClick={handleNavigateForward}
               disabled={devState.status !== 'running' || !isServerReady || !canGoForward}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all cursor-pointer disabled:cursor-not-allowed"
+              className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               title="Forward"
               aria-label="Forward"
             >
@@ -707,9 +707,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
         {/* URL Address Bar */}
         {!isCompact && (
-          <div className="flex-1 max-w-sm flex items-center bg-cozy-surface/90 dark:bg-slate-900/60 border border-cozy-border/80 focus-within:border-teal-400/50 rounded-full px-3 py-1.5 text-xs shadow-soft-sm min-w-0 transition-all">
-            <Globe className="w-3.5 h-3.5 text-teal-500 mr-1.5 shrink-0" />
-            <span className="text-cozy-muted/60 select-none font-mono hidden md:inline text-[11px]">http://localhost:{activeDevPort}</span>
+          <div className="flex-1 max-w-sm h-7 flex items-center bg-cozy-subtle dark:bg-[#212121] border border-cozy-border rounded-lg px-2 text-xs min-w-0 transition-colors">
+            <Globe className="w-3.5 h-3.5 text-cozy-muted mr-1.5 shrink-0" />
+            <span className="text-cozy-muted select-none font-mono hidden md:inline text-[11px]">http://localhost:{activeDevPort}</span>
             <input
               type="text"
               value={pathInput}
@@ -726,7 +726,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           <button
             onClick={handleReloadIframe}
             disabled={devState.status !== 'running' || !isServerReady}
-            className="w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-all"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors"
             title="Reload preview"
             aria-label="Reload preview"
           >
@@ -737,7 +737,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           <button
             onClick={handleCaptureScreenshot}
             disabled={devState.status !== 'running' || !isServerReady || isCapturing}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
+            className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
               activeScreenshot
                 ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30'
@@ -756,10 +756,10 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <button
               type="button"
               onClick={() => setIsPreviewSleeping(!isPreviewSleeping)}
-              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
                 isPreviewSleeping
                   ? 'bg-amber-500/15 text-amber-500 hover:bg-amber-500/25'
-                  : 'text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle'
+                  : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle'
               }`}
               title={isPreviewSleeping ? 'Resume preview iframe' : 'Sleep preview iframe to reduce CPU & memory usage'}
             >
@@ -771,7 +771,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             href={externalUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={`w-7 h-7 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all ${
+            className={`w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors ${
               devState.status !== 'running' || !isServerReady ? 'pointer-events-none opacity-30' : ''
             }`}
             title="Open in external browser window"
@@ -781,10 +781,10 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
           <button
             onClick={() => setShowConsole(!showConsole)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border shadow-soft-sm ${
+            className={`h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium transition-colors border ${
               showConsole
-                ? 'bg-teal-500/10 border-teal-400/40 text-teal-600 dark:text-teal-400'
-                : 'bg-cozy-subtle/70 text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle border-cozy-border/70'
+                ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400'
+                : 'bg-cozy-subtle text-cozy-muted hover:text-cozy-text border-cozy-border'
             }`}
             title="Toggle Console Logs"
           >
@@ -795,8 +795,8 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
           {/* Status Pill & Port at very right edge */}
           <div
-            className={`flex items-center gap-1.5 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 text-xs shadow-soft-sm shrink-0 ml-1 ${
-              isCompact ? 'w-8 h-8 justify-center p-0' : 'px-2.5 py-1'
+            className={`h-7 flex items-center gap-1.5 rounded-lg bg-cozy-subtle border border-cozy-border text-xs shrink-0 ${
+              isCompact ? 'w-7 justify-center p-0' : 'px-2'
             }`}
             title={
               devState.status === 'running' && isServerReady
@@ -807,9 +807,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             }
           >
             <span
-              className={`w-2 h-2 rounded-full ${
+              className={`w-1.5 h-1.5 rounded-full ${
                 devState.status === 'running' && isServerReady
-                  ? 'bg-emerald-400 shadow-glow-mint'
+                  ? 'bg-emerald-500'
                   : devState.status === 'running' || devState.status === 'starting'
                   ? 'bg-amber-400'
                   : 'bg-cozy-muted/40'
@@ -820,7 +820,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 {devState.status === 'running' && isServerReady
                   ? `:${activeDevPort}`
                   : devState.status === 'running' || devState.status === 'starting'
-                  ? `starting :${activeDevPort}`
+                  ? `:${activeDevPort}`
                   : 'offline'}
               </span>
             )}
