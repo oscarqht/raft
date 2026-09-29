@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from './index.js';
 import { db } from './db.js';
-import { normalizeAlphaApiUrl, isDeviceSelectionInput } from './alphaAgentRunner.js';
+import { normalizeAlphaApiUrl, isDeviceSelectionInput, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
 import { getAvailableClis, getModelsForCli } from './agentRunner.js';
 import { alphaDeviceService } from './alphaDeviceService.js';
 
@@ -133,6 +133,44 @@ test('returns latest version model for alpha CLI', async () => {
 test('supports active worktree switching in alphaDeviceService', () => {
   alphaDeviceService.setActiveWorktree('/tmp/test-worktree');
   assert.equal(alphaDeviceService.getActiveWorktree(), '/tmp/test-worktree');
+});
+
+test('buildAlphaPromptWithContext formats complete workspace context and guidance', () => {
+  const result = buildAlphaPromptWithContext('Fix the authentication bug', {
+    projectName: 'my-project',
+    taskName: 'Task #42 - Fix auth',
+    worktreePath: '/Users/test/projects/my-project-worktree',
+    branch: 'fix-auth',
+    baseBranch: 'main',
+    systemPrompt: 'Always write unit tests before finishing.',
+  });
+
+  assert.ok(result.includes('[Project & Task Context]'));
+  assert.ok(result.includes('- Project: my-project'));
+  assert.ok(result.includes('- Task: Task #42 - Fix auth'));
+  assert.ok(result.includes('- Working Directory: /Users/test/projects/my-project-worktree'));
+  assert.ok(result.includes('- Git Branch: fix-auth (base: main)'));
+  assert.ok(result.includes('[Project Instructions]\nAlways write unit tests before finishing.'));
+  assert.ok(result.includes('[Workspace Execution Guidance]'));
+  assert.ok(result.includes('run_command'));
+  assert.ok(result.includes('/Users/test/projects/my-project-worktree'));
+  assert.ok(result.includes('[User Request]\nFix the authentication bug'));
+});
+
+test('buildAlphaPromptWithContext formats cleanly without project system prompt', () => {
+  const result = buildAlphaPromptWithContext('Show files', {
+    projectName: 'simple-project',
+    taskName: 'Explore repo',
+    worktreePath: '/Users/test/projects/simple-project',
+    branch: 'main',
+    baseBranch: 'main',
+  });
+
+  assert.ok(result.includes('[Project & Task Context]'));
+  assert.ok(result.includes('- Project: simple-project'));
+  assert.ok(!result.includes('[Project Instructions]'));
+  assert.ok(result.includes('[Workspace Execution Guidance]'));
+  assert.ok(result.includes('[User Request]\nShow files'));
 });
 
 test.after(() => {

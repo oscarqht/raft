@@ -64,6 +64,59 @@ export function normalizeAlphaApiUrl(rawUrl: string): string {
   }
 }
 
+export interface ProjectTaskContext {
+  projectName?: string;
+  taskName?: string;
+  worktreePath?: string;
+  branch?: string;
+  baseBranch?: string;
+  systemPrompt?: string;
+}
+
+/**
+ * Injects project & task context into the first message of an Alpha Intelligence chat turn
+ * so that the remote cloud SuperAgent knows the exact project, branch, worktree directory,
+ * and how to operate the connected local device terminal.
+ */
+export function buildAlphaPromptWithContext(
+  userPrompt: string,
+  context: ProjectTaskContext
+): string {
+  const sections: string[] = [];
+
+  const projectName = context.projectName || 'Unknown Project';
+  const taskName = context.taskName || 'General Task';
+  const branch = context.branch || 'main';
+  const baseBranch = context.baseBranch || 'main';
+  const worktreeDir = context.worktreePath || process.cwd();
+
+  // 1. [Project & Task Context]
+  sections.push(
+    `[Project & Task Context]\n` +
+    `- Project: ${projectName}\n` +
+    `- Task: ${taskName}\n` +
+    `- Working Directory: ${worktreeDir}\n` +
+    `- Git Branch: ${branch} (base: ${baseBranch})`
+  );
+
+  // 2. [Project Instructions] (if configured)
+  if (context.systemPrompt && context.systemPrompt.trim().length > 0) {
+    sections.push(`[Project Instructions]\n${context.systemPrompt.trim()}`);
+  }
+
+  // 3. [Workspace Execution Guidance]
+  sections.push(
+    `[Workspace Execution Guidance]\n` +
+    `You are connected to this local computer via a local device terminal runner.\n` +
+    `Always run your terminal commands (using run_command) inside the working directory above (${worktreeDir}) to view, edit, build, or test code for this task.`
+  );
+
+  // 4. [User Request]
+  sections.push(`[User Request]\n${userPrompt.trim()}`);
+
+  return sections.join('\n\n');
+}
+
 export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promise<{
   fullContent: string;
   conversationId?: string;

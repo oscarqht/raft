@@ -44,7 +44,7 @@ import {
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { alphaDeviceService } from './alphaDeviceService.js';
-import { runAlphaIntelligenceTurn } from './alphaAgentRunner.js';
+import { runAlphaIntelligenceTurn, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills, installSkillWithNpxProcess } from './skillService.js';
 import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
@@ -2312,14 +2312,29 @@ wss.on('connection', (ws: WebSocket) => {
           } catch {}
         }
 
-        // Auto-inject project system prompt into first turn of each chat session
+        // Auto-inject project system prompt or rich Alpha Intelligence workspace context into first turn of chat session
         const prevUserMessages = db.prepare(`
           SELECT id FROM chat_messages
           WHERE session_id = ? AND role = 'user' AND id != ?
         `).all(sessionId, userMsgId) as Array<{ id: string }>;
         const isFirstTurn = prevUserMessages.length === 0;
 
-        if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
+        const prevAlphaMessages = db.prepare(`
+          SELECT id FROM chat_messages
+          WHERE session_id = ? AND role = 'assistant' AND metadata LIKE '%"cli":"alpha"%'
+        `).all(sessionId) as Array<{ id: string }>;
+        const isFirstAlphaTurn = isFirstTurn || prevAlphaMessages.length === 0;
+
+        if (cliToUse === 'alpha' && isFirstAlphaTurn) {
+          effectiveAgentPrompt = buildAlphaPromptWithContext(effectiveAgentPrompt, {
+            projectName: project?.name,
+            taskName: task?.name,
+            worktreePath: effectiveWorktreePath || project?.path,
+            branch: task?.branch,
+            baseBranch: task?.base_branch || project?.branch_convention || 'main',
+            systemPrompt: project?.system_prompt,
+          });
+        } else if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
           effectiveAgentPrompt = `[Project Instructions]\n${project.system_prompt.trim()}\n\n[User Request]\n${effectiveAgentPrompt}`;
         }
 
