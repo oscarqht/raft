@@ -152,3 +152,26 @@ test('CLI argument construction logic for resuming vs starting new sessions', ()
   assert.ok(claudeSecondTurn.includes('--resume'));
   assert.equal(claudeSecondTurn[claudeSecondTurn.indexOf('--resume') + 1], 'claude-uuid-1111');
 });
+
+test('AUTH_REQUIRED_REGEX accurately detects authentication and session expiry errors', async () => {
+  const { AUTH_REQUIRED_REGEX } = await import('./agentRunner.js');
+
+  // Claude error from user screenshot
+  assert.ok(AUTH_REQUIRED_REGEX.test('Failed to authenticate: OAuth session expired and could not be refreshed'));
+  assert.ok(AUTH_REQUIRED_REGEX.test('For your security, sign in again to keep using Claude.'));
+  assert.ok(AUTH_REQUIRED_REGEX.test('Please sign in with your Anthropic account'));
+  assert.ok(AUTH_REQUIRED_REGEX.test('Run `claude` to sign in'));
+
+  // Codex error
+  assert.ok(AUTH_REQUIRED_REGEX.test('Authentication required. Run `codex login` to sign in.'));
+  assert.ok(AUTH_REQUIRED_REGEX.test('codex login required'));
+
+  // AGY error
+  assert.ok(AUTH_REQUIRED_REGEX.test('Google authentication required. Please re-authenticate with google.'));
+  assert.ok(AUTH_REQUIRED_REGEX.test('Google OAuth credentials expired'));
+
+  // False positives that should NOT match
+  assert.ok(!AUTH_REQUIRED_REGEX.test('You hit your spend cap set by the owner.'));
+  assert.ok(!AUTH_REQUIRED_REGEX.test('File not found: /src/app.tsx'));
+  assert.ok(!AUTH_REQUIRED_REGEX.test('SyntaxError: Unexpected token < in JSON at position 0'));
+});

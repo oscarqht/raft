@@ -55,6 +55,10 @@ export const CLI_INSTALL_COMMANDS: Record<string, { mac: string; windows: string
   },
 };
 
+// Regex detecting authentication required, OAuth session expiry, and login prompts across CLIs
+export const AUTH_REQUIRED_REGEX =
+  /oauth session expired|failed to authenticate|sign in again|login required|authentication required|not logged in|please sign in|run `?claude`? to sign in|run `?codex login`?|codex login required|authentication failed|credentials expired|google authentication required/i;
+
 // Get cross-platform enriched environment with PATH
 export function getCrossPlatformEnv(): NodeJS.ProcessEnv {
   const home = os.homedir();
@@ -1203,10 +1207,16 @@ export function spawnAgentCli(
             const errorMsg = parsed.message || parsed.error?.message || 'Agent execution failed';
             const cleanMsg = stripAnsi(errorMsg).trim();
             const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(cleanMsg);
+            const isAuthRequired = AUTH_REQUIRED_REGEX.test(cleanMsg);
             onEvent({
               type: 'error',
               content: cleanMsg,
-              metadata: { ...parsed, isSpendCap, errorType: isSpendCap ? 'spend_cap' : 'agent_error' },
+              metadata: {
+                ...parsed,
+                isSpendCap,
+                isAuthRequired,
+                errorType: isSpendCap ? 'spend_cap' : (isAuthRequired ? 'auth_required' : 'agent_error'),
+              },
               conversationId: detectedConversationId,
             });
             continue;
@@ -1560,6 +1570,16 @@ export function spawnAgentCli(
           continue;
         }
 
+        // Check for authentication / login required error in plain text output
+        if (AUTH_REQUIRED_REGEX.test(cleanLine)) {
+          onEvent({
+            type: 'error',
+            content: cleanLine,
+            metadata: { isAuthRequired: true, errorType: 'auth_required' },
+          });
+          continue;
+        }
+
         onEvent({ type: 'chunk', content: cleanLine + '\n' });
       }
     }
@@ -1577,7 +1597,15 @@ export function spawnAgentCli(
       } catch {
         const clean = stripAnsi(lineBuffer).trim();
         if (clean && !clean.startsWith('Reading additional input')) {
-          onEvent({ type: 'chunk', content: clean });
+          if (AUTH_REQUIRED_REGEX.test(clean)) {
+            onEvent({
+              type: 'error',
+              content: clean,
+              metadata: { isAuthRequired: true, errorType: 'auth_required' },
+            });
+          } else {
+            onEvent({ type: 'chunk', content: clean });
+          }
         }
       }
     }
@@ -1607,6 +1635,16 @@ export function spawnAgentCli(
         type: 'error',
         content: msg,
         metadata: { isSpendCap: true, errorType: 'spend_cap' },
+      });
+      return;
+    }
+
+    // Check if stderr contains auth required or login required error
+    if (AUTH_REQUIRED_REGEX.test(clean)) {
+      onEvent({
+        type: 'error',
+        content: clean,
+        metadata: { isAuthRequired: true, errorType: 'auth_required' },
       });
       return;
     }

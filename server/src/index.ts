@@ -36,6 +36,7 @@ import {
   runSubmitAgent,
   spawnAgentCli,
   buildConversationContextFallback,
+  AUTH_REQUIRED_REGEX,
   CommitMessageResult,
   StreamEvent,
   AgentStep,
@@ -2323,6 +2324,7 @@ wss.on('connection', (ws: WebSocket) => {
           } else if (ev.type === 'error' && ev.content) {
             const errContent = ev.content;
             const isSpendCap = ev.metadata?.isSpendCap || /spend cap|budget|quota exceeded|credit balance/i.test(errContent);
+            const isAuthRequired = ev.metadata?.isAuthRequired || AUTH_REQUIRED_REGEX.test(errContent);
             assistantResponse = errContent;
             assistantContent = compileAssistantContent();
             try {
@@ -2332,11 +2334,13 @@ wss.on('connection', (ws: WebSocket) => {
                   model: modelToUse,
                   steps: assistantSteps,
                   error: true,
-                  errorType: isSpendCap ? 'spend_cap' : 'agent_error',
+                  errorType: isSpendCap ? 'spend_cap' : (isAuthRequired ? 'auth_required' : 'agent_error'),
+                  isSpendCap: Boolean(isSpendCap),
+                  isAuthRequired: Boolean(isAuthRequired),
                   errorMessage: errContent,
                 }), assistantMsgId);
             } catch {}
-            saveAssistantProgress(true, isSpendCap);
+            saveAssistantProgress(true, isSpendCap || isAuthRequired);
             queueBroadcast(ev, true);
           } else if (ev.type === 'status' && ev.content) {
             queueBroadcast(ev, false);
@@ -2345,11 +2349,19 @@ wss.on('connection', (ws: WebSocket) => {
           if (ev.type === 'done' || ev.type === 'error') {
             flushBroadcast();
             const finishedAt = Date.now();
+            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(assistantResponse) || ev.metadata?.isSpendCap;
+            const isAuthRequired = AUTH_REQUIRED_REGEX.test(assistantResponse) || ev.metadata?.isAuthRequired;
+            const isResumeError = /session not found|no conversation found|cannot resume session|invalid session|session does not exist|could not resume/i.test(assistantResponse);
+
             if (cliSessionIdToResume && ev.metadata?.code && ev.metadata.code !== 0) {
-              try {
-                db.prepare('UPDATE chat_sessions SET cli_session_id = NULL, cli_session_agent = NULL WHERE id = ?')
-                  .run(sessionId);
-              } catch {}
+              // Preserve CLI session ID on initial auth failure so resuming works once signed in (Round 1 Decision 3B).
+              // If resuming failed because the expired session no longer exists upstream, clear it for a clean retry (Round 2 Decision 1A).
+              if (!isAuthRequired || isResumeError) {
+                try {
+                  db.prepare('UPDATE chat_sessions SET cli_session_id = NULL, cli_session_agent = NULL WHERE id = ?')
+                    .run(sessionId);
+                } catch {}
+              }
             }
 
             // Mark any in-flight steps as finished
@@ -2363,7 +2375,6 @@ wss.on('connection', (ws: WebSocket) => {
               }
             }
 
-            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(assistantResponse) || ev.metadata?.isSpendCap;
             if (isSpendCap) {
               try {
                 db.prepare('UPDATE chat_messages SET metadata = ? WHERE id = ?')
@@ -2374,6 +2385,19 @@ wss.on('connection', (ws: WebSocket) => {
                     error: true,
                     errorType: 'spend_cap',
                     errorMessage: assistantResponse || 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.',
+                  }), assistantMsgId);
+              } catch {}
+            } else if (isAuthRequired) {
+              try {
+                db.prepare('UPDATE chat_messages SET metadata = ? WHERE id = ?')
+                  .run(JSON.stringify({
+                    cli: cliToUse,
+                    model: modelToUse,
+                    steps: assistantSteps,
+                    error: true,
+                    errorType: 'auth_required',
+                    isAuthRequired: true,
+                    errorMessage: assistantResponse || 'Authentication required. Please sign in to continue using this agent.',
                   }), assistantMsgId);
               } catch {}
             } else if (!assistantResponse.trim() && ev.type === 'done') {
@@ -2394,6 +2418,11 @@ wss.on('connection', (ws: WebSocket) => {
                 error: true,
                 errorType: 'spend_cap',
                 errorMessage: assistantResponse || 'You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.',
+              } : isAuthRequired ? {
+                error: true,
+                errorType: 'auth_required',
+                isAuthRequired: true,
+                errorMessage: assistantResponse || 'Authentication required. Please sign in to continue using this agent.',
               } : (ev.type === 'error' ? {
                 error: true,
                 errorType: 'agent_error',
