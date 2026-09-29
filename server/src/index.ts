@@ -1648,8 +1648,23 @@ app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
 
 app.post('/api/tasks/:id/dev-server/stop', (req: Request, res: Response) => {
   const taskId = req.params.id as string;
-  devServerManager.stopServer(taskId);
-  res.json({ success: true });
+  const onlyIfNoSubscribers = req.query.onlyIfNoSubscribers === 'true' || req.body?.onlyIfNoSubscribers === true;
+  const wasRunning = devServerManager.stopServer(taskId, { onlyIfNoSubscribers });
+  res.json({ success: true, wasRunning });
+});
+
+app.post('/api/tasks/:id/dev-server/schedule-stop', (req: Request, res: Response) => {
+  const taskId = req.params.id as string;
+  const rawGrace = req.query.graceMs || req.body?.graceMs;
+  const graceMs = rawGrace ? parseInt(String(rawGrace), 10) : 3000;
+  const scheduled = devServerManager.schedulePendingStop(taskId, isNaN(graceMs) ? 3000 : graceMs);
+  res.json({ scheduled });
+});
+
+app.post('/api/tasks/:id/dev-server/cancel-stop', (req: Request, res: Response) => {
+  const taskId = req.params.id as string;
+  const cancelled = devServerManager.cancelPendingStop(taskId);
+  res.json({ cancelled });
 });
 
 app.post('/api/tasks/:id/dev-server/restart', (req: Request, res: Response) => {
@@ -2008,6 +2023,9 @@ wss.on('connection', (ws: WebSocket) => {
   let currentTaskId: string | null = null;
 
   const cleanupDevServerListeners = () => {
+    if (currentTaskId) {
+      devServerManager.removeSubscriber(currentTaskId, ws);
+    }
     if (devLogListener && currentTaskId) {
       devServerManager.off(`log:${currentTaskId}`, devLogListener);
       devLogListener = null;
@@ -2082,6 +2100,7 @@ wss.on('connection', (ws: WebSocket) => {
         cleanupDevServerListeners();
 
         currentTaskId = taskId;
+        devServerManager.addSubscriber(taskId, ws);
         const state = devServerManager.getServerState(taskId);
         send({ type: 'dev_server_state', state });
 

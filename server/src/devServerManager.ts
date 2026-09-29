@@ -24,6 +24,64 @@ class DevServerManager extends EventEmitter {
     targetPort?: number;
   }> = new Map();
 
+  private subscribers: Map<string, Set<any>> = new Map();
+  private pendingStops: Map<string, NodeJS.Timeout> = new Map();
+
+  addSubscriber(taskId: string, subscriberId: any): void {
+    let set = this.subscribers.get(taskId);
+    if (!set) {
+      set = new Set();
+      this.subscribers.set(taskId, set);
+    }
+    set.add(subscriberId);
+    // When a subscriber connects, cancel any pending stop for this task
+    this.cancelPendingStop(taskId);
+  }
+
+  removeSubscriber(taskId: string, subscriberId: any): void {
+    const set = this.subscribers.get(taskId);
+    if (set) {
+      set.delete(subscriberId);
+      if (set.size === 0) {
+        this.subscribers.delete(taskId);
+      }
+    }
+  }
+
+  getSubscriberCount(taskId: string): number {
+    return this.subscribers.get(taskId)?.size || 0;
+  }
+
+  schedulePendingStop(taskId: string, delayMs: number = 3000): boolean {
+    const entry = this.servers.get(taskId);
+    if (!entry || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
+      return false;
+    }
+
+    this.cancelPendingStop(taskId);
+
+    const timer = setTimeout(() => {
+      this.pendingStops.delete(taskId);
+      // Only stop if no active subscribers are viewing this task
+      if (this.getSubscriberCount(taskId) <= 0) {
+        this.stopServer(taskId);
+      }
+    }, delayMs);
+
+    this.pendingStops.set(taskId, timer);
+    return true;
+  }
+
+  cancelPendingStop(taskId: string): boolean {
+    const timer = this.pendingStops.get(taskId);
+    if (timer) {
+      clearTimeout(timer);
+      this.pendingStops.delete(taskId);
+      return true;
+    }
+    return false;
+  }
+
   getServerState(taskId: string): DevServerState {
     const entry = this.servers.get(taskId);
     if (entry) return entry.state;
@@ -148,9 +206,17 @@ class DevServerManager extends EventEmitter {
     }
   }
 
-  stopServer(taskId: string): void {
+  stopServer(taskId: string, options?: { onlyIfNoSubscribers?: boolean }): boolean {
+    this.cancelPendingStop(taskId);
+
+    if (options?.onlyIfNoSubscribers && this.getSubscriberCount(taskId) > 0) {
+      return false;
+    }
+
     const entry = this.servers.get(taskId);
-    if (!entry) return;
+    if (!entry) return false;
+
+    const wasRunning = entry.state.status === 'running' || entry.state.status === 'starting' || entry.proc !== null;
 
     if (entry.proxy) {
       entry.proxy.close();
@@ -185,9 +251,11 @@ class DevServerManager extends EventEmitter {
     entry.state.status = 'stopped';
     entry.proc = null;
     this.emit(`state:${taskId}`, entry.state);
+    return wasRunning;
   }
 
   restartServer(taskId: string, defaultPort?: number): DevServerState {
+    this.cancelPendingStop(taskId);
     const entry = this.servers.get(taskId);
     if (!entry) throw new Error('No dev server configuration found for task');
     const { worktreePath, devCmd, port } = entry.state;

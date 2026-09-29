@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Settings, CliInfo, ProjectCustomScript } from '../types';
-import { getTask, getDevServerState } from '../api';
+import { getTask, getDevServerState, stopDevServer, scheduleDevServerStop, cancelDevServerStop } from '../api';
 import { getCachedTask, setCachedTask } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
@@ -56,14 +56,57 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
   const [mobileTab, setMobileTab] = useState<'chat' | 'preview'>('chat');
   const [isDevRunning, setIsDevRunning] = useState(false);
+  const isDevRunningRef = useRef(false);
+  const taskRef = useRef(task);
+  taskRef.current = task;
+  const isDeletingTaskRef = useRef(isDeletingTask);
+  isDeletingTaskRef.current = isDeletingTask;
 
   useEffect(() => {
-    if (task?.id) {
-      getDevServerState(task.id)
-        .then((s) => setIsDevRunning(s.status === 'running'))
-        .catch(() => {});
-    }
-  }, [task?.id]);
+    if (!taskId) return;
+
+    // Immediately cancel any pending stop for this task (e.g. from page reload)
+    cancelDevServerStop(taskId);
+
+    getDevServerState(taskId)
+      .then((s) => {
+        const active = s.status === 'running' || s.status === 'starting';
+        setIsDevRunning(active);
+        isDevRunningRef.current = active;
+      })
+      .catch(() => {});
+
+    const handleUnload = () => {
+      if (isDevRunningRef.current) {
+        scheduleDevServerStop(taskId, 3000);
+      }
+    };
+
+    window.addEventListener('pagehide', handleUnload);
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => {
+      window.removeEventListener('pagehide', handleUnload);
+      window.removeEventListener('beforeunload', handleUnload);
+
+      // In-app navigation / unmount / task switch:
+      if (isDevRunningRef.current && !isDeletingTaskRef.current) {
+        const taskName = taskRef.current?.name || 'Task';
+        stopDevServer(taskId, { onlyIfNoSubscribers: true })
+          .then((res) => {
+            if (res?.wasRunning) {
+              window.dispatchEvent(
+                new CustomEvent('show-dev-server-stopped-toast', {
+                  detail: { taskId, taskName },
+                })
+              );
+            }
+          })
+          .catch(() => {});
+        isDevRunningRef.current = false;
+      }
+    };
+  }, [taskId]);
 
   useEffect(() => {
     if (!ws) return;
@@ -71,7 +114,9 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'dev_server_state' && msg.state) {
-          setIsDevRunning(msg.state.status === 'running');
+          const active = msg.state.status === 'running' || msg.state.status === 'starting';
+          setIsDevRunning(active);
+          isDevRunningRef.current = active;
         }
       } catch {}
     };
