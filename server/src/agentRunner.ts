@@ -55,6 +55,14 @@ export const CLI_INSTALL_COMMANDS: Record<string, { mac: string; windows: string
   },
 };
 
+// Regex detecting authentication required, OAuth session expiry, and login prompts across CLIs
+export const AUTH_REQUIRED_REGEX =
+  /oauth session expired|failed to authenticate|sign in again|login required|authentication required|not logged in|please sign in|run `?claude`? to sign in|run `?codex login`?|codex login required|authentication failed|credentials expired|google authentication required/i;
+
+// Regex detecting true spend cap, budget exhaustion, or quota limit errors (avoiding loose false positives on words like 'budget' or 'spend cap' in regular text)
+export const SPEND_CAP_REGEX =
+  /(?:^|\b)(?:you(?: have|'ve)? hit your spend cap|spend cap set by the owner|exceeded your (?:monthly |current )?budget|insufficient_quota|credit balance is too low|usage cap (?:reached|exceeded)|your quota has been exceeded)(?:\b|$)/i;
+
 // Get cross-platform enriched environment with PATH
 export function getCrossPlatformEnv(): NodeJS.ProcessEnv {
   const home = os.homedir();
@@ -1202,11 +1210,17 @@ export function spawnAgentCli(
           if (parsed.type === 'error' || parsed.type === 'turn.failed') {
             const errorMsg = parsed.message || parsed.error?.message || 'Agent execution failed';
             const cleanMsg = stripAnsi(errorMsg).trim();
-            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(cleanMsg);
+            const isSpendCap = SPEND_CAP_REGEX.test(cleanMsg);
+            const isAuthRequired = AUTH_REQUIRED_REGEX.test(cleanMsg);
             onEvent({
               type: 'error',
               content: cleanMsg,
-              metadata: { ...parsed, isSpendCap, errorType: isSpendCap ? 'spend_cap' : 'agent_error' },
+              metadata: {
+                ...parsed,
+                isSpendCap,
+                isAuthRequired,
+                errorType: isSpendCap ? 'spend_cap' : (isAuthRequired ? 'auth_required' : 'agent_error'),
+              },
               conversationId: detectedConversationId,
             });
             continue;
@@ -1549,13 +1563,23 @@ export function spawnAgentCli(
         }
 
         // Check for spend cap or fatal error in plain text output
-        if (/spend cap|budget limit|quota exceeded/i.test(cleanLine)) {
+        if (SPEND_CAP_REGEX.test(cleanLine)) {
           const match = cleanLine.match(/(?:ERROR:\s*)?(You hit your spend cap[^.\n]*\.[^\n]*|.*budget[^.\n]*\.[^\n]*)/i);
           const msg = match ? match[1].trim() : cleanLine;
           onEvent({
             type: 'error',
             content: msg,
             metadata: { isSpendCap: true, errorType: 'spend_cap' },
+          });
+          continue;
+        }
+
+        // Check for authentication / login required error in plain text output
+        if (AUTH_REQUIRED_REGEX.test(cleanLine)) {
+          onEvent({
+            type: 'error',
+            content: cleanLine,
+            metadata: { isAuthRequired: true, errorType: 'auth_required' },
           });
           continue;
         }
@@ -1577,7 +1601,21 @@ export function spawnAgentCli(
       } catch {
         const clean = stripAnsi(lineBuffer).trim();
         if (clean && !clean.startsWith('Reading additional input')) {
-          onEvent({ type: 'chunk', content: clean });
+          if (AUTH_REQUIRED_REGEX.test(clean)) {
+            onEvent({
+              type: 'error',
+              content: clean,
+              metadata: { isAuthRequired: true, errorType: 'auth_required' },
+            });
+          } else if (SPEND_CAP_REGEX.test(clean)) {
+            onEvent({
+              type: 'error',
+              content: clean,
+              metadata: { isSpendCap: true, errorType: 'spend_cap' },
+            });
+          } else {
+            onEvent({ type: 'chunk', content: clean });
+          }
         }
       }
     }
@@ -1600,13 +1638,23 @@ export function spawnAgentCli(
     }
 
     // Check if stderr contains a spend cap or budget limit error
-    if (/spend cap|budget limit|quota exceeded/i.test(clean)) {
+    if (SPEND_CAP_REGEX.test(clean)) {
       const match = clean.match(/(?:ERROR:\s*)?(You hit your spend cap[^.\n]*\.[^\n]*|.*budget[^.\n]*\.[^\n]*)/i);
       const msg = match ? match[1].trim() : clean;
       onEvent({
         type: 'error',
         content: msg,
         metadata: { isSpendCap: true, errorType: 'spend_cap' },
+      });
+      return;
+    }
+
+    // Check if stderr contains auth required or login required error
+    if (AUTH_REQUIRED_REGEX.test(clean)) {
+      onEvent({
+        type: 'error',
+        content: clean,
+        metadata: { isAuthRequired: true, errorType: 'auth_required' },
       });
       return;
     }

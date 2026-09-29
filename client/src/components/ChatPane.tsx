@@ -974,6 +974,62 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     );
   }, [activeChatId, ws, isStreaming, messages]);
 
+  const handleRetryPrompt = useCallback(
+    async (userPrompt: string, failedAssistantMsgId: string) => {
+      if (!activeChatId || !ws || isStreaming) return;
+
+      // 1. Remove the failed assistant message from DB and local state
+      try {
+        await deleteChatMessage(failedAssistantMsgId);
+      } catch {}
+
+      const remainingMessages = messages.filter((m) => m.id !== failedAssistantMsgId);
+
+      // 2. Use current agent CLI and model
+      const currentCliToUse = tabCli || settings?.agent_cli || 'claude';
+      const currentModelToUse = tabModel;
+      const currentEffortToUse = tabEffort;
+
+      // 3. Resolve effective prompt
+      const effectivePrompt =
+        userPrompt ||
+        (remainingMessages.length > 0 && remainingMessages[remainingMessages.length - 1].role === 'user'
+          ? remainingMessages[remainingMessages.length - 1].content
+          : '');
+
+      const now = Date.now();
+      const optimisticAssistantMessage: ChatMessage = {
+        id: `pending-${now}`,
+        session_id: activeChatId,
+        role: 'assistant',
+        content: '',
+        timestamp: now + 1,
+      };
+
+      const nextMessages = [...remainingMessages, optimisticAssistantMessage];
+      setMessages(nextMessages);
+      setCachedMessages(activeChatId, nextMessages);
+      setIsStreaming(true);
+      setStreamingChunk('');
+
+      ws.send(
+        JSON.stringify({
+          type: 'send_chat_message',
+          sessionId: activeChatId,
+          messageId:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          prompt: effectivePrompt || 'Continue with this task.',
+          agentCli: currentCliToUse,
+          model: currentModelToUse,
+          thinkingEffort: currentEffortToUse,
+        })
+      );
+    },
+    [activeChatId, ws, isStreaming, messages, tabCli, settings?.agent_cli, tabModel, tabEffort]
+  );
+
   const handleOpenSettings = useCallback(() => {
     navigate('/settings');
   }, [navigate]);
@@ -1197,6 +1253,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         taskId={task.id}
         clis={clis}
         currentCli={tabCli || settings?.agent_cli || 'codex'}
+        onRetryPrompt={handleRetryPrompt}
         onSwitchCliAndRetry={handleSwitchCliAndRetry}
         onOpenSettings={handleOpenSettings}
         onAbort={handleAbort}

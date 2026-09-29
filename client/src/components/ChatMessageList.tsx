@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
   FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap,
-  CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp
+  CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp,
+  KeyRound, RotateCcw
 } from 'lucide-react';
 import { ChatMessage, FileAttachment, CliInfo, AgentStep } from '../types';
+import Ansi from 'ansi-to-react';
 import { MarkdownView } from './MarkdownView';
 import {
   isImageAttachment,
@@ -213,6 +215,12 @@ The user is asking a quick side question without wanting to interrupt or derail 
 };
 
 
+export const SPEND_CAP_REGEX =
+  /(?:^|\b)(?:you(?: have|'ve)? hit your spend cap|spend cap set by the owner|exceeded your (?:monthly |current )?budget|insufficient_quota|credit balance is too low|usage cap (?:reached|exceeded)|your quota has been exceeded)(?:\b|$)/i;
+
+export const AUTH_REQUIRED_REGEX =
+  /oauth session expired|failed to authenticate|sign in again|login required|authentication required|not logged in|please sign in|run `?claude`? to sign in|run `?codex login`?|codex login required|authentication failed|credentials expired|google authentication required/i;
+
 export interface SpendCapInfo {
   isSpendCap: boolean;
   title: string;
@@ -227,25 +235,31 @@ export function detectSpendCapInfo(msg: ChatMessage, fallbackCli?: string): Spen
   let isSpendCap = false;
   let customErrorMsg = '';
 
+  let hasMetadata = false;
+  let isErrorInMetadata = false;
+
   if (msg.metadata) {
     try {
       const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      hasMetadata = true;
       if (parsed.cli) cliName = parsed.cli;
       if (parsed.model) modelName = parsed.model;
       if (parsed.errorType === 'spend_cap' || parsed.isSpendCap) {
         isSpendCap = true;
         if (parsed.errorMessage) customErrorMsg = parsed.errorMessage;
       }
+      if (parsed.error) {
+        isErrorInMetadata = true;
+      }
     } catch {}
   }
 
-  const rawClean = stripAnsi(msg.content || '');
+  const rawClean = stripAnsi(msg.content || '').trim();
   if (!isSpendCap) {
-    if (
-      /hit your spend cap|spend cap set by the owner|budget exceeded|exceeded your budget|out of credits|insufficient_quota|credit balance is too low|usage cap/i.test(
-        rawClean
-      )
-    ) {
+    // Only fallback to regex if metadata is absent or message was flagged as error,
+    // and content is short (< 350 chars), preventing lengthy normal markdown responses from false-positive matching
+    const isEligible = !hasMetadata || isErrorInMetadata;
+    if (isEligible && rawClean.length < 350 && SPEND_CAP_REGEX.test(rawClean)) {
       isSpendCap = true;
     }
   }
@@ -283,6 +297,128 @@ export function detectSpendCapInfo(msg: ChatMessage, fallbackCli?: string): Spen
   return { isSpendCap: false, title: '', message: '' };
 }
 
+export interface AuthRequiredInfo {
+  isAuthRequired: boolean;
+  title: string;
+  badge: string;
+  message: string;
+  cliName: string;
+  modelName?: string;
+  loginCommand: string;
+  loginGuideText: string;
+}
+
+export function detectAuthRequiredInfo(msg: ChatMessage, fallbackCli?: string): AuthRequiredInfo {
+  let cliName = fallbackCli || '';
+  let modelName = '';
+  let isAuthRequired = false;
+  let customErrorMsg = '';
+
+  let hasMetadata = false;
+  let isErrorInMetadata = false;
+
+  if (msg.metadata) {
+    try {
+      const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      hasMetadata = true;
+      if (parsed.cli) cliName = parsed.cli;
+      if (parsed.model) modelName = parsed.model;
+      if (parsed.errorType === 'auth_required' || parsed.isAuthRequired) {
+        isAuthRequired = true;
+        if (parsed.errorMessage) customErrorMsg = parsed.errorMessage;
+      }
+      if (parsed.error) {
+        isErrorInMetadata = true;
+      }
+    } catch {}
+  }
+
+  const rawClean = stripAnsi(msg.content || '').trim();
+  if (!isAuthRequired) {
+    // Only fallback to regex if metadata is absent or message was flagged as error,
+    // and content is short (< 350 chars)
+    const isEligible = !hasMetadata || isErrorInMetadata;
+    if (isEligible && rawClean.length < 350 && AUTH_REQUIRED_REGEX.test(rawClean)) {
+      isAuthRequired = true;
+    }
+  }
+
+  if (isAuthRequired) {
+    if (!cliName) {
+      if (/claude/i.test(rawClean)) cliName = 'claude';
+      else if (/codex/i.test(rawClean)) cliName = 'codex';
+      else if (/agy|antigravity|google/i.test(rawClean)) cliName = 'agy';
+    }
+
+    const normCli = (cliName || 'claude').toLowerCase();
+    const isOAuthExpired = /oauth session expired|session expired|sign in again/i.test(rawClean || customErrorMsg);
+
+    let title = 'Authentication Required';
+    let badge = 'Sign In Required';
+    let loginCommand = 'claude';
+    let loginGuideText = 'Run in your terminal to sign in, or sign in via the Claude app, then click Retry.';
+    let defaultMsg = 'The AI agent requires authentication before it can execute commands.';
+
+    if (normCli === 'claude') {
+      loginCommand = 'claude';
+      if (isOAuthExpired) {
+        title = 'OAuth Session Expired';
+        badge = 'Session Expired';
+        defaultMsg = 'Your Claude Code OAuth session has expired and could not be refreshed. For your security, sign in again to keep using Claude.';
+      } else {
+        title = 'Claude Code Authentication Required';
+        badge = 'Login Required';
+        defaultMsg = 'Claude Code requires authentication. Sign in with your Anthropic Console account or set ANTHROPIC_API_KEY.';
+      }
+      loginGuideText = 'Run in your terminal or sign in via the Claude app, then click Retry with Claude.';
+    } else if (normCli === 'codex') {
+      loginCommand = 'codex login';
+      title = 'OpenAI Codex Login Required';
+      badge = 'Login Required';
+      defaultMsg = 'OpenAI Codex authentication is missing or expired. Sign in via your terminal or configure OPENAI_API_KEY.';
+      loginGuideText = 'Run in your terminal to sign in, then click Retry with Codex.';
+    } else if (normCli === 'agy') {
+      loginCommand = 'agy';
+      title = 'Google Antigravity Authentication Required';
+      badge = 'Sign In Required';
+      defaultMsg = 'Google Antigravity credentials have expired. Follow the browser authentication prompt in your terminal.';
+      loginGuideText = 'Run in your terminal to authenticate with Google, then click Retry with Antigravity.';
+    }
+
+    let cleanMessage = customErrorMsg || defaultMsg;
+    if (cleanMessage.startsWith('Failed to authenticate:')) {
+      cleanMessage = cleanMessage.replace(/^Failed to authenticate:\s*/i, '').trim();
+      cleanMessage = cleanMessage.charAt(0).toUpperCase() + cleanMessage.slice(1);
+    }
+
+    if (!modelName) {
+      const modelMatch = rawClean.match(/model:\s*([a-zA-Z0-9._-]+)/i);
+      if (modelMatch) modelName = modelMatch[1];
+    }
+
+    return {
+      isAuthRequired: true,
+      title,
+      badge,
+      message: cleanMessage,
+      cliName: normCli,
+      modelName,
+      loginCommand,
+      loginGuideText,
+    };
+  }
+
+  return {
+    isAuthRequired: false,
+    title: '',
+    badge: '',
+    message: '',
+    cliName: '',
+    loginCommand: '',
+    loginGuideText: '',
+  };
+}
+
 const LiveElapsedTimer: React.FC<{ startTime?: number }> = ({ startTime }) => {
   const [elapsed, setElapsed] = useState(() => (startTime ? Math.max(0, (Date.now() - startTime) / 1000) : 0));
   useEffect(() => {
@@ -307,10 +443,11 @@ const StepOutputDrawer: React.FC<{
   const lines = useMemo(() => text.split('\n'), [text]);
   const isTruncated = lines.length > 25;
   const displayLines = expandedFull || !isTruncated ? lines : lines.slice(0, 20);
+  const displayText = displayLines.join('\n');
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(stripAnsi(text));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -323,39 +460,61 @@ const StepOutputDrawer: React.FC<{
     );
   }
 
+  const isFailed = status === 'failed';
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
       className={`mt-2 rounded-xl overflow-hidden border text-left shadow-soft-inner transition-all ${
-        status === 'failed'
-          ? 'border-rose-500/30 bg-rose-950/20'
+        isFailed
+          ? 'border-rose-500/40 bg-[#140b0e] dark:bg-[#11070a]'
           : 'border-cozy-border/60 bg-[#090d16] dark:bg-[#070b12]'
       }`}
     >
-      <div className="flex items-center justify-between px-3 py-1.5 bg-black/40 border-b border-white/5 text-[10px] text-cozy-muted select-none">
+      <div
+        className={`flex items-center justify-between px-3 py-1.5 border-b text-[10px] select-none ${
+          isFailed
+            ? 'bg-rose-950/40 border-rose-500/20 text-rose-300'
+            : 'bg-black/40 border-white/5 text-cozy-muted'
+        }`}
+      >
         <span className="font-mono">
           {lines.length} {lines.length === 1 ? 'line' : 'lines'} • {Math.round((text.length / 1024) * 10) / 10} KB
         </span>
         <button
           type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-cozy-muted hover:text-cozy-text transition-all cursor-pointer"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
           title="Copy output"
         >
           {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <div className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto text-slate-300 select-text">
+      <div
+        className={`p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto select-text ${
+          isFailed
+            ? 'text-rose-100 selection:bg-rose-500/40'
+            : 'text-slate-300 selection:bg-teal-500/30'
+        }`}
+      >
         <pre className="whitespace-pre-wrap break-all font-mono">
-          {displayLines.join('\n')}
+          <Ansi>{displayText}</Ansi>
         </pre>
         {isTruncated && !expandedFull && (
-          <div className="mt-2 pt-2 border-t border-white/10 flex justify-center">
+          <div
+            className={`mt-2 pt-2 border-t flex justify-center ${
+              isFailed ? 'border-rose-500/20' : 'border-white/10'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setExpandedFull(true)}
-              className="text-[10px] text-teal-400 hover:text-teal-300 font-sans font-medium px-2 py-0.5 rounded hover:bg-teal-500/10 transition-colors cursor-pointer"
+              className={`text-[10px] font-sans font-medium px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                isFailed
+                  ? 'text-rose-300 hover:text-rose-200 hover:bg-rose-500/20'
+                  : 'text-teal-400 hover:text-teal-300 hover:bg-teal-500/10'
+              }`}
             >
               Show all {lines.length} lines ({lines.length - 20} more)
             </button>
@@ -738,6 +897,7 @@ interface ChatMessageListProps {
   taskId?: string;
   clis?: CliInfo[];
   currentCli?: string;
+  onRetryPrompt?: (userPrompt: string, failedMsgId: string) => void;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
   onAbort?: () => void;
@@ -750,6 +910,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   taskId,
   clis,
   currentCli,
+  onRetryPrompt,
   onSwitchCliAndRetry,
   onOpenSettings,
   onAbort,
@@ -854,22 +1015,27 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
         </div>
       )}
 
-      {messages.map((msg, index) => (
-        <MessageItem
-          key={msg.id}
-          msg={msg}
-          isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
-          onCopy={handleCopy}
-          onPreviewImage={handlePreviewImage}
-          onPreviewFile={handlePreviewFile}
-          clis={clis}
-          currentCli={currentCli}
-          previousUserPrompt={index > 0 && messages[index - 1].role === 'user' ? messages[index - 1].content : ''}
-          onSwitchCliAndRetry={onSwitchCliAndRetry}
-          onOpenSettings={onOpenSettings}
-          onAbort={onAbort}
-        />
-      ))}
+      {messages.map((msg, index) => {
+        const previousUserMsg = messages.slice(0, index).reverse().find((m) => m.role === 'user');
+        const previousUserPrompt = previousUserMsg ? previousUserMsg.content : '';
+        return (
+          <MessageItem
+            key={msg.id}
+            msg={msg}
+            isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
+            onCopy={handleCopy}
+            onPreviewImage={handlePreviewImage}
+            onPreviewFile={handlePreviewFile}
+            clis={clis}
+            currentCli={currentCli}
+            previousUserPrompt={previousUserPrompt}
+            onRetryPrompt={onRetryPrompt}
+            onSwitchCliAndRetry={onSwitchCliAndRetry}
+            onOpenSettings={onOpenSettings}
+            onAbort={onAbort}
+          />
+        );
+      })}
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
@@ -914,6 +1080,7 @@ const MessageItem: React.FC<{
   clis?: CliInfo[];
   currentCli?: string;
   previousUserPrompt?: string;
+  onRetryPrompt?: (userPrompt: string, failedMsgId: string) => void;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
   onAbort?: () => void;
@@ -926,6 +1093,7 @@ const MessageItem: React.FC<{
   clis,
   currentCli,
   previousUserPrompt = '',
+  onRetryPrompt,
   onSwitchCliAndRetry,
   onOpenSettings,
   onAbort,
@@ -944,11 +1112,12 @@ const MessageItem: React.FC<{
   }, [onCopy]);
 
   const spendCapInfo = useMemo(() => detectSpendCapInfo(msg, currentCli), [msg, currentCli]);
+  const authInfo = useMemo(() => detectAuthRequiredInfo(msg, currentCli), [msg, currentCli]);
 
   const alternativeClis = useMemo(() => {
-    const currentName = (spendCapInfo.cliName || currentCli || '').toLowerCase();
+    const currentName = (authInfo.cliName || spendCapInfo.cliName || currentCli || '').toLowerCase();
     return (clis || []).filter((c) => c.available && c.name.toLowerCase() !== currentName);
-  }, [clis, spendCapInfo.cliName, currentCli]);
+  }, [clis, authInfo.cliName, spendCapInfo.cliName, currentCli]);
 
   // Parse attachments from msg.attachments or metadata
   const attachments: FileAttachment[] = useMemo(() => {
@@ -1101,7 +1270,11 @@ const MessageItem: React.FC<{
   }, [steps]);
 
   // Text that should be copied when clicking copy
-  const textToCopy = spendCapInfo.isSpendCap ? spendCapInfo.message : cleanContent || (thoughts ? thoughts : msg.content);
+  const textToCopy = authInfo.isAuthRequired
+    ? authInfo.message
+    : spendCapInfo.isSpendCap
+    ? spendCapInfo.message
+    : cleanContent || (thoughts ? thoughts : msg.content);
 
   // Fallback friendly message if assistant completed actions with no explicit closing text
   const displayContent =
@@ -1123,12 +1296,20 @@ const MessageItem: React.FC<{
         className={`hidden min-[1200px]:flex w-8 h-8 rounded-full items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
           isUser
             ? 'bg-gradient-to-tr from-teal-500 to-cyan-600 border-teal-400/30 text-white shadow-glow-ocean'
-            : spendCapInfo.isSpendCap
+            : authInfo.isAuthRequired || spendCapInfo.isSpendCap
             ? 'bg-amber-500/10 border-amber-400/30 text-amber-500'
             : 'bg-cozy-surface border-teal-400/20 text-teal-500'
         }`}
       >
-        {isUser ? <User className="w-4 h-4" /> : spendCapInfo.isSpendCap ? <AlertTriangle className="w-4 h-4 text-amber-500" /> : <Bot className="w-4 h-4" />}
+        {isUser ? (
+          <User className="w-4 h-4" />
+        ) : authInfo.isAuthRequired ? (
+          <KeyRound className="w-4 h-4 text-amber-500" />
+        ) : spendCapInfo.isSpendCap ? (
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+        ) : (
+          <Bot className="w-4 h-4" />
+        )}
       </div>
 
       {/* Bubble Content */}
@@ -1140,7 +1321,7 @@ const MessageItem: React.FC<{
         }`}
       >
         {/* Agent Activity Timeline & Steps (Both streaming & completed) */}
-        {!isUser && steps.length > 0 && !spendCapInfo.isSpendCap && (
+        {!isUser && steps.length > 0 && !spendCapInfo.isSpendCap && !authInfo.isAuthRequired && (
           <AgentActivityView
             steps={steps}
             isStreaming={isStreaming}
@@ -1153,7 +1334,7 @@ const MessageItem: React.FC<{
           className={`group relative rounded-2xl text-sm shadow-soft-sm transition-colors duration-150 min-w-0 max-w-full ${
             isUser
               ? 'bg-teal-500 text-white rounded-tr-sm shadow-glow-ocean px-6 sm:px-7 py-3 sm:py-3.5 pr-11 sm:pr-12 break-words [overflow-wrap:anywhere] font-medium'
-              : spendCapInfo.isSpendCap
+              : authInfo.isAuthRequired || spendCapInfo.isSpendCap
               ? 'rounded-tl-sm w-full border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/5 p-5 sm:p-6 text-cozy-text shadow-soft-sm break-words [overflow-wrap:anywhere]'
               : 'bg-cozy-surface/95 dark:bg-[#111b2e]/95 border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
           }`}
@@ -1251,6 +1432,105 @@ const MessageItem: React.FC<{
 
           {isUser ? (
             <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">{displayContent}</div>
+          ) : authInfo.isAuthRequired ? (
+            <div className="space-y-4">
+              {/* Header */}
+              <div className="flex items-center justify-between gap-3 border-b border-amber-500/15 pb-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0 text-amber-500 shadow-soft-sm">
+                    <KeyRound className="w-4.5 h-4.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-semibold text-cozy-text">{authInfo.title}</h4>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/25">
+                        {authInfo.badge}
+                      </span>
+                    </div>
+                    {(authInfo.cliName || authInfo.modelName) && (
+                      <p className="text-[11px] text-cozy-muted font-mono mt-0.5 truncate">
+                        {authInfo.cliName === 'agy' ? 'GOOGLE ANTIGRAVITY' : authInfo.cliName === 'claude' ? 'CLAUDE CODE' : authInfo.cliName === 'codex' ? 'OPENAI CODEX' : authInfo.cliName.toUpperCase()} {authInfo.modelName ? `• ${authInfo.modelName}` : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Message Explanation */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-cozy-text leading-relaxed">
+                  {authInfo.message}
+                </p>
+              </div>
+
+              {/* Interactive Terminal Command Box */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-[#0b101b] border border-amber-500/20 shadow-soft-inner">
+                  <div className="flex items-center gap-2 min-w-0 font-mono text-xs text-amber-300 overflow-x-auto select-all">
+                    <Terminal className="w-3.5 h-3.5 text-amber-400 shrink-0 select-none" />
+                    <span>{authInfo.loginCommand}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyText('msg', authInfo.loginCommand)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-cozy-muted hover:text-white transition-all text-xs font-medium cursor-pointer shrink-0"
+                    title="Copy command"
+                  >
+                    {copiedTarget === 'msg' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400 text-[11px]">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span className="text-[11px]">Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-cozy-muted leading-relaxed">
+                  {authInfo.loginGuideText}
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-1 flex flex-wrap items-center gap-2.5">
+                {onRetryPrompt && (
+                  <button
+                    onClick={() => onRetryPrompt(previousUserPrompt, msg.id)}
+                    className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-medium text-xs shadow-soft-sm transition-all hover:scale-[1.02] cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-100 shrink-0" />
+                    <span>Retry with {authInfo.cliName === 'claude' ? 'Claude' : authInfo.cliName === 'codex' ? 'Codex' : authInfo.cliName === 'agy' ? 'Antigravity' : authInfo.cliName}</span>
+                  </button>
+                )}
+
+                {alternativeClis.map((alt) => {
+                  const cliLabel = alt.name === 'agy' ? 'Google Antigravity' : alt.name === 'claude' ? 'Claude Code' : alt.name === 'codex' ? 'OpenAI Codex' : alt.name;
+                  return (
+                    <button
+                      key={alt.name}
+                      onClick={() => onSwitchCliAndRetry?.(alt.name, previousUserPrompt, msg.id)}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-600 hover:from-teal-600 hover:to-cyan-700 text-white font-medium text-xs shadow-soft-sm transition-all hover:scale-[1.02] cursor-pointer"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                      <span>Switch to {cliLabel} & Continue</span>
+                    </button>
+                  );
+                })}
+
+                {onOpenSettings && (
+                  <button
+                    onClick={onOpenSettings}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-cozy-surface/90 hover:bg-cozy-subtle border border-cozy-border/80 text-cozy-text text-xs font-medium transition-all shadow-soft-sm hover:border-amber-400/40 cursor-pointer"
+                  >
+                    <SettingsIcon className="w-3.5 h-3.5 text-cozy-muted shrink-0" />
+                    <span>Configure CLIs in Settings</span>
+                  </button>
+                )}
+              </div>
+            </div>
           ) : spendCapInfo.isSpendCap ? (
             <div className="space-y-4">
               {/* Header */}
