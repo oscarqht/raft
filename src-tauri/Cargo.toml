@@ -1,6 +1,6 @@
 [package]
 name = "raft"
-version = "0.19.0"
+version = "0.20.0"
 description = "A cozy, distraction-free AI coding workspace"
 authors = ["oscarqht"]
 edition = "2021"
