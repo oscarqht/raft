@@ -204,6 +204,7 @@ export default function App() {
                 onUpdateSettings={(s) => setSettings(s)}
                 clis={clis}
                 onRefreshClis={() => getClis().then(setClis).catch(() => {})}
+                ws={ws}
               />
             }
           />

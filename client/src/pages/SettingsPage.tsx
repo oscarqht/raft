@@ -27,8 +27,14 @@ import {
   ShieldCheck,
   Pencil,
   Bot,
+  Radio,
+  Eye,
+  EyeOff,
+  Server,
+  Laptop,
+  Activity,
 } from 'lucide-react';
-import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill, SkillInstallSummaryItem } from '../types';
+import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill, SkillInstallSummaryItem, AlphaStatusResponse } from '../types';
 import {
   updateSettings,
   getModels,
@@ -43,6 +49,8 @@ import {
   updateSkill,
   deleteSkill,
   installSkillStream,
+  getAlphaStatus,
+  reconnectAlphaDevice,
 } from '../api';
 import { AgentUsageCard } from '../components/AgentUsageCard';
 
@@ -59,6 +67,7 @@ interface SettingsPageProps {
   onUpdateSettings: (newSettings: Settings) => void;
   clis: CliInfo[];
   onRefreshClis?: () => void;
+  ws?: WebSocket | null;
 }
 
 function stripAnsi(text: string): string {
@@ -70,6 +79,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   onUpdateSettings,
   clis,
   onRefreshClis,
+  ws,
 }) => {
   const [localClis, setLocalClis] = useState<CliInfo[]>(clis);
   const [agentCli, setAgentCli] = useState(settings.agent_cli);
@@ -82,16 +92,16 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [copiedOs, setCopiedOs] = useState<'win' | 'mac' | null>(null);
   const [savedToast, setSavedToast] = useState(false);
 
-  // Tabs state: 'agents' | 'skills' | 'git'
-  type SettingsTab = 'agents' | 'skills' | 'git';
+  // Tabs state: 'agents' | 'alpha' | 'skills' | 'git'
+  type SettingsTab = 'agents' | 'alpha' | 'skills' | 'git';
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const initialTab: SettingsTab =
-    tabParam === 'skills' ? 'skills' : tabParam === 'git' ? 'git' : 'agents';
+    tabParam === 'alpha' ? 'alpha' : tabParam === 'skills' ? 'skills' : tabParam === 'git' ? 'git' : 'agents';
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   useEffect(() => {
-    if (tabParam === 'skills' || tabParam === 'git' || tabParam === 'agents') {
+    if (tabParam === 'alpha' || tabParam === 'skills' || tabParam === 'git' || tabParam === 'agents') {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -100,6 +110,17 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     setActiveTab(tab);
     setSearchParams({ tab }, { replace: true });
   };
+
+  // Alpha Intelligence state
+  const [alphaApiUrl, setAlphaApiUrl] = useState(settings.alpha_intelligence_api_url || '');
+  const [alphaApiKey, setAlphaApiKey] = useState(settings.alpha_intelligence_api_key || '');
+  const [showAlphaKey, setShowAlphaKey] = useState(false);
+  const [alphaStatus, setAlphaStatus] = useState<AlphaStatusResponse | null>(null);
+  const [isLoadingAlphaStatus, setIsLoadingAlphaStatus] = useState(false);
+  const [isSavingAlpha, setIsSavingAlpha] = useState(false);
+  const [alphaSaveMsg, setAlphaSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isReconnectingDevice, setIsReconnectingDevice] = useState(false);
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   // Streaming CLI installer state
   const [isInstallingCli, setIsInstallingCli] = useState(false);
@@ -385,6 +406,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
 
   const autoSaveSettings = async (nextCli: string, nextModel: string, nextEffort: string) => {
     const next: Settings = {
+      ...settings,
       agent_cli: nextCli,
       default_model: nextModel,
       thinking_effort: nextEffort,
@@ -398,6 +420,131 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     } catch (err) {
       console.error('Failed to auto-save settings:', err);
     }
+  };
+
+  const loadAlphaStatus = async () => {
+    setIsLoadingAlphaStatus(true);
+    try {
+      const status = await getAlphaStatus();
+      setAlphaStatus(status);
+    } catch (err) {
+      console.warn('Failed to fetch Alpha status:', err);
+    } finally {
+      setIsLoadingAlphaStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'alpha' || (activeTab === 'agents' && agentCli === 'alpha')) {
+      loadAlphaStatus();
+    }
+  }, [activeTab, agentCli]);
+
+  // Listen to WebSocket for real-time alpha device status updates
+  useEffect(() => {
+    if (!ws) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'alpha_device_status' && data.status) {
+          setAlphaStatus(data.status);
+        }
+      } catch {
+        // ignore non-json messages
+      }
+    };
+
+    ws.addEventListener('message', handleMessage);
+    return () => {
+      ws.removeEventListener('message', handleMessage);
+    };
+  }, [ws]);
+
+  // Adaptive polling while device status is 'connecting' or reconnecting
+  useEffect(() => {
+    const isAlphaActive = activeTab === 'alpha' || (activeTab === 'agents' && agentCli === 'alpha');
+    if (!isAlphaActive) return;
+
+    const isConnecting = alphaStatus?.device?.status === 'connecting' || isReconnectingDevice;
+    if (!isConnecting) return;
+
+    const interval = setInterval(() => {
+      getAlphaStatus()
+        .then((status) => {
+          setAlphaStatus(status);
+        })
+        .catch(() => {});
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [activeTab, agentCli, alphaStatus?.device?.status, isReconnectingDevice]);
+
+  const handleSaveAlpha = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsSavingAlpha(true);
+    setAlphaSaveMsg(null);
+    try {
+      const nextSettings: Settings = {
+        ...settings,
+        alpha_intelligence_api_url: alphaApiUrl.trim(),
+        alpha_intelligence_api_key: alphaApiKey.trim(),
+      };
+      await updateSettings(nextSettings);
+      onUpdateSettings(nextSettings);
+      setAlphaSaveMsg({ type: 'success', text: 'Alpha Intelligence settings saved successfully.' });
+      await loadAlphaStatus();
+      onRefreshClis?.();
+    } catch (err: any) {
+      setAlphaSaveMsg({ type: 'error', text: err.message || 'Failed to save settings' });
+    } finally {
+      setIsSavingAlpha(false);
+    }
+  };
+
+  const handleReconnectDevice = async () => {
+    setIsReconnectingDevice(true);
+    try {
+      const res = await reconnectAlphaDevice();
+      if (res?.status) {
+        setAlphaStatus((prev) => (prev ? { ...prev, device: res.status } : prev));
+      }
+      await loadAlphaStatus();
+    } catch (err: any) {
+      alert(err.message || 'Failed to reconnect device');
+    } finally {
+      setIsReconnectingDevice(false);
+    }
+  };
+
+  const CODING_AGENT_SYSTEM_PROMPT = `You are an autonomous expert software engineering agent executing programming tasks in the user's local repository.
+You have access to terminal commands via your connected local desktop device.
+
+# WORKFLOW & CORE PRINCIPLES
+1. DISCOVER & READ BEFORE MODIFYING
+- Never assume project structure or guess library versions. Inspect the repository first.
+- Use command tools like 'git status', 'ls -la', 'find', 'grep', or read project configuration files (package.json, pyproject.toml, Cargo.toml, tsconfig.json, etc.).
+- Always read existing file implementations and surrounding context before making edits.
+
+2. SURGICAL & MINIMAL CODE CHANGES
+- Make concise, targeted changes to achieve the requested outcome.
+- Preserve existing code formatting, naming conventions, architectural patterns, comments, and docstrings.
+- Avoid unnecessary refactoring or modifying unrelated files.
+- Never delete or overwrite Git internals (e.g. .git/ directory).
+
+3. TEST & VERIFY THOROUGHLY
+- After applying code changes, execute project tests, linter, and type checker commands (e.g. npm test, npm run build, pytest, cargo test, go test).
+- If tests or builds fail, analyze the error output carefully and fix the issue before completing your turn.
+- Ensure the codebase builds cleanly without newly introduced warnings or broken dependencies.
+
+4. COMMUNICATE CLEARLY & CONCISELY
+- Keep your thoughts focused on diagnosis and plan of action.
+- Summarize what changed, why the change was made, and the test results upon completion.`;
+
+  const handleCopySystemPrompt = () => {
+    navigator.clipboard.writeText(CODING_AGENT_SYSTEM_PROMPT);
+    setCopiedPrompt(true);
+    setTimeout(() => setCopiedPrompt(false), 2000);
   };
 
   const syncModelAndEffort = (cli: string, modelList: ModelOption[]): { modelId: string; effort: string } => {
@@ -611,35 +758,51 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
           )}
         </div>
 
-        {/* 3 Navigation Tabs: AI Agents, Skills, Git Integration */}
-        <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm max-w-xl">
+        {/* 4 Navigation Tabs: AI Agents, Alpha Intelligence, Skills, Git Integration */}
+        <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm w-full max-w-4xl overflow-x-auto">
           <button
             type="button"
             onClick={() => handleTabChange('agents')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'agents'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <Bot className="w-4 h-4" />
-            <span>AI Agents</span>
+            <Bot className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">AI Agents</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('alpha')}
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeTab === 'alpha'
+                ? 'bg-sky-500 text-white shadow-soft-sm'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
+            }`}
+          >
+            <Radio className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Alpha Intelligence</span>
+            {Boolean(settings.alpha_intelligence_api_url && settings.alpha_intelligence_api_key) && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+            )}
           </button>
 
           <button
             type="button"
             onClick={() => handleTabChange('skills')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'skills'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Skills</span>
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Skills</span>
             {skills.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none shrink-0 ${
                   activeTab === 'skills'
                     ? 'bg-white/20 text-white'
                     : 'bg-cozy-subtle text-cozy-muted'
@@ -653,17 +816,17 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
           <button
             type="button"
             onClick={() => handleTabChange('git')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer ${
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === 'git'
                 ? 'bg-teal-500 text-white shadow-soft-sm'
                 : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
             }`}
           >
-            <GitBranch className="w-4 h-4" />
-            <span>Git Integration</span>
+            <GitBranch className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Git Integration</span>
             {gitAccounts.length > 0 && (
               <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold leading-none shrink-0 ${
                   activeTab === 'git'
                     ? 'bg-white/20 text-white'
                     : 'bg-cozy-subtle text-cozy-muted'
@@ -684,10 +847,10 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                 <div>
                   <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
                     <Cpu className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                    Default AI Agent CLI
+                    Default AI Agent Provider
                   </h2>
                   <p className="text-xs text-cozy-muted mt-1">
-                    Choose which CLI agent to use for code exploration, editing, rebasing, and tasks.
+                    Choose which AI agent or cloud provider to use for code exploration, editing, rebasing, and tasks.
                   </p>
                 </div>
 
@@ -727,33 +890,255 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
                       className={`text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold shrink-0 ${
                         c.available
                           ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
+                          : c.name === 'alpha' || c.isCloudProvider
+                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30'
                           : 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-400/30'
                       }`}
                     >
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.available ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                      {c.available ? (c.version ? 'Ready' : 'Ready') : 'Not Installed'}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          c.available
+                            ? 'bg-emerald-500'
+                            : c.name === 'alpha' || c.isCloudProvider
+                            ? 'bg-amber-500'
+                            : 'bg-red-500'
+                        }`}
+                      />
+                      {c.available
+                        ? 'Ready'
+                        : c.name === 'alpha' || c.isCloudProvider
+                        ? 'Setup Needed'
+                        : 'Not Installed'}
                     </span>
                   </div>
                   <div className="text-xs font-mono text-cozy-muted truncate" title={c.path}>
-                    {c.available ? (c.version ? `${c.version}` : c.path) : 'Not found in system PATH'}
+                    {c.name === 'alpha' || c.isCloudProvider
+                      ? c.available
+                        ? 'Cloud SuperAgent · Device Connected'
+                        : 'API URL & Key required'
+                      : c.available
+                      ? (c.version ? `${c.version}` : c.path)
+                      : 'Not found in system PATH'}
                   </div>
                 </div>
               );
             })}
               </div>
 
-              {/* AI Agent Usage & Remaining Quotas (CodexBar) */}
-              <div className="pt-2 border-t border-cozy-border/60">
-                <AgentUsageCard
-                  activeCli={agentCli}
-                  clis={localClis}
-                  onSelectCli={handleSelectCli}
-                />
+              {/* AI Agent Usage & Remaining Quotas (CodexBar) - Excluded for Alpha */}
+              {agentCli.toLowerCase() !== 'alpha' && (
+                <div className="pt-2 border-t border-cozy-border/60">
+                  <AgentUsageCard
+                    activeCli={agentCli}
+                    clis={localClis}
+                    onSelectCli={handleSelectCli}
+                  />
+                </div>
+              )}
+            </div>
+
+        {/* 3. Provider Configuration / Installation */}
+        {agentCli === 'alpha' ? (
+          <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-6 animate-in fade-in duration-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                  <Radio className="w-4.5 h-4.5 text-sky-500" />
+                  <span>Alpha Intelligence Cloud SuperAgent</span>
+                </h2>
+                <p className="text-xs text-cozy-muted mt-1">
+                  Cloud agent provider with local terminal execution. Raft connects directly to your Chatflow / SuperAgent streaming API and acts as a local WebSocket terminal device.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                    selectedCliInfo?.available
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
+                      : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      selectedCliInfo?.available ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                    }`}
+                  />
+                  {selectedCliInfo?.available ? 'Ready for Tasks' : 'Setup Required'}
+                </span>
               </div>
             </div>
 
-        {/* 3. Installation Guide (if selected CLI is NOT available) */}
-        {!isCliReady ? (
+            {/* Quick credentials configuration form */}
+            <form onSubmit={handleSaveAlpha} className="space-y-4 max-w-3xl">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-cozy-text">
+                  Chatflow / SuperAgent API Endpoint URL
+                </label>
+                <input
+                  type="text"
+                  value={alphaApiUrl}
+                  onChange={(e) => setAlphaApiUrl(e.target.value)}
+                  placeholder="https://your-alpha-host.com/api/superagents/<id>/run"
+                  className="w-full text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl px-3.5 py-2.5 text-cozy-text font-mono placeholder:text-cozy-muted/50 focus:outline-none focus:border-sky-500 transition-colors shadow-soft-sm"
+                />
+                <p className="text-[11px] text-cozy-muted">
+                  Full API URL to your SuperAgent or Chatflow run endpoint (e.g. from Alpha Intelligence).
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-cozy-text">
+                  API Key
+                </label>
+                <div className="relative">
+                  <input
+                    type={showAlphaKey ? 'text' : 'password'}
+                    value={alphaApiKey}
+                    onChange={(e) => setAlphaApiKey(e.target.value)}
+                    placeholder="Paste your Alpha Intelligence API key (Bearer token)"
+                    className="w-full text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl px-3.5 py-2.5 pr-10 text-cozy-text font-mono placeholder:text-cozy-muted/50 focus:outline-none focus:border-sky-500 transition-colors shadow-soft-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAlphaKey(!showAlphaKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-cozy-muted hover:text-cozy-text transition-colors cursor-pointer"
+                    title={showAlphaKey ? 'Hide key' : 'Show key'}
+                  >
+                    {showAlphaKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {alphaSaveMsg && (
+                <div
+                  className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                    alphaSaveMsg.type === 'success'
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-400/20'
+                      : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-400/20'
+                  }`}
+                >
+                  {alphaSaveMsg.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                  )}
+                  <span>{alphaSaveMsg.text}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={isSavingAlpha}
+                  className="px-4 py-2 rounded-xl text-xs font-medium bg-sky-500 hover:bg-sky-400 text-white transition-all shadow-soft-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingAlpha ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Save & Connect Device</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={loadAlphaStatus}
+                  disabled={isLoadingAlphaStatus}
+                  className="px-3.5 py-2 rounded-xl text-xs font-medium bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAlphaStatus ? 'animate-spin' : ''}`} />
+                  <span>Refresh Connection</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleTabChange('alpha')}
+                  className="text-xs text-sky-500 hover:text-sky-400 hover:underline flex items-center gap-1 ml-auto cursor-pointer"
+                >
+                  <span>SuperAgent setup prompt & instructions</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
+
+            {/* Local Device Connection Status */}
+            <div className="pt-4 border-t border-cozy-border/60 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Laptop className="w-4 h-4 text-sky-500" />
+                  <span className="text-xs font-semibold text-cozy-text">Local Terminal Device Bridge</span>
+                </div>
+                {alphaStatus?.device && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-medium px-2.5 py-0.5 rounded-full ${
+                      alphaStatus.device.connected
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-400/20'
+                        : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                        ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-400/20'
+                        : 'bg-zinc-500/10 text-zinc-500 dark:text-zinc-400 border border-zinc-500/20'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        alphaStatus.device.connected
+                          ? 'bg-emerald-500'
+                          : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                          ? 'bg-amber-500 animate-pulse'
+                          : 'bg-zinc-400'
+                      }`}
+                    />
+                    {alphaStatus.device.connected
+                      ? 'Connected'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                      ? 'Pairing Required'
+                      : alphaStatus.device.status === 'connecting'
+                      ? 'Connecting...'
+                      : 'Disconnected'}
+                  </span>
+                )}
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-cozy-surface/60 border border-cozy-border/80 text-xs space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-cozy-muted">
+                    Device:{' '}
+                    <span className="font-mono text-cozy-text font-semibold">
+                      {alphaStatus?.device?.clientName ? `${alphaStatus.device.clientName} (${alphaStatus.device.clientId})` : (alphaStatus?.device?.clientId || 'Not registered yet')}
+                    </span>
+                    {alphaStatus?.device?.userEmail && (
+                      <span className="ml-2 text-sky-600 dark:text-sky-400 font-sans font-medium">
+                        • {alphaStatus.device.userEmail}
+                      </span>
+                    )}
+                  </span>
+                  {!alphaStatus?.device?.connected && (
+                    <button
+                      type="button"
+                      onClick={handleReconnectDevice}
+                      disabled={isReconnectingDevice}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-text transition-colors self-start sm:self-auto cursor-pointer"
+                    >
+                      {isReconnectingDevice ? 'Connecting...' : 'Reconnect Device'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-cozy-muted leading-relaxed">
+                  Raft automatically connects as a local terminal device over WebSocket. All terminal tools (<code className="text-sky-500 font-mono">run_command</code>) called by the cloud SuperAgent will execute securely in your task's active git worktree.
+                </p>
+
+                {alphaStatus?.device?.loginUrl && (
+                  <div className="pt-2">
+                    <a
+                      href={alphaStatus.device.loginUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-400 text-slate-900 transition-all shadow-sm"
+                    >
+                      <span>Authorize This Device in Alpha Portal</span>
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : !isCliReady ? (
           <div className="p-6 rounded-2xl bg-amber-500/5 border border-amber-500/20 space-y-5 animate-in fade-in duration-200">
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0 mt-0.5">
@@ -1110,7 +1495,305 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
       </div>
     )}
 
-    {/* Tab 2: Skills */}
+    {/* Tab 2: Alpha Intelligence */}
+    {activeTab === 'alpha' && (
+      <div className="space-y-6 animate-in fade-in duration-150">
+        {/* API Credentials Configuration */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Radio className="w-4.5 h-4.5 text-sky-500" />
+                <span>Alpha Intelligence API Configuration</span>
+              </h2>
+              <p className="text-xs text-cozy-muted mt-1">
+                Configure your Alpha Intelligence Chatflow or SuperAgent endpoint to use it as an autonomous AI agent in Raft.
+              </p>
+            </div>
+            {alphaStatus && (
+              <span
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold self-start sm:self-auto ${
+                  alphaStatus.configured
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
+                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30'
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    alphaStatus.configured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                {alphaStatus.configured ? 'API Configured' : 'Not Configured'}
+              </span>
+            )}
+          </div>
+
+          <form onSubmit={handleSaveAlpha} className="space-y-4 max-w-3xl">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-cozy-text">
+                API Endpoint URL
+              </label>
+              <input
+                type="text"
+                value={alphaApiUrl}
+                onChange={(e) => setAlphaApiUrl(e.target.value)}
+                placeholder="https://your-alpha-host.com/api/superagents/<id>/run"
+                className="w-full text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl px-3.5 py-2.5 text-cozy-text font-mono placeholder:text-cozy-muted/50 focus:outline-none focus:border-sky-500 transition-colors shadow-soft-sm"
+              />
+              <p className="text-[11px] text-cozy-muted">
+                Enter your SuperAgent or Chatflow run URL. Streaming mode (<code className="text-sky-500">?stream=true</code>) is automatically appended.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-cozy-text">
+                API Key
+              </label>
+              <div className="relative">
+                <input
+                  type={showAlphaKey ? 'text' : 'password'}
+                  value={alphaApiKey}
+                  onChange={(e) => setAlphaApiKey(e.target.value)}
+                  placeholder="Paste your Alpha Intelligence API key (Bearer token)"
+                  className="w-full text-xs bg-cozy-surface/90 border border-cozy-border/80 rounded-xl px-3.5 py-2.5 pr-10 text-cozy-text font-mono placeholder:text-cozy-muted/50 focus:outline-none focus:border-sky-500 transition-colors shadow-soft-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAlphaKey(!showAlphaKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-cozy-muted hover:text-cozy-text transition-colors cursor-pointer"
+                  title={showAlphaKey ? 'Hide key' : 'Show key'}
+                >
+                  {showAlphaKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-cozy-muted">
+                Bearer token used to authenticate chat runs and tool invocations.
+              </p>
+            </div>
+
+            {alphaSaveMsg && (
+              <div
+                className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                  alphaSaveMsg.type === 'success'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-400/20'
+                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-400/20'
+                }`}
+              >
+                {alphaSaveMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{alphaSaveMsg.text}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={isSavingAlpha}
+                className="px-4 py-2 rounded-xl text-xs font-medium bg-sky-500 hover:bg-sky-400 text-white transition-all shadow-soft-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {isSavingAlpha ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Save & Connect</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => loadAlphaStatus()}
+                disabled={isLoadingAlphaStatus}
+                className="px-3.5 py-2 rounded-xl text-xs font-medium bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border/70 text-cozy-text transition-all shadow-soft-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-cozy-muted ${isLoadingAlphaStatus ? 'animate-spin' : ''}`} />
+                <span>Refresh Status</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Local Device Execution Status */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Laptop className="w-4.5 h-4.5 text-sky-500" />
+                <span>Local Terminal Device Connection</span>
+              </h2>
+              <p className="text-xs text-cozy-muted mt-1">
+                AlphaMouse WebSocket connection that enables your Alpha Intelligence SuperAgent to execute commands directly in your active task workspace.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {alphaStatus?.device && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                    alphaStatus.device.connected
+                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30'
+                      : 'bg-cozy-subtle text-cozy-muted border border-cozy-border/50'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      alphaStatus.device.connected
+                        ? 'bg-emerald-500 animate-pulse'
+                        : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                        ? 'bg-amber-500 animate-bounce'
+                        : 'bg-cozy-muted'
+                    }`}
+                  />
+                  <span>
+                    {alphaStatus.device.connected
+                      ? 'Terminal Device Connected'
+                      : alphaStatus.device.status === 'pairing' || alphaStatus.device.status === 'needs_auth'
+                      ? 'Pairing Authorization Needed'
+                      : alphaStatus.device.status === 'connecting'
+                      ? 'Connecting...'
+                      : 'Disconnected'}
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 text-xs text-cozy-text space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <span className="text-cozy-muted block text-[11px] font-medium">Device Client</span>
+                <span className="font-mono text-cozy-text text-xs">
+                  {alphaStatus?.device?.clientName ? `${alphaStatus.device.clientName} (${alphaStatus.device.clientId})` : (alphaStatus?.device?.clientId || 'Not registered yet')}
+                </span>
+              </div>
+              <div>
+                <span className="text-cozy-muted block text-[11px] font-medium">Connected Alpha Account</span>
+                <span className="text-cozy-text text-xs font-semibold text-sky-600 dark:text-sky-400">
+                  {alphaStatus?.device?.userEmail || 'Auto-detected on connection'}
+                </span>
+              </div>
+              <div>
+                <span className="text-cozy-muted block text-[11px] font-medium">Execution Scope</span>
+                <span className="text-cozy-text text-xs">
+                  Active git worktree directory for each task
+                </span>
+              </div>
+            </div>
+
+            {alphaStatus?.device?.loginUrl && (
+              <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Device pairing required to authorize terminal access on Alpha Intelligence portal.</span>
+                </div>
+                <a
+                  href={alphaStatus.device.loginUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Authorize in Browser</span>
+                </a>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleReconnectDevice}
+              disabled={isReconnectingDevice}
+              className="px-3.5 py-2 rounded-xl text-xs font-medium bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border/70 text-cozy-text transition-all shadow-soft-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-cozy-muted ${isReconnectingDevice ? 'animate-spin' : ''}`} />
+              <span>{isReconnectingDevice ? 'Reconnecting...' : 'Reconnect Device'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* SuperAgent Setup Guide & Best Practice System Prompt */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-6">
+          <div>
+            <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+              <Sparkles className="w-4.5 h-4.5 text-sky-500" />
+              <span>SuperAgent Setup Guide for Coding Agents</span>
+            </h2>
+            <p className="text-xs text-cozy-muted mt-1">
+              Follow these best-practice steps to configure an Alpha Intelligence SuperAgent optimized for coding, testing, and file operations.
+            </p>
+          </div>
+
+          {/* Steps */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-sky-500">
+                <span className="w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-[11px]">1</span>
+                <span>Create SuperAgent / Chatflow</span>
+              </div>
+              <p className="text-xs text-cozy-muted leading-relaxed">
+                In your Alpha Intelligence dashboard, navigate to <strong>SuperAgents</strong> (or Chatflows) and click <strong>Create New</strong>.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-sky-500">
+                <span className="w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-[11px]">2</span>
+                <span>Enable Desktop Execution</span>
+              </div>
+              <p className="text-xs text-cozy-muted leading-relaxed">
+                Add the <strong>Desktop / Terminal tool</strong> capability to your agent so it can invoke commands through Raft's local AlphaMouse device connection.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-sky-500">
+                <span className="w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-[11px]">3</span>
+                <span>Apply System Prompt</span>
+              </div>
+              <p className="text-xs text-cozy-muted leading-relaxed">
+                Copy the optimized coding agent system prompt below and paste it into the <strong>System Instructions</strong> field of your SuperAgent.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-cozy-surface/60 border border-cozy-border/60 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-sky-500">
+                <span className="w-5 h-5 rounded-full bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-[11px]">4</span>
+                <span>Publish & Copy API Run URL</span>
+              </div>
+              <p className="text-xs text-cozy-muted leading-relaxed">
+                Click <strong>Publish</strong>, generate an API key under <strong>API Access</strong>, and copy the endpoint URL into the fields above.
+              </p>
+            </div>
+          </div>
+
+          {/* Best Practice System Prompt Box */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-cozy-text flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5 text-sky-500" />
+                <span>Best Practice Coding Agent System Prompt</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleCopySystemPrompt}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-400/30 text-xs font-medium transition-colors cursor-pointer"
+              >
+                {copiedPrompt ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedPrompt ? 'Copied to Clipboard!' : 'Copy Prompt'}</span>
+              </button>
+            </div>
+            <div className="relative rounded-xl border border-cozy-border/80 bg-[#0c1322] p-4 text-slate-200 font-mono text-[11px] leading-relaxed max-h-80 overflow-y-auto whitespace-pre-wrap select-all shadow-soft-inner">
+              {CODING_AGENT_SYSTEM_PROMPT}
+            </div>
+            <p className="text-[11px] text-cozy-muted">
+              This prompt instructs the LLM to inspect repositories before writing code, adhere to project conventions, make surgical edits, and verify changes with tests.
+            </p>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Tab 3: Skills */}
     {activeTab === 'skills' && (
       <div className="space-y-6 animate-in fade-in duration-150">
         {/* Custom Skills & Slash Commands */}

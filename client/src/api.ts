@@ -19,6 +19,8 @@ import {
   FileAttachment,
   AgentUsageSnapshot,
   UpdaterStatusResponse,
+  AlphaStatusResponse,
+  AlphaDeviceStatus,
 } from './types';
 
 const API_BASE = '/api';
@@ -699,4 +701,39 @@ export async function getAllAgentUsages(refresh = false): Promise<Record<string,
     throw new Error('Failed to load AI agent usages');
   }
   return res.json();
+}
+
+export async function getAlphaStatus(): Promise<AlphaStatusResponse> {
+  const res = await fetch(`${API_BASE}/alpha/status`);
+  if (!res.ok) {
+    throw new Error('Failed to get Alpha Intelligence status');
+  }
+  return res.json();
+}
+
+export async function reconnectAlphaDevice(): Promise<{ success: boolean; status: AlphaDeviceStatus }> {
+  const res = await fetch(`${API_BASE}/alpha/device/reconnect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    throw new Error('Failed to reconnect Alpha device');
+  }
+  return res.json();
+}
+
+export async function submitAlphaHitl(
+  callback_url: string,
+  response: any
+): Promise<{ success: boolean; status?: number; body?: string }> {
+  const res = await fetch(`${API_BASE}/alpha/hitl-submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_url, response }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to submit HITL response');
+  }
+  return data;
 }

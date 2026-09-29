@@ -44,6 +44,7 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
   }, []);
 
   const loadAllUsages = useCallback(async (refresh = false) => {
+    if (activeCli.toLowerCase() === 'alpha') return;
     try {
       if (refresh) {
         setIsRefreshing(true);
@@ -73,11 +74,12 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
         setIsRefreshing(false);
       }
     }
-  }, []);
+  }, [activeCli]);
 
   useEffect(() => {
+    if (activeCli.toLowerCase() === 'alpha') return;
     loadAllUsages(false);
-  }, [loadAllUsages]);
+  }, [loadAllUsages, activeCli]);
 
   const handleRefresh = () => {
     loadAllUsages(true);
@@ -136,6 +138,10 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
       maximumFractionDigits: 2,
     });
   };
+
+  if (activeCli.toLowerCase() === 'alpha') {
+    return null;
+  }
 
   return (
     <div className="space-y-4 pt-1">

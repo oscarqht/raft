@@ -5,7 +5,7 @@ import {
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
   Paperclip, Loader2, AlertCircle, Trash2
 } from 'lucide-react';
-import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment } from '../types';
+import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload } from '../types';
 import { ChatMessageList } from './ChatMessageList';
 import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, deleteChatMessage, getModels, getSkills, uploadTaskAttachments } from '../api';
 import {
@@ -76,6 +76,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [streamingChunk, setStreamingChunk] = useState('');
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
   const [showConfig, setShowConfig] = useState(false);
+  const [activeHitl, setActiveHitl] = useState<Record<string, AlphaHitlPayload>>({});
 
   // Tab overrides
   const [tabCli, setTabCli] = useState<string>('');
@@ -515,9 +516,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 },
               ];
             });
+          } else if (msg.type === 'hitl_input_required') {
+            if (msg.hitl) {
+              setActiveHitl((prev) => ({
+                ...prev,
+                [msg.sessionId || eventSessionId]: msg.hitl,
+              }));
+            }
           } else if (msg.type === 'chat_turn_complete') {
             setIsStreaming(false);
             setStreamingChunk('');
+            setActiveHitl((prev) => {
+              const copy = { ...prev };
+              delete copy[msg.sessionId || eventSessionId];
+              return copy;
+            });
             setMessages((prev) => {
               let existingIdx = prev.findIndex((m) => m.id === msg.message.id);
               if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
@@ -547,6 +560,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           } else if (msg.type === 'aborted') {
             setIsStreaming(false);
             setStreamingChunk('');
+            setActiveHitl((prev) => {
+              const copy = { ...prev };
+              delete copy[msg.sessionId || eventSessionId];
+              return copy;
+            });
             if (activeChatId) {
               getChatMessages(activeChatId).then((fresh) => {
                 setMessages(fresh);
@@ -1253,6 +1271,16 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         taskId={task.id}
         clis={clis}
         currentCli={tabCli || settings?.agent_cli || 'codex'}
+        activeHitl={activeChatId ? activeHitl[activeChatId] : null}
+        onHitlSubmitted={() => {
+          if (activeChatId) {
+            setActiveHitl((prev) => {
+              const copy = { ...prev };
+              delete copy[activeChatId];
+              return copy;
+            });
+          }
+        }}
         onRetryPrompt={handleRetryPrompt}
         onSwitchCliAndRetry={handleSwitchCliAndRetry}
         onOpenSettings={handleOpenSettings}
@@ -1508,7 +1536,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       >
                         {clis.map((c) => (
                           <option key={c.name} value={c.name}>
-                            {c.name} {!c.available && '(not found)'}
+                            {c.name}{' '}
+                            {!c.available &&
+                              (c.isCloudProvider || c.name === 'alpha'
+                                ? '(setup needed)'
+                                : '(not found)')}
                           </option>
                         ))}
                       </select>

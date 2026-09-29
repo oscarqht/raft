@@ -112,6 +112,39 @@ export interface Settings {
   thinking_effort: string;
   theme: 'auto' | 'dark' | 'light';
   tailscale_https_url?: string | null;
+  alpha_intelligence_api_url?: string;
+  alpha_intelligence_api_key?: string;
+  alpha_intelligence_email?: string;
+}
+
+export interface AlphaDeviceStatus {
+  connected: boolean;
+  status: 'disconnected' | 'connecting' | 'pairing' | 'needs_auth' | 'connected' | 'error';
+  loginUrl?: string;
+  clientId?: string;
+  clientName?: string;
+  userEmail?: string;
+  error?: string;
+}
+
+export interface AlphaStatusResponse {
+  configured: boolean;
+  apiUrl: string;
+  device: AlphaDeviceStatus;
+}
+
+export interface AlphaHitlPayload {
+  state: string;
+  callback_url: string;
+  timeout?: number;
+  expires_at?: number;
+  widget?: {
+    title?: string;
+    description?: string;
+    elements?: Array<any>;
+  };
+  sessionId?: string;
+  messageId?: string;
 }
 
 export interface CliInstallGuide {
@@ -130,6 +163,7 @@ export interface CliInfo {
   available: boolean;
   version?: string;
   installGuide?: CliInstallGuide;
+  isCloudProvider?: boolean;
 }
 
 export interface ReasoningEffortOption {

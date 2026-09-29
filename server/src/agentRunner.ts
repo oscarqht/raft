@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { db, findGitAccountForRemote } from './db.js';
+import { db, findGitAccountForRemote, getSetting } from './db.js';
 import { GitService, sanitizeBranchName } from './gitService.js';
 
 export interface CliInstallGuide {
@@ -22,6 +22,7 @@ export interface CliInfo {
   available: boolean;
   version?: string;
   installGuide?: CliInstallGuide;
+  isCloudProvider?: boolean;
 }
 
 export interface ReasoningEffortOption {
@@ -215,11 +216,24 @@ const CLI_INSTALL_GUIDES: Record<string, CliInstallGuide> = {
 };
 
 export function getAvailableClis(): CliInfo[] {
-  const clis = ['codex', 'agy', 'claude'];
+  const clis = ['codex', 'agy', 'claude', 'alpha'];
   const isWin = process.platform === 'win32';
   const env = getCrossPlatformEnv();
 
   return clis.map((name) => {
+    if (name === 'alpha') {
+      const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+      const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+      const available = Boolean(apiUrl && apiKey);
+      return {
+        name,
+        path: apiUrl || 'Alpha Intelligence SuperAgent / Chatflow API',
+        available,
+        version: available ? 'Cloud' : undefined,
+        isCloudProvider: true,
+      };
+    }
+
     const cliPath = resolveCliPath(name);
     let available = false;
     let version = '';
@@ -257,6 +271,9 @@ export function installCliProcess(
 ): { proc: ChildProcess; promise: Promise<{ code: number | null }> } {
   const isWin = process.platform === 'win32';
   const normalized = (cliName || '').toLowerCase();
+  if (normalized === 'alpha') {
+    throw new Error('Alpha Intelligence is a cloud provider and does not require CLI installation. Configure your API URL and Key in Settings.');
+  }
   const cmds = CLI_INSTALL_COMMANDS[normalized];
   if (!cmds) {
     throw new Error(`Unsupported CLI for installation: ${cliName}`);
@@ -336,6 +353,16 @@ export async function getModelsForCli(cliName: string, forceRefresh = false): Pr
     result = await discoverAgyModels();
   } else if (normalizedCli === 'claude') {
     result = await discoverClaudeModels();
+  } else if (normalizedCli === 'alpha') {
+    result = [
+      {
+        id: 'latest',
+        name: 'Latest Version (Alpha Intelligence)',
+        description: 'Auto-runs the latest version of the configured Chatflow or SuperAgent',
+        reasoningEfforts: [],
+        discoveredFrom: 'Alpha Intelligence API',
+      },
+    ];
   } else {
     result = [];
   }

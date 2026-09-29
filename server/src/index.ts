@@ -47,6 +47,8 @@ import {
   AgentStep,
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
+import { alphaDeviceService } from './alphaDeviceService.js';
+import { runAlphaIntelligenceTurn, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills, installSkillWithNpxProcess } from './skillService.js';
 import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
@@ -229,22 +231,74 @@ app.get('/api/settings', async (_req: Request, res: Response) => {
   }
   const thinking_effort = getSetting<string>('thinking_effort', 'medium');
   const theme = getSetting<string>('theme', 'auto');
+  const alpha_intelligence_api_url = getSetting<string>('alpha_intelligence_api_url', '');
+  const alpha_intelligence_api_key = getSetting<string>('alpha_intelligence_api_key', '');
   res.json({
     agent_cli,
     default_model,
     thinking_effort,
     theme,
+    alpha_intelligence_api_url,
+    alpha_intelligence_api_key,
     tailscale_https_url: tailscaleServeInfo?.httpsUrl || null,
   });
 });
 
 app.put('/api/settings', (req: Request, res: Response) => {
-  const { agent_cli, default_model, thinking_effort, theme } = req.body;
+  const { agent_cli, default_model, thinking_effort, theme, alpha_intelligence_api_url, alpha_intelligence_api_key } = req.body;
   if (agent_cli !== undefined) setSetting('agent_cli', agent_cli);
   if (default_model !== undefined) setSetting('default_model', default_model);
   if (thinking_effort !== undefined) setSetting('thinking_effort', thinking_effort);
   if (theme !== undefined) setSetting('theme', theme);
+  if (alpha_intelligence_api_url !== undefined) {
+    setSetting('alpha_intelligence_api_url', alpha_intelligence_api_url);
+    alphaDeviceService.updateBaseUrlFromApiUrl(alpha_intelligence_api_url);
+  }
+  if (alpha_intelligence_api_key !== undefined) {
+    setSetting('alpha_intelligence_api_key', alpha_intelligence_api_key);
+  }
   res.json({ success: true });
+});
+
+// Alpha Intelligence routes
+app.get('/api/alpha/status', (_req: Request, res: Response) => {
+  const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+  const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+  const deviceStatus = alphaDeviceService.getStatus();
+  res.json({
+    configured: Boolean(apiUrl && apiKey),
+    apiUrl,
+    device: deviceStatus,
+  });
+});
+
+app.post('/api/alpha/device/reconnect', (_req: Request, res: Response) => {
+  alphaDeviceService.reconnect();
+  res.json({ success: true, status: alphaDeviceService.getStatus() });
+});
+
+app.post('/api/alpha/hitl-submit', async (req: Request, res: Response) => {
+  const { callback_url, response: userResponse } = req.body;
+  if (!callback_url) {
+    return res.status(400).json({ error: 'callback_url is required' });
+  }
+
+  try {
+    const isObj = typeof userResponse === 'object' && userResponse !== null;
+    const body = isObj ? JSON.stringify(userResponse) : String(userResponse ?? '');
+    const headers: Record<string, string> = {
+      'Content-Type': isObj ? 'application/json' : 'text/plain',
+    };
+    const upstreamRes = await fetch(callback_url, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    const resText = await upstreamRes.text().catch(() => '');
+    res.json({ success: true, status: upstreamRes.status, body: resText });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to submit HITL response' });
+  }
 });
 
 // AI Agent Usage & Quotas
@@ -1842,6 +1896,20 @@ scriptManager.on('global_dismissed', ({ id }) => {
   broadcastWs({ type: 'script_dismissed', executionId: id });
 });
 
+// Forward Alpha Intelligence device status changes to all connected clients
+alphaDeviceService.on('status_change', (deviceStatus) => {
+  const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+  const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+  broadcastWs({
+    type: 'alpha_device_status',
+    status: {
+      configured: Boolean(apiUrl && apiKey),
+      apiUrl,
+      device: deviceStatus,
+    },
+  });
+});
+
 app.patch('/api/chats/:id', async (req: Request, res: Response) => {
   const chatId = req.params.id as string;
   const { title, agent_cli, model, thinking_effort } = req.body;
@@ -1956,9 +2024,39 @@ wss.on('connection', (ws: WebSocket) => {
     }
   };
 
+  // Send current Alpha Intelligence status on initial connection
+  try {
+    const initApiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+    const initApiKey = getSetting<string>('alpha_intelligence_api_key', '');
+    send({
+      type: 'alpha_device_status',
+      status: {
+        configured: Boolean(initApiUrl && initApiKey),
+        apiUrl: initApiUrl,
+        device: alphaDeviceService.getStatus(),
+      },
+    });
+  } catch {
+    // ignore
+  }
+
   ws.on('message', async (raw: string) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      if (msg.type === 'get_alpha_status') {
+        const curApiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+        const curApiKey = getSetting<string>('alpha_intelligence_api_key', '');
+        send({
+          type: 'alpha_device_status',
+          status: {
+            configured: Boolean(curApiUrl && curApiKey),
+            apiUrl: curApiUrl,
+            device: alphaDeviceService.getStatus(),
+          },
+        });
+        return;
+      }
 
       // 1. Discovery session
       if (msg.type === 'start_discovery') {
@@ -2218,14 +2316,29 @@ wss.on('connection', (ws: WebSocket) => {
           } catch {}
         }
 
-        // Auto-inject project system prompt into first turn of each chat session
+        // Auto-inject project system prompt or rich Alpha Intelligence workspace context into first turn of chat session
         const prevUserMessages = db.prepare(`
           SELECT id FROM chat_messages
           WHERE session_id = ? AND role = 'user' AND id != ?
         `).all(sessionId, userMsgId) as Array<{ id: string }>;
         const isFirstTurn = prevUserMessages.length === 0;
 
-        if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
+        const prevAlphaMessages = db.prepare(`
+          SELECT id FROM chat_messages
+          WHERE session_id = ? AND role = 'assistant' AND metadata LIKE '%"cli":"alpha"%'
+        `).all(sessionId) as Array<{ id: string }>;
+        const isFirstAlphaTurn = isFirstTurn || prevAlphaMessages.length === 0;
+
+        if (cliToUse === 'alpha' && isFirstAlphaTurn) {
+          effectiveAgentPrompt = buildAlphaPromptWithContext(effectiveAgentPrompt, {
+            projectName: project?.name,
+            taskName: task?.name,
+            worktreePath: effectiveWorktreePath || project?.path,
+            branch: task?.branch,
+            baseBranch: task?.base_branch || project?.branch_convention || 'main',
+            systemPrompt: project?.system_prompt,
+          });
+        } else if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
           effectiveAgentPrompt = `[Project Instructions]\n${project.system_prompt.trim()}\n\n[User Request]\n${effectiveAgentPrompt}`;
         }
 
@@ -2374,6 +2487,184 @@ wss.on('connection', (ws: WebSocket) => {
             } catch {}
           }
         };
+
+        if (cliToUse === 'alpha') {
+          const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+          const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+          if (!apiUrl || !apiKey) {
+            assistantResponse = 'Alpha Intelligence is not configured. Please set API URL and API Key in Settings > Alpha Intelligence.';
+            assistantContent = compileAssistantContent();
+            saveAssistantProgress(true, true);
+            flushBroadcast();
+            broadcastWs({
+              type: 'chat_turn_complete',
+              sessionId,
+              messageId: assistantMsgId,
+              message: {
+                id: assistantMsgId,
+                session_id: sessionId,
+                role: 'assistant',
+                content: assistantResponse,
+                metadata: JSON.stringify({ cli: 'alpha', model: 'latest', steps: [] }),
+                timestamp: Date.now(),
+              },
+              steps: [],
+            });
+            activeChatSessions.delete(sessionId);
+            db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', Date.now(), sessionId);
+            return;
+          }
+
+          const abortController = new AbortController();
+
+          const handleAlphaEvent = (ev: StreamEvent) => {
+            if (ev.type === 'step' && ev.step) {
+              const step = ev.step;
+              const idx = assistantSteps.findIndex((s) => s.id === step.id);
+              if (idx >= 0) {
+                assistantSteps[idx] = { ...assistantSteps[idx], ...step };
+              } else {
+                assistantSteps.push(step);
+              }
+              saveAssistantProgress(false);
+              queueBroadcast(ev, false);
+            } else if (ev.type === 'thought' && ev.content) {
+              assistantThoughts += ev.content;
+              assistantContent = compileAssistantContent();
+              saveAssistantProgress(false);
+              queueBroadcast(ev, false);
+            } else if (ev.type === 'chunk' && ev.content) {
+              assistantResponse += ev.content;
+              assistantContent = compileAssistantContent();
+              saveAssistantProgress(false);
+              queueBroadcast(ev, false);
+            } else if (ev.type === 'error') {
+              const errContent = ev.content || 'Error during execution';
+              assistantResponse = errContent;
+              assistantContent = compileAssistantContent();
+              saveAssistantProgress(true, true);
+              queueBroadcast(ev, true);
+            }
+
+            if (ev.type === 'done' || ev.type === 'error') {
+              flushBroadcast();
+              const finishedAt = Date.now();
+              if (!assistantResponse.trim() && ev.type === 'done') {
+                if (assistantThoughts.trim()) {
+                  const actionCount = assistantSteps.length || (assistantThoughts.match(/→/g) || []).length;
+                  assistantResponse = `Completed ${actionCount > 0 ? `${actionCount} ` : ''}workspace actions and finished tasks.`;
+                } else {
+                  assistantResponse = 'Task completed.';
+                }
+                assistantContent = compileAssistantContent();
+              }
+
+              for (const s of assistantSteps) {
+                if (s.status === 'running') {
+                  s.status = ev.type === 'error' ? 'failed' : 'completed';
+                  s.endTime = finishedAt;
+                  if (s.startTime && !s.duration) {
+                    s.duration = Math.round(((finishedAt - s.startTime) / 1000) * 10) / 10;
+                  }
+                }
+              }
+
+              const metaObj = {
+                cli: 'alpha',
+                model: 'latest',
+                steps: assistantSteps,
+                ...(ev.type === 'error' ? {
+                  error: true,
+                  errorType: 'agent_error',
+                  errorMessage: ev.content || 'Error during execution',
+                } : {}),
+              };
+
+              try {
+                db.prepare('UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?')
+                  .run(assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'), JSON.stringify(metaObj), finishedAt, assistantMsgId);
+              } catch {}
+
+              activeChatSessions.delete(sessionId);
+              db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', finishedAt, sessionId);
+
+              broadcastWs({
+                type: 'chat_turn_complete',
+                sessionId,
+                messageId: assistantMsgId,
+                message: {
+                  id: assistantMsgId,
+                  session_id: sessionId,
+                  role: 'assistant',
+                  content: assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'),
+                  metadata: JSON.stringify(metaObj),
+                  timestamp: finishedAt,
+                },
+                steps: assistantSteps,
+              });
+            }
+          };
+
+          const abortAlphaSession = () => {
+            if (broadcastTimer) {
+              clearTimeout(broadcastTimer);
+              broadcastTimer = null;
+            }
+            abortController.abort();
+            const currentNow = Date.now();
+            for (const s of assistantSteps) {
+              if (s.status === 'running') {
+                s.status = 'failed';
+                s.error = 'Canceled by user';
+                s.endTime = currentNow;
+              }
+            }
+            saveAssistantProgress(true);
+            activeChatSessions.delete(sessionId);
+            db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', currentNow, sessionId);
+            broadcastWs({ type: 'aborted', sessionId });
+          };
+
+          activeChatSessions.set(sessionId, {
+            proc: { kill: () => abortController.abort() },
+            sessionId,
+            assistantMsgId,
+            getContent: () => assistantContent,
+            abort: abortAlphaSession,
+          });
+
+          runAlphaIntelligenceTurn({
+            apiUrl,
+            apiKey,
+            userEmail: getSetting<string>('alpha_intelligence_email', '') || undefined,
+            prompt: effectivePrompt,
+            conversationId: cliSessionIdToResume || undefined,
+            worktreePath: effectiveWorktreePath,
+            sessionId,
+            messageId: assistantMsgId,
+            signal: abortController.signal,
+            onEvent: handleAlphaEvent,
+            onHitlRequired: (hitl) => {
+              broadcastWs({
+                type: 'hitl_input_required',
+                sessionId,
+                messageId: assistantMsgId,
+                hitl,
+              });
+            },
+            onConversationId: (convId) => {
+              try {
+                db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
+                  .run(convId, 'alpha', sessionId);
+              } catch {}
+            },
+          }).catch((runErr) => {
+            console.error('[AlphaRunner] Execution error:', runErr);
+            handleAlphaEvent({ type: 'error', content: runErr.message || 'Alpha Intelligence error' });
+          });
+
+          return;
+        }
 
         const proc = spawnAgentCli(cliToUse, args, effectiveWorktreePath, (ev: StreamEvent) => {
           // If a conversation ID was detected from the CLI stream, persist it to chat_sessions once
@@ -2682,6 +2973,12 @@ if (!isTestEnv) {
           console.warn(`[raft-server] Tailscale Serve could not be enabled: ${tailscaleServeInfo.error}`);
         }
       }
+    }
+
+    // Initialize Alpha Intelligence device connection if configured
+    const initAlphaUrl = getSetting<string>('alpha_intelligence_api_url', '');
+    if (initAlphaUrl) {
+      alphaDeviceService.updateBaseUrlFromApiUrl(initAlphaUrl);
     }
   });
 }
