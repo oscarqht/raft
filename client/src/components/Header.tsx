@@ -5,6 +5,7 @@ import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus, updateTask } from '../api';
 import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 import { TaskStatusBadges } from './TaskStatusBadges';
+import { HeaderUpdater } from './HeaderUpdater';
 
 interface HeaderProps {
   currentPath?: {
@@ -261,6 +262,8 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
           </Link>
         )}
+
+        <HeaderUpdater />
 
         <Link
           to="/settings"

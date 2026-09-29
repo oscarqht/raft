@@ -18,9 +18,35 @@ import {
   VerifyGitAccountResult,
   FileAttachment,
   AgentUsageSnapshot,
+  UpdaterStatusResponse,
 } from './types';
 
 const API_BASE = '/api';
+
+export async function getUpdaterStatus(): Promise<UpdaterStatusResponse> {
+  const res = await fetch(`${API_BASE}/updater/status`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch updater status');
+  }
+  return res.json();
+}
+
+export async function checkUpdate(): Promise<void> {
+  const res = await fetch(`${API_BASE}/updater/check`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to check for updates');
+  }
+}
+
+export async function installUpdate(): Promise<void> {
+  const res = await fetch(`${API_BASE}/updater/install`, { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to start installation');
+  }
+}
+
 
 export async function getFileSystem(dirPath?: string): Promise<FSResponse> {
   const url = dirPath ? `${API_BASE}/fs?path=${encodeURIComponent(dirPath)}` : `${API_BASE}/fs`;
