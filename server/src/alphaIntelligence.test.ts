@@ -98,7 +98,8 @@ test('includes Alpha in getAvailableClis when credentials configured', () => {
   const alphaCli = clis.find((c) => c.name === 'alpha');
   assert.ok(alphaCli, 'Alpha CLI should be registered in CLIs list');
   assert.equal(alphaCli.available, true);
-  assert.ok(alphaCli.installGuide);
+  assert.equal(alphaCli.isCloudProvider, true);
+  assert.equal(alphaCli.installGuide, undefined);
 });
 
 test('returns latest version model for alpha CLI', async () => {

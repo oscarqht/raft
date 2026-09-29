@@ -22,6 +22,7 @@ export interface CliInfo {
   available: boolean;
   version?: string;
   installGuide?: CliInstallGuide;
+  isCloudProvider?: boolean;
 }
 
 export interface ReasoningEffortOption {
@@ -212,15 +213,6 @@ const CLI_INSTALL_GUIDES: Record<string, CliInstallGuide> = {
     authGuide: "Run 'codex login' in your terminal to sign in, or set OPENAI_API_KEY.",
     docsUrl: 'https://platform.openai.com/docs/codex',
   },
-  alpha: {
-    title: 'Alpha Intelligence Chatflow / SuperAgent',
-    description: 'Multi-agent platform with cloud intelligence and local terminal device execution.',
-    command: 'Configure in Settings > Alpha Intelligence',
-    commandMac: 'Configure in Settings > Alpha Intelligence',
-    commandWin: 'Configure in Settings > Alpha Intelligence',
-    authGuide: 'Enter your Chatflow or SuperAgent API URL and API Key in Settings.',
-    docsUrl: '',
-  },
 };
 
 export function getAvailableClis(): CliInfo[] {
@@ -235,10 +227,10 @@ export function getAvailableClis(): CliInfo[] {
       const available = Boolean(apiUrl && apiKey);
       return {
         name,
-        path: apiUrl || 'Alpha Intelligence API',
+        path: apiUrl || 'Alpha Intelligence SuperAgent / Chatflow API',
         available,
-        version: 'Cloud',
-        installGuide: CLI_INSTALL_GUIDES[name],
+        version: available ? 'Cloud' : undefined,
+        isCloudProvider: true,
       };
     }
 
@@ -279,6 +271,9 @@ export function installCliProcess(
 ): { proc: ChildProcess; promise: Promise<{ code: number | null }> } {
   const isWin = process.platform === 'win32';
   const normalized = (cliName || '').toLowerCase();
+  if (normalized === 'alpha') {
+    throw new Error('Alpha Intelligence is a cloud provider and does not require CLI installation. Configure your API URL and Key in Settings.');
+  }
   const cmds = CLI_INSTALL_COMMANDS[normalized];
   if (!cmds) {
     throw new Error(`Unsupported CLI for installation: ${cliName}`);

@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import os from 'node:os';
 
 export interface AlphaDeviceStatus {
@@ -113,18 +114,51 @@ export class AlphaDeviceService {
     this.status = 'disconnected';
   }
 
-  private async loadTokens(): Promise<AlphaTokenRecord | null> {
-    try {
-      const data = await readFile(this.tokenFilePath, 'utf8');
-      return JSON.parse(data) as AlphaTokenRecord;
-    } catch {
-      return null;
+  private getTokenPaths(): string[] {
+    const home = homedir();
+    const paths: string[] = [];
+    if (this.baseUrl) {
+      try {
+        const digest = createHash('sha256').update(this.baseUrl.trim().replace(/\/+$/, '')).digest('hex').slice(0, 16);
+        paths.push(join(home, '.alphamouse', 'terminal-tokens', `${digest}.json`));
+        paths.push(join(home, '.device-mcp', 'terminal-tokens', `${digest}.json`));
+      } catch {
+        // ignore
+      }
     }
+    paths.push(this.tokenFilePath);
+    return paths;
+  }
+
+  private async loadTokens(): Promise<AlphaTokenRecord | null> {
+    for (const path of this.getTokenPaths()) {
+      try {
+        const data = await readFile(path, 'utf8');
+        const parsed = JSON.parse(data) as AlphaTokenRecord;
+        if (parsed && (parsed.token || parsed.clientId)) {
+          return parsed;
+        }
+      } catch {
+        // continue checking next path
+      }
+    }
+    return null;
   }
 
   private async saveTokens(tokens: AlphaTokenRecord): Promise<void> {
+    const home = homedir();
+    if (this.baseUrl) {
+      try {
+        const digest = createHash('sha256').update(this.baseUrl.trim().replace(/\/+$/, '')).digest('hex').slice(0, 16);
+        const alphaDir = join(home, '.alphamouse', 'terminal-tokens');
+        await mkdir(alphaDir, { recursive: true });
+        await writeFile(join(alphaDir, `${digest}.json`), JSON.stringify(tokens, null, 2), 'utf8');
+      } catch (err) {
+        // non-fatal
+      }
+    }
     try {
-      await mkdir(join(homedir(), '.raft'), { recursive: true });
+      await mkdir(join(home, '.raft'), { recursive: true });
       await writeFile(this.tokenFilePath, JSON.stringify(tokens, null, 2), 'utf8');
     } catch (err) {
       console.error('[AlphaDevice] Failed to save tokens:', err);
@@ -216,16 +250,19 @@ export class AlphaDeviceService {
         console.log('[AlphaDevice] Setup WebSocket opened, sending init');
         socket.send(
           JSON.stringify({
-            name: `Raft (${os.hostname()})`,
+            name: `Raft Terminal (${os.hostname()})`,
             clientType: 1, // CLIENT_TYPE_DESKTOP
-            deviceInfo: {
-              os: process.platform,
+            deviceInfo: JSON.stringify({
+              platform: process.platform,
+              type: os.type(),
+              release: os.release(),
+              version: os.version(),
               arch: process.arch,
-              appVersion: '0.1.0',
-              nodeVersion: process.version,
               hostname: os.hostname(),
-            },
-            tools: this.getToolDefinitions(),
+              nodeVersion: process.version,
+              cwd: this.activeWorktreePath || process.cwd(),
+            }),
+            tools: JSON.stringify(this.getToolDefinitions()),
           })
         );
       });
@@ -259,6 +296,17 @@ export class AlphaDeviceService {
     return `${protocol}//${url.host}${path}`;
   }
 
+  private withLoginSuccessRedirect(loginUrl: string): string {
+    try {
+      const url = new URL(loginUrl);
+      const redir = new URL('/login-success', this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`).toString();
+      url.searchParams.set('redir_url', redir);
+      return url.toString();
+    } catch {
+      return loginUrl;
+    }
+  }
+
   private async handleMessage(raw: string, currentTokens: AlphaTokenRecord | null): Promise<void> {
     try {
       const data = JSON.parse(raw);
@@ -266,7 +314,8 @@ export class AlphaDeviceService {
       // Handle Auth Session (needs login)
       if (data.type === 'auth_session') {
         this.status = 'needs_auth';
-        this.loginUrl = data.loginURL || (data.loginPath ? `${this.baseUrl}${data.loginPath}` : undefined);
+        const rawLoginUrl = data.loginURL || (data.loginPath ? `${this.baseUrl}${data.loginPath}` : undefined);
+        this.loginUrl = rawLoginUrl ? this.withLoginSuccessRedirect(rawLoginUrl) : undefined;
         console.log(`[AlphaDevice] Auth required. Login URL: ${this.loginUrl}`);
         return;
       }
@@ -322,15 +371,28 @@ export class AlphaDeviceService {
       if (toolName === 'get_info') {
         const info = {
           deviceInfo: {
-            os: process.platform,
+            platform: process.platform,
+            type: os.type(),
+            release: os.release(),
+            version: os.version(),
             arch: process.arch,
             hostname: os.hostname(),
+            nodeVersion: process.version,
+            cwd: this.activeWorktreePath || process.cwd(),
           },
-          currentWorktree: this.activeWorktreePath,
           runtime: {
             defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
             maxTimeoutMs: MAX_TIMEOUT_MS,
           },
+          accessScope: {
+            unrestricted: true,
+            roots: [this.activeWorktreePath || process.cwd()],
+          },
+          commandWhitelist: {
+            unrestricted: true,
+            commands: [],
+          },
+          currentWorktree: this.activeWorktreePath,
         };
         this.sendResult(id, {
           content: [{ type: 'text', text: JSON.stringify(info) }],

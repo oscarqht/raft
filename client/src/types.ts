@@ -160,6 +160,7 @@ export interface CliInfo {
   available: boolean;
   version?: string;
   installGuide?: CliInstallGuide;
+  isCloudProvider?: boolean;
 }
 
 export interface ReasoningEffortOption {

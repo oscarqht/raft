@@ -1536,7 +1536,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       >
                         {clis.map((c) => (
                           <option key={c.name} value={c.name}>
-                            {c.name} {!c.available && '(not found)'}
+                            {c.name}{' '}
+                            {!c.available &&
+                              (c.isCloudProvider || c.name === 'alpha'
+                                ? '(setup needed)'
+                                : '(not found)')}
                           </option>
                         ))}
                       </select>
