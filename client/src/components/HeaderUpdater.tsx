@@ -5,8 +5,9 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  ArrowRight,
   Download,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { UpdateStatus } from '../types';
 import { getUpdaterStatus, checkUpdate, installUpdate } from '../api';
@@ -132,170 +133,174 @@ export const HeaderUpdater: React.FC = () => {
   const hasUpdateReady = status.status === 'Downloaded';
   const isDownloading = status.status === 'Downloading';
   const isChecking = status.status === 'Checking';
+  const displayVersion = currentVersion ? `v${currentVersion}` : 'Updates';
 
   return (
     <div className="relative inline-flex items-center" ref={containerRef}>
+      {/* Navigation Trigger Button */}
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow-soft-sm transition-all cursor-pointer shrink-0 border ${
-          hasUpdateReady
-            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-600 dark:text-emerald-400 font-semibold'
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shrink-0 cursor-pointer shadow-soft-sm ${
+          isOpen
+            ? 'bg-teal-500/10 border-teal-400/50 text-teal-600 dark:text-teal-400 shadow-glow-ocean'
+            : hasUpdateReady
+            ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-600 dark:text-emerald-400 font-semibold shadow-glow-ocean'
             : isDownloading
             ? 'bg-teal-500/15 hover:bg-teal-500/20 border-teal-400/40 text-teal-600 dark:text-teal-400 font-semibold'
             : isChecking
-            ? 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/80 text-cozy-muted'
-            : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text'
+            ? 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted'
+            : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted hover:text-cozy-text hover:border-teal-400/30'
         }`}
-        title="Software Updates"
+        title={hasUpdateReady ? 'Update ready to install' : `Raft ${displayVersion}`}
         aria-label="Software Updates"
       >
         {isChecking ? (
           <>
             <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500 shrink-0" />
-            <span>Checking…</span>
+            <span className="font-medium text-cozy-text">Checking…</span>
           </>
         ) : isDownloading ? (
           <>
             <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-500 shrink-0" />
-            <span>Updating {status.data.percent}%</span>
+            <span className="font-semibold text-teal-600 dark:text-teal-400">
+              Updating {status.data.percent}%
+            </span>
           </>
         ) : hasUpdateReady ? (
           <>
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-glow-ocean animate-pulse shrink-0" />
-            <span>Update v{status.data.version} ready</span>
+            <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+              Update v{status.data.version} ready
+            </span>
           </>
         ) : (
-          <span>{currentVersion ? `v${currentVersion}` : 'Updates'}</span>
+          <>
+            <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+            <span className="font-medium text-cozy-text">{displayVersion}</span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-cozy-muted shrink-0 transition-transform duration-200 ${
+                isOpen ? 'rotate-180 text-teal-500' : ''
+              }`}
+            />
+          </>
         )}
       </button>
 
+      {/* Popover Card */}
       {isOpen && (
-        <div className="absolute top-[calc(100%+10px)] right-0 w-84 sm:w-96 rounded-2xl glass-panel popup-surface border border-cozy-border/80 shadow-2xl z-50 p-4.5 animate-in fade-in slide-in-from-top-2 duration-150">
-          {/* Header */}
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-cozy-border/60">
-            <div className="flex flex-col text-left">
-              <span className="text-sm font-semibold text-cozy-text">Software Update</span>
-              {currentVersion && (
-                <span className="text-xs text-cozy-muted">Current: v{currentVersion}</span>
-              )}
+        <div className="absolute right-0 top-full mt-2 w-80 sm:w-92 rounded-squircle popup-surface bg-white dark:bg-[#1a1d2e] z-50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 p-2.5 border border-cozy-border/70 shadow-soft-xl">
+          {/* Header Pill */}
+          <div className="px-3.5 py-2.5 rounded-2xl flex items-center justify-between text-xs font-medium text-cozy-muted bg-cozy-subtle/80 select-none shrink-0 mb-1">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-teal-500/15 border border-teal-500/30 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <span className="font-semibold text-cozy-text">Software Update</span>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors cursor-pointer"
-              aria-label="Close update panel"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              {currentVersion && (
+                <span className="text-[10px] font-mono bg-cozy-surface px-2 py-0.5 rounded-full border border-cozy-border/60 text-cozy-muted font-medium shadow-soft-sm">
+                  v{currentVersion}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="w-6 h-6 rounded-lg hover:bg-cozy-surface text-cozy-muted hover:text-cozy-text flex items-center justify-center transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           {/* Body */}
-          <div className="flex flex-col items-center text-center">
+          <div className="flex flex-col">
             {isRestarting ? (
-              <div className="py-4 flex flex-col items-center">
-                <Loader2 className="w-9 h-9 animate-spin text-teal-500 mb-3" />
+              <div className="py-6 px-4 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3 shadow-soft-sm">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                </div>
                 <p className="text-sm font-semibold text-cozy-text mb-1">Restarting Raft…</p>
                 <p className="text-xs text-cozy-muted leading-relaxed max-w-xs">
                   Installing update and relaunching the server. This page will reconnect automatically once Raft is back online.
                 </p>
               </div>
             ) : status.status === 'Checking' ? (
-              <div className="py-4 flex flex-col items-center">
-                <Loader2 className="w-7 h-7 animate-spin text-teal-500 mb-2.5" />
+              <div className="py-6 px-4 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3 shadow-soft-sm">
+                  <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
+                </div>
                 <p className="text-sm font-semibold text-cozy-text mb-1">Checking for updates…</p>
-                <p className="text-xs text-cozy-muted">Contacting release server for the latest version.</p>
+                <p className="text-xs text-cozy-muted leading-relaxed">
+                  Contacting release feed for the latest version.
+                </p>
               </div>
-            ) : status.status === 'UpToDate' ? (
-              currentVersion && status.data.current_version && currentVersion !== status.data.current_version ? (
-                <div className="py-3 flex flex-col items-center">
-                  <div className="w-10 h-10 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-500 flex items-center justify-center mb-2.5">
-                    <AlertCircle className="w-5 h-5" />
-                  </div>
-                  <p className="text-sm font-semibold text-cozy-text mb-1">Restart required</p>
-                  <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
-                    Raft has updated to <strong className="text-cozy-text">v{status.data.current_version}</strong>, but the background server is running <strong className="text-cozy-text">v{currentVersion}</strong>. Restart to complete the update.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleInstall}
-                    className="px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white shadow-glow-ocean transition-all cursor-pointer"
-                  >
-                    Restart server
-                  </button>
-                </div>
-              ) : (
-                <div className="py-3 flex flex-col items-center">
-                  <div className="w-10 h-10 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 flex items-center justify-center mb-2.5">
-                    <CheckCircle2 className="w-5 h-5" />
-                  </div>
-                  <p className="text-sm font-semibold text-cozy-text mb-1">You're up to date!</p>
-                  <p className="text-xs text-cozy-muted leading-relaxed mb-4">
-                    Raft <strong className="text-cozy-text">v{currentVersion || status.data.current_version}</strong> is the latest version available.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleCheckNow}
-                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-text shadow-soft-sm transition-all cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5 text-cozy-muted" />
-                    <span>Check again</span>
-                  </button>
-                </div>
-              )
             ) : status.status === 'Downloading' ? (
-              <div className="w-full py-2 flex flex-col items-center">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-cozy-subtle border border-cozy-border/70 text-cozy-muted">
-                    v{status.data.current_version}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-cozy-muted" />
-                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-teal-500/15 border border-teal-500/30 text-teal-600 dark:text-teal-400">
-                    v{status.data.version}
+              <div className="p-3.5 flex flex-col items-stretch text-left">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
+                    <span className="text-xs font-semibold text-cozy-text">
+                      Downloading v{status.data.version}…
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono font-semibold text-teal-600 dark:text-teal-400">
+                    {status.data.percent}%
                   </span>
                 </div>
-                <p className="text-sm font-semibold text-cozy-text mb-2.5">Downloading update…</p>
-                <div className="w-full h-2 bg-cozy-subtle/80 rounded-full border border-cozy-border/60 overflow-hidden mb-2">
+
+                {/* Progress Bar */}
+                <div className="w-full bg-cozy-subtle h-2 rounded-full overflow-hidden mb-2 border border-cozy-border/60">
                   <div
-                    className="h-full bg-gradient-to-r from-teal-500 to-cyan-500 rounded-full transition-all duration-300"
-                    style={{ width: `${Math.max(5, Math.min(status.data.percent, 100))}%` }}
+                    className="bg-gradient-to-r from-teal-500 to-emerald-400 h-full transition-all duration-200 rounded-full"
+                    style={{ width: `${Math.min(100, Math.max(0, status.data.percent))}%` }}
                   />
                 </div>
-                <div className="w-full flex justify-between text-xs text-cozy-muted">
-                  <span>{status.data.percent}%</span>
+
+                <div className="flex justify-between items-center text-[11px] text-cozy-muted mb-2 font-mono">
                   <span>
-                    {formatBytes(status.data.downloaded)}
-                    {status.data.total ? ` / ${formatBytes(status.data.total)}` : ''}
+                    {formatBytes(status.data.downloaded)} / {status.data.total ? formatBytes(status.data.total) : '...'}
                   </span>
+                  <span>{status.data.percent === 100 ? 'Verifying package…' : 'Downloading…'}</span>
                 </div>
+
+                {status.data.body && (
+                  <div className="p-2.5 rounded-xl bg-cozy-subtle/80 border border-cozy-border/60 text-xs text-cozy-muted max-h-24 overflow-y-auto leading-relaxed">
+                    {status.data.body}
+                  </div>
+                )}
               </div>
             ) : status.status === 'Downloaded' ? (
-              <div className="w-full py-2 flex flex-col items-center">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="px-2 py-0.5 rounded-md text-xs font-medium bg-cozy-subtle border border-cozy-border/70 text-cozy-muted">
-                    v{status.data.current_version}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-cozy-muted" />
-                  <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
-                    v{status.data.version}
-                  </span>
+              <div className="p-3 flex flex-col items-stretch text-left">
+                <div className="flex items-center gap-3 mb-3 p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-500 flex items-center justify-center shrink-0 shadow-soft-sm">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-cozy-text">Update Ready</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                        v{status.data.version}
+                      </span>
+                    </div>
+                    <p className="text-xs text-cozy-muted truncate">
+                      {currentVersion ? `Upgrading from v${currentVersion}` : 'Ready to install & relaunch'}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm font-semibold text-cozy-text mb-1">New version ready to install</p>
-                {status.data.body ? (
-                  <div className="w-full max-h-36 overflow-y-auto text-left bg-cozy-subtle/50 border border-cozy-border/60 rounded-xl p-3 my-2.5">
-                    <div className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider mb-1">
+
+                {status.data.body && (
+                  <div className="p-3 rounded-2xl bg-cozy-subtle/80 border border-cozy-border/70 text-xs text-cozy-muted max-h-36 overflow-y-auto mb-3 leading-relaxed font-sans space-y-1">
+                    <div className="font-semibold text-cozy-text text-[11px] uppercase tracking-wider mb-1">
                       Release Notes
                     </div>
-                    <div className="text-xs text-cozy-text whitespace-pre-wrap leading-relaxed font-mono">
-                      {status.data.body}
-                    </div>
+                    <div className="whitespace-pre-wrap">{status.data.body}</div>
                   </div>
-                ) : (
-                  <p className="text-xs text-cozy-muted mb-4">
-                    Download completed. Restart Raft now to apply the update.
-                  </p>
                 )}
-                <div className="flex items-center justify-end gap-2 w-full mt-2">
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-cozy-border/50">
                   <button
                     type="button"
                     onClick={() => setIsOpen(false)}
@@ -313,17 +318,54 @@ export const HeaderUpdater: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleInstall}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white shadow-glow-ocean transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 active:scale-95 text-white shadow-glow-ocean transition-all cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
                     <span>Install &amp; Relaunch</span>
                   </button>
                 </div>
               </div>
+            ) : status.status === 'UpToDate' ? (
+              currentVersion && status.data.current_version && currentVersion !== status.data.current_version ? (
+                <div className="py-4 px-3 flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-500 flex items-center justify-center mb-3 shadow-soft-sm">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-cozy-text mb-1">Restart required</p>
+                  <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
+                    Raft has updated to <strong className="text-cozy-text">v{status.data.current_version}</strong>, but the background server is running <strong className="text-cozy-text">v{currentVersion}</strong>. Restart to complete the update.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleInstall}
+                    className="px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 active:scale-95 text-white shadow-glow-ocean transition-all cursor-pointer"
+                  >
+                    Restart server
+                  </button>
+                </div>
+              ) : (
+                <div className="py-4 px-3 flex flex-col items-center text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 flex items-center justify-center mb-3 shadow-soft-sm">
+                    <CheckCircle2 className="w-6 h-6" />
+                  </div>
+                  <p className="text-sm font-semibold text-cozy-text mb-1">You're up to date!</p>
+                  <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
+                    Raft <strong className="text-cozy-text font-medium">v{currentVersion || status.data.current_version}</strong> is the latest version available.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCheckNow}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-text shadow-soft-sm active:scale-95 transition-all cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-cozy-muted" />
+                    <span>Check again</span>
+                  </button>
+                </div>
+              )
             ) : status.status === 'Error' ? (
-              <div className="py-3 flex flex-col items-center">
-                <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 text-red-500 flex items-center justify-center mb-2.5">
-                  <AlertCircle className="w-5 h-5" />
+              <div className="py-4 px-3 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 flex items-center justify-center mb-3 shadow-soft-sm">
+                  <AlertCircle className="w-6 h-6" />
                 </div>
                 <p className="text-sm font-semibold text-cozy-text mb-1">
                   {status.data.message?.toLowerCase().includes('install')
@@ -332,21 +374,24 @@ export const HeaderUpdater: React.FC = () => {
                     ? 'Update Download Failed'
                     : 'Update Check Failed'}
                 </p>
-                <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 mb-3 max-w-xs break-words">
+                <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 mb-4 max-w-xs break-words">
                   {status.data.message}
                 </div>
                 <button
                   type="button"
                   onClick={handleCheckNow}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-text shadow-soft-sm transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-text shadow-soft-sm active:scale-95 transition-all cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5 text-cozy-muted" />
                   <span>Try again</span>
                 </button>
               </div>
             ) : (
-              // Idle
-              <div className="py-3 flex flex-col items-center">
+              // Idle state
+              <div className="py-4 px-3 flex flex-col items-center text-center">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center overflow-hidden mb-3 shadow-soft-sm">
+                  <img src="/logo.png" alt="Raft logo" className="w-8 h-8 object-contain drop-shadow-sm" />
+                </div>
                 <p className="text-sm font-semibold text-cozy-text mb-1">
                   Raft {currentVersion ? `v${currentVersion}` : ''}
                 </p>
@@ -356,7 +401,7 @@ export const HeaderUpdater: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleCheckNow}
-                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white shadow-glow-ocean transition-all cursor-pointer"
+                  className="flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 active:scale-95 text-white shadow-glow-ocean transition-all cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span>Check for updates</span>

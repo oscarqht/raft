@@ -133,9 +133,13 @@ function getEffectiveAgentCli(): string {
 // Updater state & loopback sync
 let currentUpdaterStatus: any = { status: 'Idle' };
 let pendingUpdaterAction: 'check' | 'install' | null = null;
+let raftVersionOverride = '';
 const internalAuthToken = process.env.RAFT_INTERNAL_TOKEN || '';
 
 function getRaftVersion(): string {
+  if (raftVersionOverride) {
+    return raftVersionOverride;
+  }
   if (typeof process.env.RAFT_VERSION === 'string' && process.env.RAFT_VERSION) {
     return process.env.RAFT_VERSION;
   }
@@ -193,7 +197,10 @@ app.post('/api/internal/updater-status', (req: Request, res: Response) => {
   if (internalAuthToken && req.headers['x-raft-token'] !== internalAuthToken) {
     return res.status(403).json({ error: 'Forbidden' });
   }
-  currentUpdaterStatus = req.body;
+  if (req.body && typeof req.body.current_version === 'string' && req.body.current_version) {
+    raftVersionOverride = req.body.current_version;
+  }
+  currentUpdaterStatus = req.body?.status || req.body;
   res.json({ success: true });
 });
 

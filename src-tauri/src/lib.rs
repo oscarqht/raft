@@ -115,11 +115,15 @@ pub fn run() {
 
                                     if last_status.as_ref() != Some(&current_status) {
                                         last_status = Some(current_status.clone());
+                                        let payload = serde_json::json!({
+                                            "current_version": sync_app_handle.package_info().version.to_string(),
+                                            "status": current_status,
+                                        });
                                         let url = format!("http://127.0.0.1:{}/api/internal/updater-status", port);
                                         let _ = client
                                             .post(&url)
                                             .header("X-Raft-Token", &sync_token)
-                                            .json(&current_status)
+                                            .json(&payload)
                                             .send()
                                             .await;
                                     }
