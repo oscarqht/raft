@@ -175,3 +175,21 @@ test('AUTH_REQUIRED_REGEX accurately detects authentication and session expiry e
   assert.ok(!AUTH_REQUIRED_REGEX.test('File not found: /src/app.tsx'));
   assert.ok(!AUTH_REQUIRED_REGEX.test('SyntaxError: Unexpected token < in JSON at position 0'));
 });
+
+test('SPEND_CAP_REGEX accurately detects true spend limit errors without false-positive on conversational text', async () => {
+  const { SPEND_CAP_REGEX } = await import('./agentRunner.js');
+
+  // Real spend cap errors
+  assert.ok(SPEND_CAP_REGEX.test('You hit your spend cap set by the owner of your workspace. Ask an owner to increase your spend cap to continue.'));
+  assert.ok(SPEND_CAP_REGEX.test('Your credit balance is too low to access the Anthropic API'));
+  assert.ok(SPEND_CAP_REGEX.test('ERROR: You have exceeded your monthly budget.'));
+  assert.ok(SPEND_CAP_REGEX.test('Error: insufficient_quota'));
+  assert.ok(SPEND_CAP_REGEX.test('usage cap reached'));
+
+  // Conversational phrases that MUST NOT match (including text from user screenshot)
+  assert.ok(!SPEND_CAP_REGEX.test('Render a dedicated error card directly in the message stream (matching the existing Spend Cap pattern), featuring an amber/gold authentication badge'));
+  assert.ok(!SPEND_CAP_REGEX.test('uses unified models for spend caps; generalizing auth detection ensures a consistent experience across all CLI agents.'));
+  assert.ok(!SPEND_CAP_REGEX.test('We should calculate the budget for this project and monitor expenses.'));
+  assert.ok(!SPEND_CAP_REGEX.test('Here is Round 1 of our design tree to properly handle agent authentication'));
+});
+

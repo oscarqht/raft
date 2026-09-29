@@ -6,6 +6,7 @@ import {
   KeyRound, RotateCcw
 } from 'lucide-react';
 import { ChatMessage, FileAttachment, CliInfo, AgentStep } from '../types';
+import Ansi from 'ansi-to-react';
 import { MarkdownView } from './MarkdownView';
 import {
   isImageAttachment,
@@ -214,6 +215,12 @@ The user is asking a quick side question without wanting to interrupt or derail 
 };
 
 
+export const SPEND_CAP_REGEX =
+  /(?:^|\b)(?:you(?: have|'ve)? hit your spend cap|spend cap set by the owner|exceeded your (?:monthly |current )?budget|insufficient_quota|credit balance is too low|usage cap (?:reached|exceeded)|your quota has been exceeded)(?:\b|$)/i;
+
+export const AUTH_REQUIRED_REGEX =
+  /oauth session expired|failed to authenticate|sign in again|login required|authentication required|not logged in|please sign in|run `?claude`? to sign in|run `?codex login`?|codex login required|authentication failed|credentials expired|google authentication required/i;
+
 export interface SpendCapInfo {
   isSpendCap: boolean;
   title: string;
@@ -228,25 +235,31 @@ export function detectSpendCapInfo(msg: ChatMessage, fallbackCli?: string): Spen
   let isSpendCap = false;
   let customErrorMsg = '';
 
+  let hasMetadata = false;
+  let isErrorInMetadata = false;
+
   if (msg.metadata) {
     try {
       const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      hasMetadata = true;
       if (parsed.cli) cliName = parsed.cli;
       if (parsed.model) modelName = parsed.model;
       if (parsed.errorType === 'spend_cap' || parsed.isSpendCap) {
         isSpendCap = true;
         if (parsed.errorMessage) customErrorMsg = parsed.errorMessage;
       }
+      if (parsed.error) {
+        isErrorInMetadata = true;
+      }
     } catch {}
   }
 
-  const rawClean = stripAnsi(msg.content || '');
+  const rawClean = stripAnsi(msg.content || '').trim();
   if (!isSpendCap) {
-    if (
-      /hit your spend cap|spend cap set by the owner|budget exceeded|exceeded your budget|out of credits|insufficient_quota|credit balance is too low|usage cap/i.test(
-        rawClean
-      )
-    ) {
+    // Only fallback to regex if metadata is absent or message was flagged as error,
+    // and content is short (< 350 chars), preventing lengthy normal markdown responses from false-positive matching
+    const isEligible = !hasMetadata || isErrorInMetadata;
+    if (isEligible && rawClean.length < 350 && SPEND_CAP_REGEX.test(rawClean)) {
       isSpendCap = true;
     }
   }
@@ -301,25 +314,31 @@ export function detectAuthRequiredInfo(msg: ChatMessage, fallbackCli?: string): 
   let isAuthRequired = false;
   let customErrorMsg = '';
 
+  let hasMetadata = false;
+  let isErrorInMetadata = false;
+
   if (msg.metadata) {
     try {
       const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      hasMetadata = true;
       if (parsed.cli) cliName = parsed.cli;
       if (parsed.model) modelName = parsed.model;
       if (parsed.errorType === 'auth_required' || parsed.isAuthRequired) {
         isAuthRequired = true;
         if (parsed.errorMessage) customErrorMsg = parsed.errorMessage;
       }
+      if (parsed.error) {
+        isErrorInMetadata = true;
+      }
     } catch {}
   }
 
-  const rawClean = stripAnsi(msg.content || '');
+  const rawClean = stripAnsi(msg.content || '').trim();
   if (!isAuthRequired) {
-    if (
-      /oauth session expired|failed to authenticate|sign in again|login required|authentication required|not logged in|please sign in|run `?claude`? to sign in|run `?codex login`?|codex login required|authentication failed|credentials expired|google authentication required/i.test(
-        rawClean
-      )
-    ) {
+    // Only fallback to regex if metadata is absent or message was flagged as error,
+    // and content is short (< 350 chars)
+    const isEligible = !hasMetadata || isErrorInMetadata;
+    if (isEligible && rawClean.length < 350 && AUTH_REQUIRED_REGEX.test(rawClean)) {
       isAuthRequired = true;
     }
   }
@@ -424,10 +443,11 @@ const StepOutputDrawer: React.FC<{
   const lines = useMemo(() => text.split('\n'), [text]);
   const isTruncated = lines.length > 25;
   const displayLines = expandedFull || !isTruncated ? lines : lines.slice(0, 20);
+  const displayText = displayLines.join('\n');
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(stripAnsi(text));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -440,39 +460,61 @@ const StepOutputDrawer: React.FC<{
     );
   }
 
+  const isFailed = status === 'failed';
+
   return (
     <div
       onClick={(e) => e.stopPropagation()}
       className={`mt-2 rounded-xl overflow-hidden border text-left shadow-soft-inner transition-all ${
-        status === 'failed'
-          ? 'border-rose-500/30 bg-rose-950/20'
+        isFailed
+          ? 'border-rose-500/40 bg-[#140b0e] dark:bg-[#11070a]'
           : 'border-cozy-border/60 bg-[#090d16] dark:bg-[#070b12]'
       }`}
     >
-      <div className="flex items-center justify-between px-3 py-1.5 bg-black/40 border-b border-white/5 text-[10px] text-cozy-muted select-none">
+      <div
+        className={`flex items-center justify-between px-3 py-1.5 border-b text-[10px] select-none ${
+          isFailed
+            ? 'bg-rose-950/40 border-rose-500/20 text-rose-300'
+            : 'bg-black/40 border-white/5 text-cozy-muted'
+        }`}
+      >
         <span className="font-mono">
           {lines.length} {lines.length === 1 ? 'line' : 'lines'} • {Math.round((text.length / 1024) * 10) / 10} KB
         </span>
         <button
           type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-cozy-muted hover:text-cozy-text transition-all cursor-pointer"
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
           title="Copy output"
         >
           {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      <div className="p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto text-slate-300 select-text">
+      <div
+        className={`p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto select-text ${
+          isFailed
+            ? 'text-rose-100 selection:bg-rose-500/40'
+            : 'text-slate-300 selection:bg-teal-500/30'
+        }`}
+      >
         <pre className="whitespace-pre-wrap break-all font-mono">
-          {displayLines.join('\n')}
+          <Ansi>{displayText}</Ansi>
         </pre>
         {isTruncated && !expandedFull && (
-          <div className="mt-2 pt-2 border-t border-white/10 flex justify-center">
+          <div
+            className={`mt-2 pt-2 border-t flex justify-center ${
+              isFailed ? 'border-rose-500/20' : 'border-white/10'
+            }`}
+          >
             <button
               type="button"
               onClick={() => setExpandedFull(true)}
-              className="text-[10px] text-teal-400 hover:text-teal-300 font-sans font-medium px-2 py-0.5 rounded hover:bg-teal-500/10 transition-colors cursor-pointer"
+              className={`text-[10px] font-sans font-medium px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                isFailed
+                  ? 'text-rose-300 hover:text-rose-200 hover:bg-rose-500/20'
+                  : 'text-teal-400 hover:text-teal-300 hover:bg-teal-500/10'
+              }`}
             >
               Show all {lines.length} lines ({lines.length - 20} more)
             </button>

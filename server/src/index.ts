@@ -37,6 +37,7 @@ import {
   spawnAgentCli,
   buildConversationContextFallback,
   AUTH_REQUIRED_REGEX,
+  SPEND_CAP_REGEX,
   CommitMessageResult,
   StreamEvent,
   AgentStep,
@@ -2323,7 +2324,7 @@ wss.on('connection', (ws: WebSocket) => {
             queueBroadcast(ev, false);
           } else if (ev.type === 'error' && ev.content) {
             const errContent = ev.content;
-            const isSpendCap = ev.metadata?.isSpendCap || /spend cap|budget|quota exceeded|credit balance/i.test(errContent);
+            const isSpendCap = ev.metadata?.isSpendCap || SPEND_CAP_REGEX.test(errContent);
             const isAuthRequired = ev.metadata?.isAuthRequired || AUTH_REQUIRED_REGEX.test(errContent);
             assistantResponse = errContent;
             assistantContent = compileAssistantContent();
@@ -2349,9 +2350,10 @@ wss.on('connection', (ws: WebSocket) => {
           if (ev.type === 'done' || ev.type === 'error') {
             flushBroadcast();
             const finishedAt = Date.now();
-            const isSpendCap = /spend cap|budget|quota exceeded|credit balance/i.test(assistantResponse) || ev.metadata?.isSpendCap;
-            const isAuthRequired = AUTH_REQUIRED_REGEX.test(assistantResponse) || ev.metadata?.isAuthRequired;
-            const isResumeError = /session not found|no conversation found|cannot resume session|invalid session|session does not exist|could not resume/i.test(assistantResponse);
+            const isExitError = ev.type === 'error' || (ev.metadata?.code !== undefined && ev.metadata.code !== 0);
+            const isSpendCap = ev.metadata?.isSpendCap || (isExitError && SPEND_CAP_REGEX.test(assistantResponse));
+            const isAuthRequired = ev.metadata?.isAuthRequired || (isExitError && AUTH_REQUIRED_REGEX.test(assistantResponse));
+            const isResumeError = isExitError && /session not found|no conversation found|cannot resume session|invalid session|session does not exist|could not resume/i.test(assistantResponse);
 
             if (cliSessionIdToResume && ev.metadata?.code && ev.metadata.code !== 0) {
               // Preserve CLI session ID on initial auth failure so resuming works once signed in (Round 1 Decision 3B).
