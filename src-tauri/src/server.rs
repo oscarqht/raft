@@ -358,7 +358,7 @@ fn resolve_server_script(app: &AppHandle) -> Result<ServerEntry, String> {
 }
 
 /// Start background Node.js server
-pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
+pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), String> {
     let node_bin = clean_path(discover_node_binary(&app).ok_or_else(|| {
         "Node.js binary not found. Please ensure Node.js is installed or sidecar is bundled.".to_string()
     })?);
@@ -372,6 +372,8 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     entry.script = clean_path(entry.script);
 
     let watchdog_path = clean_path(ensure_watchdog_script()?);
+
+    let internal_token = uuid::Uuid::new_v4().to_string();
 
     println!("[raft] Launching server with Node: {}", node_bin.display());
     println!("[raft] Server root: {}", entry.app_root.display());
@@ -393,6 +395,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
     cmd.env("HOST", &host);
     cmd.env("NODE_ENV", "production");
     cmd.env("PATH", augmented_path());
+    cmd.env("RAFT_INTERNAL_TOKEN", &internal_token);
 
     #[cfg(windows)]
     {
@@ -449,7 +452,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16), String> {
 
     let server_url = format!("http://{}:{}", host, port);
     println!("[raft] Server successfully verified ready at {}", server_url);
-    Ok((server_url, port))
+    Ok((server_url, port, internal_token))
 }
 
 /// Stop the background server

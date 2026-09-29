@@ -8,6 +8,28 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 pub struct ServerUrlState(pub Mutex<Option<String>>);
 
+pub fn is_dev() -> bool {
+    if let Ok(val) = std::env::var("RAFT_ENV") {
+        let v = val.trim().to_lowercase();
+        if v == "production" || v == "prod" {
+            return false;
+        }
+        if v == "development" || v == "dev" {
+            return true;
+        }
+    }
+    if let Ok(val) = std::env::var("NODE_ENV") {
+        let v = val.trim().to_lowercase();
+        if v == "production" || v == "prod" {
+            return false;
+        }
+        if v == "development" || v == "dev" {
+            return true;
+        }
+    }
+    cfg!(debug_assertions) || std::env::var("RAFT_DEV").map(|v| v == "1" || v.eq_ignore_ascii_case("true")).unwrap_or(false)
+}
+
 pub fn run() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -54,7 +76,7 @@ pub fn run() {
 
             tauri::async_runtime::spawn(async move {
                 match server::start_server(app_handle.clone()).await {
-                    Ok((server_url, port)) => {
+                    Ok((server_url, port, internal_token)) => {
                         println!("[raft] Server running at {server_url}");
 
                         // Store server URL in app state for single-instance focus
@@ -68,6 +90,71 @@ pub fn run() {
                             eprintln!("[raft] Failed to setup tray: {e}");
                         }
                         updater::start_background_updater(app_handle.clone());
+
+                        // Periodically sync UpdateStatus with the Express server and poll for user-triggered updater actions
+                        let sync_app_handle = app_handle.clone();
+                        let sync_token = internal_token.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(2))
+                                .build()
+                                .unwrap_or_default();
+
+                            let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
+                            let mut last_status: Option<updater::UpdateStatus> = None;
+
+                            loop {
+                                interval.tick().await;
+
+                                // 1. Push latest UpdateStatus to server if changed
+                                if let Some(state) = sync_app_handle.try_state::<updater::UpdateState>() {
+                                    let current_status = {
+                                        let mgr = state.0.lock().await;
+                                        mgr.status.clone()
+                                    };
+
+                                    if last_status.as_ref() != Some(&current_status) {
+                                        last_status = Some(current_status.clone());
+                                        let url = format!("http://127.0.0.1:{}/api/internal/updater-status", port);
+                                        let _ = client
+                                            .post(&url)
+                                            .header("X-Raft-Token", &sync_token)
+                                            .json(&current_status)
+                                            .send()
+                                            .await;
+                                    }
+                                }
+
+                                // 2. Check if web client triggered updater action
+                                let action_url = format!("http://127.0.0.1:{}/api/internal/updater-action", port);
+                                if let Ok(resp) = client
+                                    .get(&action_url)
+                                    .header("X-Raft-Token", &sync_token)
+                                    .send()
+                                    .await
+                                {
+                                    if let Ok(val) = resp.json::<serde_json::Value>().await {
+                                        if let Some(act) = val.get("action").and_then(|v| v.as_str()) {
+                                            match act {
+                                                "check" => {
+                                                    let h = sync_app_handle.clone();
+                                                    tauri::async_runtime::spawn(async move {
+                                                        updater::check_and_download(&h, false, true).await;
+                                                    });
+                                                }
+                                                "install" => {
+                                                    let h = sync_app_handle.clone();
+                                                    tauri::async_runtime::spawn(async move {
+                                                        let _ = updater::install_and_relaunch_inner(&h).await;
+                                                    });
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
 
                         // Automatically open browser on initial interactive launch (using localhost for secure context)
                         let is_autostart = std::env::args().any(|a| a == "--autostart" || a == "--silent");
@@ -211,6 +298,7 @@ pub fn run() {
                             }
                         }
                     }
+                    updater::handle_app_reopen(&handle).await;
                 });
             }
             RunEvent::ExitRequested { code, api, .. } => {

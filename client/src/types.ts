@@ -316,3 +316,33 @@ export interface AgentUsageSnapshot {
   error?: string | null;
 }
 
+export type UpdateStatus =
+  | { status: 'Idle' }
+  | { status: 'Checking' }
+  | { status: 'UpToDate'; data: { current_version: string } }
+  | {
+      status: 'Downloading';
+      data: {
+        version: string;
+        current_version: string;
+        body?: string | null;
+        downloaded: number;
+        total?: number | null;
+        percent: number;
+      };
+    }
+  | {
+      status: 'Downloaded';
+      data: {
+        version: string;
+        current_version: string;
+        body?: string | null;
+      };
+    }
+  | { status: 'Error'; data: { message: string } };
+
+export interface UpdaterStatusResponse {
+  current_version: string;
+  status: UpdateStatus;
+}
+

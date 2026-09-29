@@ -303,7 +303,7 @@ pub fn setup_tray(
                 "check_updates" => {
                     let handle = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
-                        crate::updater::check_and_download(&handle, true, false).await;
+                        crate::updater::handle_check_updates_click(&handle).await;
                     });
                 }
                 "quit" => {

@@ -72,9 +72,10 @@ if (fs.existsSync(betterSqliteBuild)) {
 }
 
 // Write minimal package.json with type: module
+const rootPkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 fs.writeFileSync(
   path.join(serverOutDir, 'package.json'),
-  JSON.stringify({ name: 'raft-server-bundle', version: '0.1.0', type: 'module' }, null, 2) + '\n'
+  JSON.stringify({ name: 'raft', version: rootPkg.version || '0.19.0', type: 'module' }, null, 2) + '\n'
 );
 
 console.log('--- 4. Staging client SPA into resources/server/client/dist ---');

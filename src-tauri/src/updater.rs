@@ -1,9 +1,10 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(tag = "status", content = "data")]
@@ -59,8 +60,11 @@ pub fn init_state() -> UpdateState {
 
 pub fn register_tray_item(app: &AppHandle, item: MenuItem<Wry>) {
     let state = app.state::<UpdateState>();
-    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    mgr.tray_item = Some(item);
+    let state_arc = state.0.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut mgr = state_arc.lock().await;
+        mgr.tray_item = Some(item);
+    });
 }
 
 pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
@@ -68,9 +72,12 @@ pub fn open_or_focus_updater_window(app: &AppHandle) -> tauri::Result<()> {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
-        let state = app.state::<UpdateState>();
-        let status = state.0.lock().unwrap_or_else(|e| e.into_inner()).status.clone();
-        let _ = app.emit("raft://update-status", &status);
+        let state_arc = app.state::<UpdateState>().0.clone();
+        let handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let mgr = state_arc.lock().await;
+            let _ = handle.emit("raft://update-status", &mgr.status);
+        });
         return Ok(());
     }
 
@@ -93,38 +100,52 @@ pub fn close_update_window_inner(app: &AppHandle) {
     }
 }
 
-pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool) {
-    if is_manual {
+pub async fn check_and_download(app: &AppHandle, show_window: bool, force: bool) {
+    if show_window {
         let _ = open_or_focus_updater_window(app);
     }
 
     let state = app.state::<UpdateState>();
     {
-        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mgr = state.0.lock().await;
+        if !force && matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
+            let _ = app.emit("raft://update-status", &mgr.status);
+            return;
+        }
         if mgr.is_checking_or_downloading {
             let _ = app.emit("raft://update-status", &mgr.status);
             return;
         }
-        if !is_manual && matches!(mgr.status, UpdateStatus::Downloaded { .. }) {
-            return;
-        }
+    }
 
+    {
+        let mut mgr = state.0.lock().await;
         mgr.is_checking_or_downloading = true;
         mgr.status = UpdateStatus::Checking;
     }
     let _ = app.emit("raft://update-status", UpdateStatus::Checking);
 
-    let updater = match app.updater() {
+    if crate::is_dev() {
+        println!("[raft] Development mode active: updater is disabled.");
+        let status = UpdateStatus::UpToDate {
+            current_version: app.package_info().version.to_string(),
+        };
+        let mut mgr = state.0.lock().await;
+        mgr.status = status.clone();
+        mgr.is_checking_or_downloading = false;
+        let _ = app.emit("raft://update-status", &status);
+        return;
+    }
+
+    let updater = match get_updater(app) {
         Ok(u) => u,
         Err(e) => {
             let err_msg = format!("Failed to initialize updater: {e}");
             eprintln!("[raft] {err_msg}");
             let err_status = UpdateStatus::Error { message: err_msg };
-            {
-                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-                mgr.status = err_status.clone();
-                mgr.is_checking_or_downloading = false;
-            }
+            let mut mgr = state.0.lock().await;
+            mgr.status = err_status.clone();
+            mgr.is_checking_or_downloading = false;
             let _ = app.emit("raft://update-status", &err_status);
             return;
         }
@@ -147,7 +168,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                 percent: 0,
             };
             {
-                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                let mut mgr = state.0.lock().await;
                 mgr.status = initial_status.clone();
             }
             let _ = app.emit("raft://update-status", &initial_status);
@@ -190,10 +211,14 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                                 total: content_length,
                                 percent: pct,
                             };
-                            if let Ok(mut mgr) = state_arc.lock() {
-                                mgr.status = status.clone();
-                            }
-                            let _ = app_clone.emit("raft://update-status", &status);
+                            let state_arc_clone = state_arc.clone();
+                            let app_clone_inner = app_clone.clone();
+                            let status_clone = status.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let mut mgr = state_arc_clone.lock().await;
+                                mgr.status = status_clone.clone();
+                                let _ = app_clone_inner.emit("raft://update-status", &status_clone);
+                            });
                         }
                     },
                     || {
@@ -212,7 +237,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                     };
 
                     {
-                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut mgr = state.0.lock().await;
                         mgr.pending_update = Some(update);
                         mgr.downloaded_bytes = Some(bytes);
                         mgr.status = new_status.clone();
@@ -224,7 +249,7 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                     let _ = app.emit("raft://update-status", &new_status);
 
                     let notif_body = format!(
-                        "Version v{} is downloaded. Open the status bar menu to restart.",
+                        "Version v{} is downloaded. Click here or open the status bar menu to restart.",
                         version
                     );
                     let _ = app
@@ -239,10 +264,8 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
                     let err_status = UpdateStatus::Error {
                         message: format!("Download failed: {e}"),
                     };
-                    {
-                        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-                        mgr.status = err_status.clone();
-                    }
+                    let mut mgr = state.0.lock().await;
+                    mgr.status = err_status.clone();
                     let _ = app.emit("raft://update-status", &err_status);
                 }
             }
@@ -252,14 +275,12 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let status = UpdateStatus::UpToDate {
                 current_version: app.package_info().version.to_string(),
             };
-            {
-                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-                mgr.pending_update = None;
-                mgr.downloaded_bytes = None;
-                mgr.status = status.clone();
-                if let Some(tray_item) = &mgr.tray_item {
-                    let _ = tray_item.set_text("Check for Updates...");
-                }
+            let mut mgr = state.0.lock().await;
+            mgr.pending_update = None;
+            mgr.downloaded_bytes = None;
+            mgr.status = status.clone();
+            if let Some(tray_item) = &mgr.tray_item {
+                let _ = tray_item.set_text("Check for Updates...");
             }
             let _ = app.emit("raft://update-status", &status);
         }
@@ -268,65 +289,153 @@ pub async fn check_and_download(app: &AppHandle, is_manual: bool, _silent: bool)
             let err_status = UpdateStatus::Error {
                 message: format!("Check failed: {e}"),
             };
-            {
-                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-                mgr.status = err_status.clone();
-            }
+            let mut mgr = state.0.lock().await;
+            mgr.status = err_status.clone();
             let _ = app.emit("raft://update-status", &err_status);
         }
     }
 
-    let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mut mgr = state.0.lock().await;
     mgr.is_checking_or_downloading = false;
+}
+
+pub async fn check_and_download_silent(app: &AppHandle) {
+    check_and_download(app, false, false).await;
+}
+
+pub async fn check_and_download_manual(app: &AppHandle) {
+    check_and_download(app, true, true).await;
+}
+
+pub async fn handle_check_updates_click(app: &AppHandle) {
+    let is_downloaded = {
+        let state = app.state::<UpdateState>();
+        let mgr = state.0.lock().await;
+        matches!(mgr.status, UpdateStatus::Downloaded { .. })
+    };
+
+    if is_downloaded {
+        let _ = open_or_focus_updater_window(app);
+    } else {
+        check_and_download_manual(app).await;
+    }
+}
+
+pub async fn handle_app_reopen(app: &AppHandle) {
+    let is_downloaded = {
+        let state = app.state::<UpdateState>();
+        let mgr = state.0.lock().await;
+        matches!(mgr.status, UpdateStatus::Downloaded { .. })
+    };
+
+    if is_downloaded {
+        let _ = open_or_focus_updater_window(app);
+    }
 }
 
 pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
     let (pending_update, downloaded_bytes) = {
         let state = app.state::<UpdateState>();
-        let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut mgr = state.0.lock().await;
         (mgr.pending_update.take(), mgr.downloaded_bytes.take())
     };
 
     if let (Some(update), Some(bytes)) = (pending_update, downloaded_bytes) {
         println!("[raft] Installing downloaded update package...");
-        let install_result = tokio::task::spawn_blocking(move || update.install(bytes))
-            .await
-            .map_err(|e| format!("Install task panicked: {e}"))?;
+        if let Err(e) = update.install(bytes) {
+            let err_msg = format!("Failed to install update: {e}");
+            eprintln!("[raft] {err_msg}");
+            let state = app.state::<UpdateState>();
+            let mut mgr = state.0.lock().await;
+            mgr.status = UpdateStatus::Error {
+                message: err_msg.clone(),
+            };
+            let _ = app.emit("raft://update-status", &mgr.status);
+            return Err(err_msg);
+        }
+        println!("[raft] Update installed successfully! Relaunching app...");
+    }
 
-        match install_result {
-            Ok(_) => {
-                println!("[raft] Update installed successfully! Stopping server and relaunching app...");
-                crate::server::stop_server();
-                app.restart();
-            }
-            Err(e) => {
-                let err_msg = format!("Failed to install update: {e}");
-                eprintln!("[raft] {err_msg}");
-                let state = app.state::<UpdateState>();
-                let mut mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
-                mgr.status = UpdateStatus::Error {
-                    message: err_msg.clone(),
-                };
-                let _ = app.emit("raft://update-status", &mgr.status);
-                Err(err_msg)
+    crate::server::stop_server();
+
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(curr_exe) = std::env::current_exe() {
+                let is_bundle = curr_exe.to_string_lossy().contains(".app/Contents/MacOS");
+                if is_bundle {
+                    let bundle_exists = curr_exe
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .and_then(|p| p.parent())
+                        .map(|b| b.exists())
+                        .unwrap_or(false);
+                    if !bundle_exists {
+                        let installed_app = std::path::Path::new("/Applications/Raft.app");
+                        if installed_app.exists() {
+                            println!("[raft] Relaunching /Applications/Raft.app...");
+                            let _ = std::process::Command::new("open")
+                                .arg("-a")
+                                .arg(installed_app)
+                                .spawn();
+                            std::process::exit(0);
+                        }
+                    }
+                }
             }
         }
-    } else {
-        Err("No downloaded update package ready to install.".to_string())
+        handle.restart();
+    });
+    Ok(())
+}
+
+fn get_updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let mut builder = app.updater_builder();
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(curr_exe) = std::env::current_exe() {
+            let is_bundle = curr_exe.to_string_lossy().contains(".app/Contents/MacOS");
+            if is_bundle {
+                let bundle_opt = curr_exe
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .and_then(|p| p.parent());
+                let bundle_exists = bundle_opt.map(|b| b.exists()).unwrap_or(false);
+                if !bundle_exists {
+                    let installed_app = std::path::PathBuf::from("/Applications/Raft.app/Contents/MacOS/raft");
+                    if installed_app.exists() {
+                        println!("[raft] Current running app bundle was deleted; targeting /Applications/Raft.app for update");
+                        builder = builder.executable_path(installed_app);
+                    } else {
+                        let path_str = bundle_opt.map(|b| b.display().to_string()).unwrap_or_default();
+                        return Err(format!(
+                            "Cannot update: Application bundle at '{path_str}' does not exist on disk. Please reinstall Raft into /Applications."
+                        ));
+                    }
+                }
+            }
+        }
     }
+    builder.build().map_err(|e| e.to_string())
 }
 
 pub fn start_background_updater(app: AppHandle) {
+    if crate::is_dev() {
+        println!("[raft] Development mode active: background updater disabled.");
+        return;
+    }
     tauri::async_runtime::spawn(async move {
         // Initial check 10 seconds after startup
         tokio::time::sleep(Duration::from_secs(10)).await;
-        check_and_download(&app, false, true).await;
+        check_and_download_silent(&app).await;
 
         // Recurring check every 1 hour
         let mut interval = tokio::time::interval(Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            check_and_download(&app, false, true).await;
+            check_and_download_silent(&app).await;
         }
     });
 }
@@ -334,14 +443,14 @@ pub fn start_background_updater(app: AppHandle) {
 // Tauri IPC Commands
 #[tauri::command]
 pub async fn check_for_updates_manual(app: AppHandle) -> Result<(), String> {
-    check_and_download(&app, true, false).await;
+    check_and_download_manual(&app).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_update_status(app: AppHandle) -> Result<UpdateStatus, String> {
     let state = app.state::<UpdateState>();
-    let mgr = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    let mgr = state.0.lock().await;
     Ok(mgr.status.clone())
 }
 
