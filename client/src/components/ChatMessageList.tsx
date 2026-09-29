@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
   FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap,
@@ -18,133 +19,13 @@ import {
   ImageLightboxModal,
   FilePreviewModal,
 } from './AttachmentModals';
+import {
+  stripAnsi,
+  parseLegacyActionLine,
+  parseLegacyThoughtToStepsSync as parseLegacyThoughtToSteps,
+} from '../utils/parserWorkerClient';
 
-export function stripAnsi(text: string): string {
-  if (!text) return '';
-  return text.replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
-}
-
-export function parseLegacyActionLine(line: string, index = 0): AgentStep | null {
-  if (!line || typeof line !== 'string') return null;
-  const clean = stripAnsi(line).trim();
-  if (!clean) return null;
-  const isArrow = clean.startsWith('→') || clean.startsWith('->');
-  const text = clean.replace(/^(?:→|->)\s*/, '').trim();
-  if (!text) return null;
-
-  if (text.startsWith('Run:')) {
-    const cmd = text.slice(4).trim();
-    return {
-      id: `legacy-${index}`,
-      type: 'tool',
-      toolName: 'run_command',
-      category: 'command',
-      title: `Run: ${cmd}`,
-      detail: cmd,
-      status: 'completed',
-    };
-  }
-  if (text.toLowerCase().startsWith('view file:') || text.toLowerCase().startsWith('view:')) {
-    const file = text.split(':')[1]?.trim() || '';
-    return {
-      id: `legacy-${index}`,
-      type: 'tool',
-      toolName: 'view_file',
-      category: 'file_read',
-      title: `View: ${file.split('/').pop() || file}`,
-      detail: file,
-      status: 'completed',
-    };
-  }
-  if (
-    text.toLowerCase().startsWith('edit file:') ||
-    text.toLowerCase().startsWith('edit:') ||
-    text.toLowerCase().startsWith('replace file:')
-  ) {
-    const file = text.split(':')[1]?.trim() || '';
-    return {
-      id: `legacy-${index}`,
-      type: 'tool',
-      toolName: 'replace_file_content',
-      category: 'file_write',
-      title: `Edit: ${file.split('/').pop() || file}`,
-      detail: file,
-      status: 'completed',
-    };
-  }
-  if (text.startsWith('Search:')) {
-    const q = text.slice(7).trim().replace(/^["']|["']$/g, '');
-    return {
-      id: `legacy-${index}`,
-      type: 'tool',
-      toolName: 'search',
-      category: 'search',
-      title: `Search: "${q}"`,
-      detail: q,
-      status: 'completed',
-    };
-  }
-  if (isArrow) {
-    const category = /grep|find|search/i.test(text)
-      ? 'search'
-      : /git|npm|cargo|bun|pnpm|python|yarn|docker|sh|bash/i.test(text)
-      ? 'command'
-      : /file|types\.|service\./i.test(text)
-      ? 'file_read'
-      : 'other';
-    return {
-      id: `legacy-${index}`,
-      type: 'tool',
-      toolName: text.split(' ')[0] || 'action',
-      category,
-      title: text,
-      detail: text,
-      status: 'completed',
-    };
-  }
-  return null;
-}
-
-export function parseLegacyThoughtToSteps(thoughtText: string): AgentStep[] {
-  if (!thoughtText || typeof thoughtText !== 'string') return [];
-  const lines = thoughtText.split('\n');
-  const steps: AgentStep[] = [];
-  let currentThought = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const parsedStep = parseLegacyActionLine(line, i);
-    if (parsedStep) {
-      if (currentThought.trim()) {
-        steps.push({
-          id: `thought-${steps.length}`,
-          type: 'thought',
-          category: 'other',
-          title: 'Reasoning',
-          status: 'completed',
-          thought: currentThought.trim(),
-        });
-        currentThought = '';
-      }
-      steps.push(parsedStep);
-    } else if (line.trim()) {
-      currentThought += (currentThought ? '\n' : '') + line;
-    }
-  }
-
-  if (currentThought.trim()) {
-    steps.push({
-      id: `thought-${steps.length}`,
-      type: 'thought',
-      category: 'other',
-      title: 'Reasoning',
-      status: 'completed',
-      thought: currentThought.trim(),
-    });
-  }
-
-  return steps;
-}
+export { stripAnsi, parseLegacyActionLine, parseLegacyThoughtToSteps };
 
 export interface DetectedSkillChip {
   name: string;
@@ -605,7 +486,7 @@ const StepCard: React.FC<{
   return (
     <div
       onClick={() => hasDetails && onToggleExpand()}
-      className={`group rounded-xl border p-2.5 transition-all text-xs ${
+      className={`group rounded-xl border p-2.5 transition-all text-xs cv-auto-card ${
         isRunning
           ? 'border-teal-500/40 bg-teal-500/5 dark:bg-teal-950/20 shadow-glow-sm ring-1 ring-teal-500/30'
           : isFailed
@@ -1027,6 +908,25 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
     };
   }, []);
 
+  // O(N) pre-pass to map each message to its preceding user prompt
+  const previousUserPrompts = useMemo(() => {
+    let lastPrompt = '';
+    return messages.map((m) => {
+      const current = lastPrompt;
+      if (m.role === 'user') {
+        lastPrompt = typeof m.content === 'string' ? m.content : '';
+      }
+      return current;
+    });
+  }, [messages]);
+
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => 140,
+    overscan: 5,
+  });
+
   useEffect(() => {
     isFirstRender.current = true;
   }, [taskId]);
@@ -1036,23 +936,30 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
 
     if (isStreaming) {
       const raf = requestAnimationFrame(() => {
-        if (listEndRef.current) {
-          listEndRef.current.scrollIntoView({ behavior: 'auto' });
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
         }
       });
       return () => cancelAnimationFrame(raf);
     } else {
-      const behavior = isFirstRender.current ? 'auto' : 'smooth';
-      isFirstRender.current = false;
-      listEndRef.current?.scrollIntoView({ behavior });
+      if (isFirstRender.current) {
+        isFirstRender.current = false;
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      } else {
+        if (messages.length > 0) {
+          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
+        }
+      }
     }
-  }, [messages, liveStreamingChunk, isStreaming]);
+  }, [messages, liveStreamingChunk, isStreaming, rowVirtualizer]);
 
   return (
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overscroll-y-contain [transform:translateZ(0)]"
+      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 min-w-0 overscroll-y-contain [transform:translateZ(0)]"
     >
       {messages.length === 0 && !isStreaming && (
         <div className="h-full flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
@@ -1066,31 +973,55 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
         </div>
       )}
 
-      {messages.map((msg, index) => {
-        const previousUserMsg = messages.slice(0, index).reverse().find((m) => m.role === 'user');
-        const previousUserPrompt = previousUserMsg ? previousUserMsg.content : '';
-        return (
-          <MessageItem
-            key={msg.id}
-            msg={msg}
-            isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
-            onCopy={handleCopy}
-            onPreviewImage={handlePreviewImage}
-            onPreviewFile={handlePreviewFile}
-            clis={clis}
-            currentCli={currentCli}
-            previousUserPrompt={previousUserPrompt}
-            onRetryPrompt={onRetryPrompt}
-            onSwitchCliAndRetry={onSwitchCliAndRetry}
-            onOpenSettings={onOpenSettings}
-            onAbort={onAbort}
-          />
-        );
-      })}
+      {messages.length > 0 && (
+        <div
+          style={{
+            height: `${rowVirtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const index = virtualRow.index;
+            const msg = messages[index];
+            if (!msg) return null;
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="pb-6"
+              >
+                <MessageItem
+                  msg={msg}
+                  isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
+                  onCopy={handleCopy}
+                  onPreviewImage={handlePreviewImage}
+                  onPreviewFile={handlePreviewFile}
+                  clis={clis}
+                  currentCli={currentCli}
+                  previousUserPrompt={previousUserPrompts[index] || ''}
+                  onRetryPrompt={onRetryPrompt}
+                  onSwitchCliAndRetry={onSwitchCliAndRetry}
+                  onOpenSettings={onOpenSettings}
+                  onAbort={onAbort}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Human-in-the-loop input card */}
       {activeHitl && (
-        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200 mt-4">
           <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-sky-500/10 border border-sky-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
             <Bot className="w-4 h-4 text-sky-500" />
           </div>
@@ -1102,7 +1033,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
 
       {/* Fallback streaming thinking indicator if no assistant message exists yet */}
       {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
+        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200 mt-4">
           <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
             <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
           </div>

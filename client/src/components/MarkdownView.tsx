@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import mermaid from 'mermaid';
 import {
   Copy,
   Check,
@@ -55,13 +54,27 @@ function useIsDarkMode() {
 // Global SVG cache for rendered Mermaid diagrams: avoids re-parsing/re-rendering on remount
 const mermaidSvgCache = new Map<string, string>();
 let lastInitializedTheme: 'dark' | 'light' | null = null;
+let mermaidModuleInstance: any = null;
+let mermaidModulePromise: Promise<any> | null = null;
 
-function ensureMermaidInitialized(isDark: boolean) {
+async function getMermaidInstance() {
+  if (mermaidModuleInstance) return mermaidModuleInstance;
+  if (!mermaidModulePromise) {
+    mermaidModulePromise = import('mermaid').then((m) => {
+      mermaidModuleInstance = m.default || m;
+      return mermaidModuleInstance;
+    });
+  }
+  return mermaidModulePromise;
+}
+
+async function ensureMermaidInitialized(isDark: boolean) {
+  const m = await getMermaidInstance();
   const currentTheme = isDark ? 'dark' : 'light';
-  if (lastInitializedTheme === currentTheme) return;
+  if (lastInitializedTheme === currentTheme) return m;
   lastInitializedTheme = currentTheme;
 
-  mermaid.initialize({
+  m.initialize({
     startOnLoad: false,
     theme: isDark ? 'dark' : 'default',
     securityLevel: 'loose',
@@ -88,6 +101,7 @@ function ensureMermaidInitialized(isDark: boolean) {
           tertiaryColor: '#ffffff',
         },
   });
+  return m;
 }
 
 /**
@@ -131,7 +145,7 @@ export const CodeBlockItem: React.FC<{
   };
 
   return (
-    <div className="my-2.5 rounded-2xl border border-cozy-border/80 bg-cozy-bg/95 overflow-hidden shadow-soft-sm font-mono text-xs max-w-full">
+    <div className="my-2.5 rounded-2xl border border-cozy-border/80 bg-cozy-bg/95 overflow-hidden shadow-soft-sm font-mono text-xs max-w-full cv-auto-code">
       <div className="flex items-center justify-between px-3.5 py-2 bg-cozy-subtle/70 border-b border-cozy-border/60 text-[11px] text-cozy-muted">
         <span className="flex items-center gap-1.5 font-medium">
           <Terminal className="w-3.5 h-3.5 text-teal-500" />
@@ -211,13 +225,13 @@ export const MermaidBlock: React.FC<{
     const currentSeq = ++renderSeqRef.current;
 
     const timer = setTimeout(async () => {
-      ensureMermaidInitialized(isDark);
       const renderId = `mermaid-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
       const sandbox = getMermaidSandbox();
 
       try {
         setIsRendering(true);
-        const { svg: renderedSvg } = await mermaid.render(renderId, clean, sandbox || undefined);
+        const m = await ensureMermaidInitialized(isDark);
+        const { svg: renderedSvg } = await m.render(renderId, clean, sandbox || undefined);
         if (renderSeqRef.current === currentSeq) {
           mermaidSvgCache.set(currentKey, renderedSvg);
           setSvg(renderedSvg);

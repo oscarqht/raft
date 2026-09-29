@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.14.13",
     "@tldraw/tldraw": "^5.4.2",
     "ansi-to-react": "^6.2.6",
     "frimousse": "^0.4.0",

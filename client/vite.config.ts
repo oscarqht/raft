@@ -56,6 +56,37 @@ const host = resolveHost();
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    target: 'esnext',
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@tldraw')) {
+              return 'vendor-tldraw';
+            }
+            if (id.includes('mermaid') || id.includes('cytoscape') || id.includes('dagre') || id.includes('cose-bilkent')) {
+              return 'vendor-mermaid';
+            }
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('react-markdown') || id.includes('remark-') || id.includes('micromark') || id.includes('unist-') || id.includes('mdast-')) {
+              return 'vendor-markdown';
+            }
+            if (id.includes('ansi-to-react')) {
+              return 'vendor-ansi';
+            }
+          }
+        },
+      },
+    },
+  },
   server: {
     host: true,
     port: 3300,
