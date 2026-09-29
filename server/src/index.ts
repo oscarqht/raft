@@ -2958,9 +2958,6 @@ if (!isTestEnv) {
     const initAlphaUrl = getSetting<string>('alpha_intelligence_api_url', '');
     if (initAlphaUrl) {
       alphaDeviceService.updateBaseUrlFromApiUrl(initAlphaUrl);
-      alphaDeviceService.connect().catch((err) => {
-        console.warn('[AlphaDevice] Initial connection warning:', err);
-      });
     }
   });
 }

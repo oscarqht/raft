@@ -155,12 +155,14 @@ export class AlphaDeviceService extends EventEmitter {
       this.reconnectTimer = null;
     }
     if (this.socket) {
+      const oldSocket = this.socket;
+      this.socket = null;
       try {
-        this.socket.close(1000, 'User disconnect');
+        oldSocket.removeAllListeners();
+        oldSocket.close(1000, 'User disconnect');
       } catch {
         // ignore
       }
-      this.socket = null;
     }
     this.status = 'disconnected';
     this.notifyStatusChange();
@@ -218,7 +220,7 @@ export class AlphaDeviceService extends EventEmitter {
     }
   }
 
-  public async connect(): Promise<void> {
+  public async connect(force = false): Promise<void> {
     if (this.stopped || !this.baseUrl) {
       return;
     }
@@ -226,6 +228,22 @@ export class AlphaDeviceService extends EventEmitter {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+
+    // Guard against duplicate connection attempts while already connected or connecting
+    if (!force && this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+      console.log(`[AlphaDevice] Already connected or connecting (state=${this.socket.readyState}), skipping connect()`);
+      return;
+    }
+
+    // Clean up any old socket before opening a new one
+    if (this.socket) {
+      const oldSocket = this.socket;
+      this.socket = null;
+      try {
+        oldSocket.removeAllListeners();
+        oldSocket.close(1000, 'Replaced by new connection');
+      } catch {}
     }
 
     this.status = 'connecting';
@@ -261,6 +279,7 @@ export class AlphaDeviceService extends EventEmitter {
       this.socket = socket;
 
       socket.on('open', () => {
+        if (this.socket !== socket) return;
         console.log('[AlphaDevice] WebSocket opened (authenticated)');
         this.status = 'connected';
         if (tokens.clientId) {
@@ -272,26 +291,30 @@ export class AlphaDeviceService extends EventEmitter {
       });
 
       socket.on('message', (raw) => {
-        this.handleMessage(raw.toString(), tokens);
+        this.handleMessage(raw.toString(), tokens, socket);
       });
 
       socket.on('close', (code, reason) => {
         console.log(`[AlphaDevice] Closed (${code}): ${reason}`);
-        this.socket = null;
-        if (code === 4001 || code === 4003 || code === 4401) {
-          // Token expired or invalid, switch to setup
-          this.connectSetup();
-        } else {
-          this.status = 'disconnected';
-          this.notifyStatusChange();
-          this.scheduleReconnect();
+        if (this.socket === socket) {
+          this.socket = null;
+          if (code === 4001 || code === 4003 || code === 4401) {
+            // Token expired or invalid, switch to setup
+            this.connectSetup();
+          } else {
+            this.status = 'disconnected';
+            this.notifyStatusChange();
+            this.scheduleReconnect();
+          }
         }
       });
 
       socket.on('error', (err) => {
         console.error('[AlphaDevice] Socket error:', err.message);
-        this.lastError = err.message;
-        this.notifyStatusChange();
+        if (this.socket === socket) {
+          this.lastError = err.message;
+          this.notifyStatusChange();
+        }
       });
     } catch (err: any) {
       console.error('[AlphaDevice] Connection failed:', err);
@@ -311,6 +334,7 @@ export class AlphaDeviceService extends EventEmitter {
       this.socket = socket;
 
       socket.on('open', () => {
+        if (this.socket !== socket) return;
         console.log('[AlphaDevice] Setup WebSocket opened, sending init');
         socket.send(
           JSON.stringify({
@@ -332,21 +356,25 @@ export class AlphaDeviceService extends EventEmitter {
       });
 
       socket.on('message', (raw) => {
-        this.handleMessage(raw.toString(), null);
+        this.handleMessage(raw.toString(), null, socket);
       });
 
       socket.on('close', (code, reason) => {
         console.log(`[AlphaDevice] Setup closed (${code}): ${reason}`);
-        this.socket = null;
-        this.status = 'disconnected';
-        this.notifyStatusChange();
-        this.scheduleReconnect();
+        if (this.socket === socket) {
+          this.socket = null;
+          this.status = 'disconnected';
+          this.notifyStatusChange();
+          this.scheduleReconnect();
+        }
       });
 
       socket.on('error', (err) => {
         console.error('[AlphaDevice] Setup error:', err.message);
-        this.lastError = err.message;
-        this.notifyStatusChange();
+        if (this.socket === socket) {
+          this.lastError = err.message;
+          this.notifyStatusChange();
+        }
       });
     } catch (err: any) {
       console.error('[AlphaDevice] Setup connection failed:', err);
@@ -374,7 +402,7 @@ export class AlphaDeviceService extends EventEmitter {
     }
   }
 
-  private async handleMessage(raw: string, currentTokens: AlphaTokenRecord | null): Promise<void> {
+  private async handleMessage(raw: string, currentTokens: AlphaTokenRecord | null, socket: WebSocket): Promise<void> {
     try {
       const data = JSON.parse(raw);
 
@@ -424,18 +452,21 @@ export class AlphaDeviceService extends EventEmitter {
 
       // Handle JSON-RPC 2.0 requests
       if (data.jsonrpc === '2.0' && data.method) {
-        await this.handleJsonRpc(data);
+        await this.handleJsonRpc(data, socket);
       }
     } catch (err) {
       console.error('[AlphaDevice] Error parsing message:', err, raw);
     }
   }
 
-  private async handleJsonRpc(req: { jsonrpc: '2.0'; id: any; method: string; params?: any }): Promise<void> {
+  private async handleJsonRpc(
+    req: { jsonrpc: '2.0'; id: any; method: string; params?: any },
+    socket: WebSocket
+  ): Promise<void> {
     const { id, method, params } = req;
 
     if (method === 'tools/list') {
-      this.sendResult(id, { tools: this.getToolDefinitions() });
+      this.sendResult(socket, id, { tools: this.getToolDefinitions() });
       return;
     }
 
@@ -446,6 +477,8 @@ export class AlphaDeviceService extends EventEmitter {
       console.log(`[AlphaDevice] Calling tool: ${toolName}`, toolArgs);
 
       if (toolName === 'get_info') {
+        const home = homedir();
+        const effectiveCwd = this.activeWorktreePath || home;
         const info = {
           deviceInfo: {
             platform: process.platform,
@@ -455,7 +488,10 @@ export class AlphaDeviceService extends EventEmitter {
             arch: process.arch,
             hostname: os.hostname(),
             nodeVersion: process.version,
-            cwd: this.activeWorktreePath || process.cwd(),
+            cwd: effectiveCwd,
+            homeDir: home,
+            downloadsDir: join(home, 'Downloads'),
+            user: os.userInfo?.().username || process.env.USER || '',
           },
           runtime: {
             defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
@@ -463,7 +499,7 @@ export class AlphaDeviceService extends EventEmitter {
           },
           accessScope: {
             unrestricted: true,
-            roots: [this.activeWorktreePath || process.cwd()],
+            roots: [effectiveCwd, home],
           },
           commandWhitelist: {
             unrestricted: true,
@@ -471,8 +507,9 @@ export class AlphaDeviceService extends EventEmitter {
           },
           currentWorktree: this.activeWorktreePath,
         };
-        this.sendResult(id, {
-          content: [{ type: 'text', text: JSON.stringify(info) }],
+        this.sendResult(socket, id, {
+          structuredContent: info,
+          content: [{ type: 'text', text: JSON.stringify(info, null, 2) }],
           isError: false,
         });
         return;
@@ -481,12 +518,13 @@ export class AlphaDeviceService extends EventEmitter {
       if (toolName === 'run_command') {
         try {
           const result = await this.executeCommand(toolArgs);
-          this.sendResult(id, {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
+          this.sendResult(socket, id, {
+            structuredContent: result,
+            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             isError: false,
           });
         } catch (err: any) {
-          this.sendResult(id, {
+          this.sendResult(socket, id, {
             content: [{ type: 'text', text: err.message || 'Execution error' }],
             isError: true,
           });
@@ -494,7 +532,7 @@ export class AlphaDeviceService extends EventEmitter {
         return;
       }
 
-      this.sendResult(id, {
+      this.sendResult(socket, id, {
         content: [{ type: 'text', text: `Unknown tool: ${toolName}` }],
         isError: true,
       });
@@ -502,33 +540,39 @@ export class AlphaDeviceService extends EventEmitter {
     }
 
     if (method === 'ping') {
-      this.sendResult(id, { pong: true });
+      this.sendResult(socket, id, { pong: true });
       return;
     }
 
-    this.sendError(id, -32601, `Method not found: ${method}`);
+    this.sendError(socket, id, -32601, `Method not found: ${method}`);
   }
 
-  private sendResult(id: any, result: any): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        result,
-      })
-    );
+  private sendResult(socket: WebSocket, id: any, result: any): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.error(`[AlphaDevice] Failed to send result for req id=${id}: socket not open (state=${socket?.readyState})`);
+      return;
+    }
+    const payload = JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      result,
+    });
+    console.log(`[AlphaDevice] Sent JSON-RPC result for req id=${id}`);
+    socket.send(payload);
   }
 
-  private sendError(id: any, code: number, message: string): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        error: { code, message },
-      })
-    );
+  private sendError(socket: WebSocket, id: any, code: number, message: string): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      console.error(`[AlphaDevice] Failed to send error for req id=${id}: socket not open (state=${socket?.readyState})`);
+      return;
+    }
+    const payload = JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      error: { code, message },
+    });
+    console.log(`[AlphaDevice] Sent JSON-RPC error for req id=${id}: ${message}`);
+    socket.send(payload);
   }
 
   private getToolDefinitions() {
@@ -592,8 +636,17 @@ export class AlphaDeviceService extends EventEmitter {
     const rawCmd = args.command?.trim();
     if (!rawCmd) throw new Error('command must be a non-empty string.');
 
-    const effectiveCwd = args.cwd?.trim() || this.activeWorktreePath || process.cwd();
-    const cmdArgs = Array.isArray(args.args) ? args.args : [];
+    let effectiveCwd = args.cwd?.trim() || this.activeWorktreePath || homedir();
+    if (effectiveCwd === '~' || effectiveCwd.startsWith('~/')) {
+      effectiveCwd = join(homedir(), effectiveCwd.replace(/^~(?:\/|$)/, ''));
+    }
+
+    const cmdArgs = (Array.isArray(args.args) ? args.args : []).map((arg) => {
+      if (typeof arg === 'string' && (arg === '~' || arg.startsWith('~/'))) {
+        return join(homedir(), arg.replace(/^~(?:\/|$)/, ''));
+      }
+      return String(arg);
+    });
     const timeout = Math.min(Math.max(1000, args.timeoutMs || DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
 
     const startTime = Date.now();
