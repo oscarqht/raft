@@ -1488,18 +1488,22 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400 shadow-soft-sm'
                     : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm'
                 }`}
-                title="Click to configure agent, model, and reasoning effort"
+                title={tabCli?.toLowerCase() === 'alpha' ? 'Click to configure agent' : 'Click to configure agent, model, and reasoning effort'}
               >
                 <Sliders className="w-3.5 h-3.5 text-teal-500 shrink-0" />
                 <span className="font-semibold text-teal-600 dark:text-teal-400 shrink-0">{tabCli || 'agy'}</span>
-                <span className="text-cozy-muted/50 shrink-0">·</span>
-                <span className="truncate max-w-[120px] sm:max-w-[200px]">
-                  {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
-                </span>
-                {tabEffort && (
+                {tabCli?.toLowerCase() !== 'alpha' && (
                   <>
                     <span className="text-cozy-muted/50 shrink-0">·</span>
-                    <span className="text-cozy-muted capitalize shrink-0">{tabEffort}</span>
+                    <span className="truncate max-w-[120px] sm:max-w-[200px]">
+                      {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
+                    </span>
+                    {tabEffort && (
+                      <>
+                        <span className="text-cozy-muted/50 shrink-0">·</span>
+                        <span className="text-cozy-muted capitalize shrink-0">{tabEffort}</span>
+                      </>
+                    )}
                   </>
                 )}
                 <ChevronDown className={`w-3.5 h-3.5 text-cozy-muted group-hover:text-teal-500 ml-0.5 transition-transform shrink-0 ${showConfig ? 'rotate-180 text-teal-500' : ''}`} />
@@ -1514,7 +1518,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
                     <span className="flex items-center gap-2 text-cozy-text font-semibold">
                       <Sliders className="w-3.5 h-3.5 text-teal-500" />
-                      Agent & Model Configuration
+                      {tabCli?.toLowerCase() === 'alpha' ? 'Agent Configuration' : 'Agent & Model Configuration'}
                     </span>
                     <button
                       type="button"
@@ -1546,48 +1550,52 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       </select>
                     </div>
 
-                    <div className="flex items-center space-x-2 flex-1 min-w-[160px]">
-                      <span className="font-medium text-cozy-text shrink-0">Model:</span>
-                      <select
-                        value={tabModel}
-                        onChange={(e) => handleModelChange(e.target.value)}
-                        disabled={availableModels.length === 0}
-                        className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate disabled:opacity-60"
-                      >
-                        {availableModels.length === 0 ? (
-                          <option value={tabModel || ''}>
-                            {tabModel || 'Loading models...'}
-                          </option>
-                        ) : (
-                          availableModels.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name}
-                            </option>
-                          ))
-                        )}
-                      </select>
-                    </div>
+                    {tabCli?.toLowerCase() !== 'alpha' && (
+                      <>
+                        <div className="flex items-center space-x-2 flex-1 min-w-[160px]">
+                          <span className="font-medium text-cozy-text shrink-0">Model:</span>
+                          <select
+                            value={tabModel}
+                            onChange={(e) => handleModelChange(e.target.value)}
+                            disabled={availableModels.length === 0}
+                            className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate disabled:opacity-60"
+                          >
+                            {availableModels.length === 0 ? (
+                              <option value={tabModel || ''}>
+                                {tabModel || 'Loading models...'}
+                              </option>
+                            ) : (
+                              availableModels.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.name}
+                                </option>
+                              ))
+                            )}
+                          </select>
+                        </div>
 
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <span className="font-medium text-cozy-text shrink-0">Effort:</span>
-                      <select
-                        value={tabEffort}
-                        onChange={(e) => handleEffortChange(e.target.value)}
-                        className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
-                      >
-                        {(() => {
-                          const current = availableModels.find((m) => m.id === tabModel);
-                          const efforts = current?.reasoningEfforts && current.reasoningEfforts.length > 0
-                            ? current.reasoningEfforts
-                            : ['none', 'low', 'medium', 'high', 'max'];
-                          return efforts.map((eff) => (
-                            <option key={eff} value={eff}>
-                              {eff.charAt(0).toUpperCase() + eff.slice(1)}
-                            </option>
-                          ));
-                        })()}
-                      </select>
-                    </div>
+                        <div className="flex items-center space-x-2 shrink-0">
+                          <span className="font-medium text-cozy-text shrink-0">Effort:</span>
+                          <select
+                            value={tabEffort}
+                            onChange={(e) => handleEffortChange(e.target.value)}
+                            className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
+                          >
+                            {(() => {
+                              const current = availableModels.find((m) => m.id === tabModel);
+                              const efforts = current?.reasoningEfforts && current.reasoningEfforts.length > 0
+                                ? current.reasoningEfforts
+                                : ['none', 'low', 'medium', 'high', 'max'];
+                              return efforts.map((eff) => (
+                                <option key={eff} value={eff}>
+                                  {eff.charAt(0).toUpperCase() + eff.slice(1)}
+                                </option>
+                              ));
+                            })()}
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

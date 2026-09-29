@@ -4,7 +4,7 @@ import { app } from './index.js';
 import { db } from './db.js';
 import { normalizeAlphaApiUrl, isDeviceSelectionInput, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
 import { getAvailableClis, getModelsForCli } from './agentRunner.js';
-import { alphaDeviceService } from './alphaDeviceService.js';
+import { alphaDeviceService, isTokenExpiring } from './alphaDeviceService.js';
 
 test('normalizes Alpha Intelligence API URLs correctly', () => {
   assert.equal(
@@ -171,6 +171,79 @@ test('buildAlphaPromptWithContext formats cleanly without project system prompt'
   assert.ok(!result.includes('[Project Instructions]'));
   assert.ok(result.includes('[Workspace Execution Guidance]'));
   assert.ok(result.includes('[User Request]\nShow files'));
+});
+
+test('isTokenExpiring correctly identifies expired or near-expiry tokens', () => {
+  const now = Math.floor(Date.now() / 1000);
+  // Token expired in the past
+  assert.equal(isTokenExpiring(now - 100), true);
+  // Token expiring in 2 minutes (within 300s window)
+  assert.equal(isTokenExpiring(now + 120), true);
+  // Token expiring in 10 minutes (outside 300s window)
+  assert.equal(isTokenExpiring(now + 600), false);
+  // Missing expiry
+  assert.equal(isTokenExpiring(undefined), false);
+});
+
+test('alphaDeviceService truncates large command output to prevent exceeding 1MB limit', async () => {
+  // Command that prints 500,000 bytes of output
+  const res = await (alphaDeviceService as any).executeCommand({
+    command: 'node -e "process.stdout.write(Buffer.alloc(500000, 65).toString())"',
+  });
+
+  assert.equal(res.exitCode, 0);
+  assert.ok(res.stdout.length <= 400000, `Output should be clamped, got ${res.stdout.length}`);
+  assert.ok(res.stdout.includes('[stdout truncated: exceeded maximum capture limit'));
+});
+
+test('alphaDeviceService refreshes token via refresh endpoint', async () => {
+  alphaDeviceService.disconnect();
+  const http = await import('node:http');
+  let refreshCalled = false;
+  let receivedRefreshToken = '';
+
+  const server = http.createServer((req, res) => {
+    if (req.url === '/webapi/client/auth/refresh' && req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        refreshCalled = true;
+        const parsed = JSON.parse(body);
+        receivedRefreshToken = parsed.refreshToken;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          token: 'refreshed-jwt-access-token',
+          refreshToken: 'refreshed-refresh-token',
+          tokenExpiresAt: Math.floor(Date.now() / 1000) + 7200,
+          refreshTokenExpiresAt: Math.floor(Date.now() / 1000) + 2592000,
+          client: {
+            clientId: 'client_test123',
+            name: 'Raft Test Client',
+          },
+        }));
+      });
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as any).port;
+  (alphaDeviceService as any).baseUrl = `http://localhost:${port}`;
+
+  try {
+    const refreshed = await alphaDeviceService.refreshTokens('old-refresh-token-xyz');
+    assert.ok(refreshed);
+    assert.equal(refreshCalled, true);
+    assert.equal(receivedRefreshToken, 'old-refresh-token-xyz');
+    assert.equal(refreshed.token, 'refreshed-jwt-access-token');
+    assert.equal(refreshed.refreshToken, 'refreshed-refresh-token');
+    assert.equal(alphaDeviceService.getClientId(), 'client_test123');
+  } finally {
+    server.close();
+    (alphaDeviceService as any).baseUrl = '';
+  }
 });
 
 test.after(() => {

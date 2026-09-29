@@ -258,8 +258,12 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <span className="w-2 h-2 rounded-full bg-teal-400 shadow-glow-ocean"></span>
             <span className="font-semibold text-teal-600 dark:text-teal-400">{settings.agent_cli}</span>
-            <span className="text-cozy-border/80 hidden sm:inline">•</span>
-            <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
+            {settings.agent_cli?.toLowerCase() !== 'alpha' && (
+              <>
+                <span className="text-cozy-border/80 hidden sm:inline">•</span>
+                <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
+              </>
+            )}
           </Link>
         )}
 

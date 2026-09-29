@@ -128,6 +128,14 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
     alphaDeviceService.setActiveWorktree(worktreePath);
   }
 
+  // Ensure local terminal device bridge is connected before executing turn
+  if (!alphaDeviceService.getStatus().connected) {
+    console.log('[AlphaRunner] Local device not connected, attempting to connect before starting turn...');
+    await alphaDeviceService.ensureConnected(5000).catch((err) => {
+      console.warn('[AlphaRunner] Pre-turn device connect check failed:', err);
+    });
+  }
+
   const runUrl = normalizeAlphaApiUrl(apiUrl);
   console.log(`[AlphaRunner] Starting turn at ${runUrl}, convId=${conversationId}`);
 

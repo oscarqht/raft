@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -50,6 +51,14 @@ function extractEmailFromJwt(token?: string): string | undefined {
 const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 600_000;
 const RECONNECT_DELAY_MS = 5_000;
+const DEFAULT_REFRESH_SKEW_SECONDS = 300; // 5 minutes before expiry
+const MAX_STREAM_CAPTURE_BYTES = 350_000; // 350KB safe buffer per stream
+const MAX_PAYLOAD_SAFE_BYTES = 900_000; // Hard ceiling below remote 1,048,576 byte limit
+
+export function isTokenExpiring(expiresAt?: number, skewSeconds = DEFAULT_REFRESH_SKEW_SECONDS): boolean {
+  if (!expiresAt) return false;
+  return expiresAt - skewSeconds <= Math.floor(Date.now() / 1000);
+}
 
 export class AlphaDeviceService extends EventEmitter {
   private socket: WebSocket | null = null;
@@ -61,6 +70,7 @@ export class AlphaDeviceService extends EventEmitter {
   private lastError?: string;
   private lastConnectedAt?: number;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
   private activeWorktreePath: string = process.cwd();
   private baseUrl: string = '';
   private stopped: boolean = false;
@@ -103,14 +113,14 @@ export class AlphaDeviceService extends EventEmitter {
   }
 
   private populateFromTokens(tokens: AlphaTokenRecord): void {
-    if (tokens.clientId && !this.clientId) {
+    if (tokens.clientId) {
       this.clientId = tokens.clientId;
     }
-    if (tokens.client?.name && !this.clientName) {
+    if (tokens.client?.name) {
       this.clientName = tokens.client.name;
     }
     const email = extractEmailFromJwt(tokens.token) || extractEmailFromJwt(tokens.refreshToken);
-    if (email && !this.userEmail) {
+    if (email) {
       this.userEmail = email;
     }
   }
@@ -150,22 +160,170 @@ export class AlphaDeviceService extends EventEmitter {
 
   public disconnect(): void {
     this.stopped = true;
+    this.refreshPromise = null;
+    this.currentRefreshKey = null;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
     }
     if (this.socket) {
       const oldSocket = this.socket;
       this.socket = null;
       try {
         oldSocket.removeAllListeners();
-        oldSocket.close(1000, 'User disconnect');
+        oldSocket.on('error', () => {});
+        if (oldSocket.readyState === WebSocket.OPEN) {
+          oldSocket.close(1000, 'User disconnect');
+        } else {
+          oldSocket.terminate();
+        }
       } catch {
         // ignore
       }
     }
     this.status = 'disconnected';
     this.notifyStatusChange();
+  }
+
+  private refreshPromise: Promise<AlphaTokenRecord | null> | null = null;
+  private currentRefreshKey: string | null = null;
+
+  public async refreshTokens(refreshToken: string): Promise<AlphaTokenRecord | null> {
+    if (!this.baseUrl || !refreshToken) {
+      return null;
+    }
+
+    const key = `${this.baseUrl}:${refreshToken}`;
+    if (this.refreshPromise && this.currentRefreshKey === key) {
+      return this.refreshPromise;
+    }
+
+    this.currentRefreshKey = key;
+    this.refreshPromise = this.doRefreshTokens(refreshToken).finally(() => {
+      if (this.currentRefreshKey === key) {
+        this.refreshPromise = null;
+        this.currentRefreshKey = null;
+      }
+    });
+
+    return this.refreshPromise;
+  }
+
+  private async doRefreshTokens(refreshToken: string): Promise<AlphaTokenRecord | null> {
+    if (!this.baseUrl) return null;
+    let refreshUrl: string;
+    try {
+      refreshUrl = new URL('/webapi/client/auth/refresh', this.baseUrl).toString();
+    } catch {
+      return null;
+    }
+    console.log(`[AlphaDevice] Refreshing tokens via ${refreshUrl}`);
+
+    try {
+      const response = await fetch(refreshUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.warn(`[AlphaDevice] Token refresh returned HTTP ${response.status}: ${errorText}`);
+        return null;
+      }
+
+      const data = (await response.json()) as any;
+      if (!data?.token) {
+        console.warn('[AlphaDevice] Token refresh response missing token field', data);
+        return null;
+      }
+
+      const newTokens: AlphaTokenRecord = {
+        clientId: data.client?.clientId || data.clientId || this.clientId,
+        client: data.client,
+        token: data.token,
+        refreshToken: data.refreshToken || refreshToken,
+        tokenExpiresAt: data.tokenExpiresAt || Math.floor(Date.now() / 1000) + 7200,
+        refreshTokenExpiresAt: data.refreshTokenExpiresAt || Math.floor(Date.now() / 1000) + 2592000,
+      };
+
+      this.populateFromTokens(newTokens);
+      await this.saveTokens(newTokens);
+      console.log(`[AlphaDevice] Successfully refreshed tokens for clientId=${newTokens.clientId}`);
+      this.scheduleTokenRefresh(newTokens);
+      return newTokens;
+    } catch (err: any) {
+      console.error('[AlphaDevice] Failed to refresh tokens:', err.message);
+      return null;
+    }
+  }
+
+  private scheduleTokenRefresh(tokens: AlphaTokenRecord): void {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    if (!tokens.tokenExpiresAt || !tokens.refreshToken) return;
+
+    const refreshAtMs = (tokens.tokenExpiresAt - DEFAULT_REFRESH_SKEW_SECONDS) * 1000;
+    const delayMs = Math.max(10_000, refreshAtMs - Date.now());
+    console.log(`[AlphaDevice] Scheduling next token refresh in ${Math.round(delayMs / 1000)}s`);
+
+    this.refreshTimer = setTimeout(async () => {
+      this.refreshTimer = null;
+      if (this.stopped || !tokens.refreshToken) return;
+      console.log('[AlphaDevice] Proactive token refresh timer fired');
+      const refreshed = await this.refreshTokens(tokens.refreshToken);
+      if (refreshed?.token && this.socket && this.socket.readyState === WebSocket.OPEN) {
+        // Reconnect seamlessly with new token
+        this.connect(true);
+      }
+    }, delayMs);
+    this.refreshTimer.unref?.();
+  }
+
+  public async ensureConnected(timeoutMs = 10_000): Promise<boolean> {
+    if (this.status === 'connected' && this.socket && this.socket.readyState === WebSocket.OPEN) {
+      return true;
+    }
+    if (!this.baseUrl) {
+      return false;
+    }
+
+    this.stopped = false;
+    await this.connect();
+
+    if (this.status === 'connected') {
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.off('status_change', checkStatus);
+        resolve(this.status === 'connected');
+      }, timeoutMs);
+
+      const checkStatus = (status: AlphaDeviceStatus) => {
+        if (status.status === 'connected') {
+          clearTimeout(timer);
+          this.off('status_change', checkStatus);
+          resolve(true);
+        } else if (status.status === 'disconnected' || status.status === 'needs_auth') {
+          clearTimeout(timer);
+          this.off('status_change', checkStatus);
+          resolve(false);
+        }
+      };
+
+      this.on('status_change', checkStatus);
+    });
   }
 
   private getTokenPaths(): string[] {
@@ -242,7 +400,12 @@ export class AlphaDeviceService extends EventEmitter {
       this.socket = null;
       try {
         oldSocket.removeAllListeners();
-        oldSocket.close(1000, 'Replaced by new connection');
+        oldSocket.on('error', () => {});
+        if (oldSocket.readyState === WebSocket.OPEN) {
+          oldSocket.close(1000, 'Replaced by new connection');
+        } else {
+          oldSocket.terminate();
+        }
       } catch {}
     }
 
@@ -250,8 +413,20 @@ export class AlphaDeviceService extends EventEmitter {
     this.lastError = undefined;
     this.notifyStatusChange();
 
-    const tokens = await this.loadTokens();
+    let tokens = await this.loadTokens();
     if (tokens?.token) {
+      // Check if access token is expired or expiring soon, refresh if possible
+      if (tokens.refreshToken && isTokenExpiring(tokens.tokenExpiresAt)) {
+        console.log('[AlphaDevice] Stored token expired or expiring soon, refreshing before connect...');
+        const refreshed = await this.refreshTokens(tokens.refreshToken);
+        if (refreshed?.token) {
+          tokens = refreshed;
+        } else {
+          console.warn('[AlphaDevice] Token refresh failed, falling back to setup mode');
+          this.connectSetup();
+          return;
+        }
+      }
       this.connectAuthenticated(tokens);
     } else {
       this.connectSetup();
@@ -268,6 +443,7 @@ export class AlphaDeviceService extends EventEmitter {
 
   private connectAuthenticated(tokens: AlphaTokenRecord): void {
     const wsUrl = this.buildWsUrl('/webapi/client/ws');
+    if (!wsUrl) return;
     console.log(`[AlphaDevice] Connecting authenticated to ${wsUrl}`);
 
     try {
@@ -288,10 +464,30 @@ export class AlphaDeviceService extends EventEmitter {
         this.lastConnectedAt = Date.now();
         this.lastError = undefined;
         this.notifyStatusChange();
+        this.scheduleTokenRefresh(tokens);
       });
 
       socket.on('message', (raw) => {
         this.handleMessage(raw.toString(), tokens, socket);
+      });
+
+      socket.on('unexpected-response', (req, res) => {
+        console.error(`[AlphaDevice] Handshake rejected with HTTP ${res.statusCode} ${res.statusMessage}`);
+        res.resume();
+        try {
+          socket.terminate();
+        } catch {}
+        if (this.socket === socket) {
+          this.socket = null;
+          if (res.statusCode === 401 || res.statusCode === 403) {
+            void this.handleAuthFailure(tokens);
+          } else {
+            this.lastError = `Server returned HTTP ${res.statusCode} ${res.statusMessage}`;
+            this.status = 'disconnected';
+            this.notifyStatusChange();
+            this.scheduleReconnect();
+          }
+        }
       });
 
       socket.on('close', (code, reason) => {
@@ -299,8 +495,13 @@ export class AlphaDeviceService extends EventEmitter {
         if (this.socket === socket) {
           this.socket = null;
           if (code === 4001 || code === 4003 || code === 4401) {
-            // Token expired or invalid, switch to setup
-            this.connectSetup();
+            // Token expired or invalid, switch to refresh / setup
+            void this.handleAuthFailure(tokens);
+          } else if (code === 1009) {
+            this.lastError = 'Message payload exceeded server size limit';
+            this.status = 'disconnected';
+            this.notifyStatusChange();
+            this.scheduleReconnect();
           } else {
             this.status = 'disconnected';
             this.notifyStatusChange();
@@ -313,6 +514,10 @@ export class AlphaDeviceService extends EventEmitter {
         console.error('[AlphaDevice] Socket error:', err.message);
         if (this.socket === socket) {
           this.lastError = err.message;
+          if (this.status === 'connecting') {
+            this.status = 'disconnected';
+            this.scheduleReconnect();
+          }
           this.notifyStatusChange();
         }
       });
@@ -325,8 +530,24 @@ export class AlphaDeviceService extends EventEmitter {
     }
   }
 
+  private async handleAuthFailure(tokens: AlphaTokenRecord): Promise<void> {
+    if (this.stopped) return;
+    if (tokens.refreshToken) {
+      console.log('[AlphaDevice] Authentication failed, attempting token refresh...');
+      const refreshed = await this.refreshTokens(tokens.refreshToken);
+      if (refreshed?.token) {
+        console.log('[AlphaDevice] Token refreshed after auth failure, reconnecting...');
+        this.connectAuthenticated(refreshed);
+        return;
+      }
+    }
+    console.warn('[AlphaDevice] Unable to refresh token, switching to setup mode');
+    this.connectSetup();
+  }
+
   private connectSetup(): void {
     const wsUrl = this.buildWsUrl('/webapi/client/auth/ws');
+    if (!wsUrl) return;
     console.log(`[AlphaDevice] Connecting setup to ${wsUrl}`);
 
     try {
@@ -359,6 +580,21 @@ export class AlphaDeviceService extends EventEmitter {
         this.handleMessage(raw.toString(), null, socket);
       });
 
+      socket.on('unexpected-response', (req, res) => {
+        console.error(`[AlphaDevice] Setup handshake rejected with HTTP ${res.statusCode} ${res.statusMessage}`);
+        res.resume();
+        try {
+          socket.terminate();
+        } catch {}
+        if (this.socket === socket) {
+          this.socket = null;
+          this.lastError = `Setup returned HTTP ${res.statusCode} ${res.statusMessage}`;
+          this.status = 'disconnected';
+          this.notifyStatusChange();
+          this.scheduleReconnect();
+        }
+      });
+
       socket.on('close', (code, reason) => {
         console.log(`[AlphaDevice] Setup closed (${code}): ${reason}`);
         if (this.socket === socket) {
@@ -373,6 +609,10 @@ export class AlphaDeviceService extends EventEmitter {
         console.error('[AlphaDevice] Setup error:', err.message);
         if (this.socket === socket) {
           this.lastError = err.message;
+          if (this.status === 'connecting') {
+            this.status = 'disconnected';
+            this.scheduleReconnect();
+          }
           this.notifyStatusChange();
         }
       });
@@ -386,9 +626,14 @@ export class AlphaDeviceService extends EventEmitter {
   }
 
   private buildWsUrl(path: string): string {
-    const url = new URL(this.baseUrl);
-    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${url.host}${path}`;
+    if (!this.baseUrl) return '';
+    try {
+      const url = new URL(this.baseUrl);
+      const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${protocol}//${url.host}${path}`;
+    } catch {
+      return '';
+    }
   }
 
   private withLoginSuccessRedirect(loginUrl: string): string {
@@ -552,12 +797,48 @@ export class AlphaDeviceService extends EventEmitter {
       console.error(`[AlphaDevice] Failed to send result for req id=${id}: socket not open (state=${socket?.readyState})`);
       return;
     }
-    const payload = JSON.stringify({
+
+    let finalResult = result;
+    let payload = JSON.stringify({
       jsonrpc: '2.0',
       id,
-      result,
+      result: finalResult,
     });
-    console.log(`[AlphaDevice] Sent JSON-RPC result for req id=${id}`);
+
+    // Guard against exceeding the remote server's 1MB (1,048,576 byte) read limit
+    if (Buffer.byteLength(payload, 'utf8') > MAX_PAYLOAD_SAFE_BYTES) {
+      console.warn(`[AlphaDevice] Result payload size (${Buffer.byteLength(payload, 'utf8')} bytes) exceeds safe limit (${MAX_PAYLOAD_SAFE_BYTES} bytes), trimming content`);
+      if (finalResult && typeof finalResult === 'object') {
+        const sc = finalResult.structuredContent ? { ...finalResult.structuredContent } : undefined;
+        if (sc) {
+          if (typeof sc.stdout === 'string' && sc.stdout.length > 200_000) {
+            sc.stdout = sc.stdout.slice(0, 200_000) + '\n\n[stdout truncated to stay within 1MB message limit]';
+          }
+          if (typeof sc.stderr === 'string' && sc.stderr.length > 50_000) {
+            sc.stderr = sc.stderr.slice(0, 50_000) + '\n\n[stderr truncated to stay within 1MB message limit]';
+          }
+        }
+        finalResult = {
+          ...finalResult,
+          structuredContent: sc,
+          content: [
+            {
+              type: 'text',
+              text: sc?.stdout
+                ? sc.stdout.slice(0, 200_000) + '\n\n[Output truncated to stay within 1MB message limit]'
+                : (typeof sc?.stderr === 'string' ? sc.stderr : 'Output truncated to stay within 1MB message limit.'),
+            },
+          ],
+        };
+        payload = JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          result: finalResult,
+        });
+      }
+    }
+
+    console.log(`[AlphaDevice] Sent JSON-RPC result for req id=${id} (${Buffer.byteLength(payload, 'utf8')} bytes)`);
     socket.send(payload);
   }
 
@@ -640,6 +921,9 @@ export class AlphaDeviceService extends EventEmitter {
     if (effectiveCwd === '~' || effectiveCwd.startsWith('~/')) {
       effectiveCwd = join(homedir(), effectiveCwd.replace(/^~(?:\/|$)/, ''));
     }
+    if (!existsSync(effectiveCwd)) {
+      effectiveCwd = homedir();
+    }
 
     const cmdArgs = (Array.isArray(args.args) ? args.args : []).map((arg) => {
       if (typeof arg === 'string' && (arg === '~' || arg.startsWith('~/'))) {
@@ -653,6 +937,8 @@ export class AlphaDeviceService extends EventEmitter {
     let timedOut = false;
     let stdout = '';
     let stderr = '';
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
 
     return new Promise((resolve) => {
       // Execute command in shell for flexible developer commands (e.g. pipes, shell scripts)
@@ -672,16 +958,42 @@ export class AlphaDeviceService extends EventEmitter {
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
 
-      child.stdout.on('data', (d) => {
-        stdout += d;
+      child.stdout.on('data', (d: string) => {
+        if (stdout.length < MAX_STREAM_CAPTURE_BYTES) {
+          const remaining = MAX_STREAM_CAPTURE_BYTES - stdout.length;
+          if (d.length > remaining) {
+            stdout += d.slice(0, remaining);
+            stdoutTruncated = true;
+          } else {
+            stdout += d;
+          }
+        } else {
+          stdoutTruncated = true;
+        }
       });
 
-      child.stderr.on('data', (d) => {
-        stderr += d;
+      child.stderr.on('data', (d: string) => {
+        if (stderr.length < MAX_STREAM_CAPTURE_BYTES) {
+          const remaining = MAX_STREAM_CAPTURE_BYTES - stderr.length;
+          if (d.length > remaining) {
+            stderr += d.slice(0, remaining);
+            stderrTruncated = true;
+          } else {
+            stderr += d;
+          }
+        } else {
+          stderrTruncated = true;
+        }
       });
 
       child.on('close', (code, signal) => {
         clearTimeout(timer);
+        if (stdoutTruncated) {
+          stdout += `\n\n[stdout truncated: exceeded maximum capture limit of ${Math.round(MAX_STREAM_CAPTURE_BYTES / 1024)}KB]`;
+        }
+        if (stderrTruncated) {
+          stderr += `\n\n[stderr truncated: exceeded maximum error limit of ${Math.round(MAX_STREAM_CAPTURE_BYTES / 1024)}KB]`;
+        }
         resolve({
           command: rawCmd,
           args: cmdArgs,
