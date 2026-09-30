@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Task, Project, TaskGitStatus } from '../types';
 import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats, updateTask, deleteTask } from '../api';
-import { formatRelativeTime } from '../utils/time';
+import { formatShortRelativeTime } from '../utils/time';
 import { ProjectIcon } from './ProjectIcon';
 import {
   getCachedUnreadReplyTaskIds,
@@ -818,12 +818,12 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                 <span className="truncate">{task.branch}</span>
               </span>
             )}
-            {renderConciseTaskStatusBadge(task, gitStatus)}
             {(task.updated_at || task.created_at) && (
               <span className="text-cozy-muted/50 shrink-0 whitespace-nowrap">
-                • {formatRelativeTime(task.updated_at || task.created_at)}
+                • {formatShortRelativeTime(task.updated_at || task.created_at)}
               </span>
             )}
+            <div className="ml-auto shrink-0">{renderConciseTaskStatusBadge(task, gitStatus)}</div>
           </div>
         </div>
 
