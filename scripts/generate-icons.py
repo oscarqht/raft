@@ -143,9 +143,17 @@ def generate():
         (512, 2, 'icon_512x512@2x.png'),
     ]
 
+    # macOS icon: opaque white background, artwork fills the whole canvas (no padding)
+    mac_master = Image.new('RGBA', (master_size, master_size), (255, 255, 255, 255))
+    mac_src = src.crop(src.getchannel('A').point(lambda p: 255 if p > 32 else 0).getbbox())
+    mac_scale = master_size / max(mac_src.size)
+    mw, mh = int(round(mac_src.width * mac_scale)), int(round(mac_src.height * mac_scale))
+    mac_art = mac_src.resize((mw, mh), Image.Resampling.LANCZOS)
+    mac_master.paste(mac_art, ((master_size - mw) // 2, (master_size - mh) // 2), mac_art)
+
     for size, factor, filename in icns_sizes:
         dim = size * factor
-        s = master.resize((dim, dim), Image.Resampling.LANCZOS)
+        s = mac_master.resize((dim, dim), Image.Resampling.LANCZOS)
         s.save(os.path.join(iconset_dir, filename))
 
     iconutil_path = shutil.which('iconutil')
@@ -155,10 +163,10 @@ def generate():
             print("Generated src-tauri/icons/icon.icns using iconutil")
         except Exception as e:
             print(f"iconutil failed: {e}, falling back to PIL")
-            master.save('src-tauri/icons/icon.icns', format='ICNS')
+            mac_master.save('src-tauri/icons/icon.icns', format='ICNS')
     else:
         try:
-            master.save('src-tauri/icons/icon.icns', format='ICNS')
+            mac_master.save('src-tauri/icons/icon.icns', format='ICNS')
         except Exception as e:
             print(f"PIL ICNS notice: {e}")
 
