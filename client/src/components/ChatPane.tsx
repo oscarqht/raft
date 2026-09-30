@@ -21,6 +21,8 @@ import {
   setCachedActiveChatId,
   getCachedMessages,
   setCachedMessages,
+  loadCachedMessagesAsync,
+  loadCachedChatsAsync,
   deleteCachedChat,
   getCachedModels,
   setCachedModels,
@@ -81,7 +83,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       : cachedSessions[0]?.id;
     return targetId ? (getCachedMessages(targetId) || []) : [];
   });
-  const [loadingChats, setLoadingChats] = useState(true);
+  const [loadingChats, setLoadingChats] = useState(() => !(getCachedChats(task.id)?.length));
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -254,33 +256,69 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   }, [editingChatId]);
 
-  // Load chat sessions
-  const loadChats = async () => {
-    try {
-      const data = await getTaskChats(task.id);
-      setChats(data);
-      setCachedChats(task.id, data);
-      if (data.length > 0) {
-        const nextActive = (activeChatId && data.some((c) => c.id === activeChatId))
-          ? activeChatId
-          : data[0].id;
-        setActiveChatId(nextActive);
-        setCachedActiveChatId(task.id, nextActive);
+  const chatsAbortControllerRef = useRef<AbortController | null>(null);
+  const activeChatAbortControllerRef = useRef<AbortController | null>(null);
+  const lastLoadedActiveChatRef = useRef<string | null>(null);
+  const taskRef = useRef(task);
+  taskRef.current = task;
 
-        try {
-          const fresh = await getChatMessages(nextActive);
-          setMessages(fresh);
-          setCachedMessages(nextActive, fresh);
-        } catch {}
+  // Load chat sessions & active messages in 1 round trip
+  const loadChats = async () => {
+    if (chatsAbortControllerRef.current) {
+      chatsAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    chatsAbortControllerRef.current = controller;
+    const currentTaskId = task.id;
+    const targetActiveId = activeChatId || getCachedActiveChatId(currentTaskId);
+
+    try {
+      const data = await getTaskChats(currentTaskId, {
+        includeMessages: true,
+        activeChatId: targetActiveId || undefined,
+        signal: controller.signal,
+      });
+
+      if (controller.signal.aborted || taskRef.current.id !== currentTaskId) return;
+
+      setChats(data);
+      setCachedChats(currentTaskId, data);
+
+      if (data.length > 0) {
+        const nextActiveChat = (targetActiveId && data.find((c) => c.id === targetActiveId)) || data[0];
+        const nextActiveId = nextActiveChat.id;
+        setActiveChatId(nextActiveId);
+        setCachedActiveChatId(currentTaskId, nextActiveId);
+
+        if (Array.isArray(nextActiveChat.messages)) {
+          lastLoadedActiveChatRef.current = nextActiveId;
+          setMessages(nextActiveChat.messages);
+          setCachedMessages(nextActiveId, nextActiveChat.messages);
+        } else {
+          // Fallback if messages were not returned directly
+          const fresh = await getChatMessages(nextActiveId, controller.signal);
+          if (!controller.signal.aborted && taskRef.current.id === currentTaskId) {
+            lastLoadedActiveChatRef.current = nextActiveId;
+            setMessages(fresh);
+            setCachedMessages(nextActiveId, fresh);
+          }
+        }
       }
-    } catch {
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
     } finally {
-      setLoadingChats(false);
+      if (!controller.signal.aborted && taskRef.current.id === currentTaskId) {
+        setLoadingChats(false);
+      }
     }
   };
 
   useEffect(() => {
     loadChats();
+    return () => {
+      chatsAbortControllerRef.current?.abort();
+      activeChatAbortControllerRef.current?.abort();
+    };
   }, [task.id]);
 
   // Sync tab overrides when active chat or chats change
@@ -326,12 +364,39 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const cached = getCachedMessages(activeChatId);
     if (cached && cached.length > 0) {
       setMessages(cached);
+    } else {
+      loadCachedMessagesAsync(activeChatId).then((idbMsgs) => {
+        if (idbMsgs && idbMsgs.length > 0) {
+          setMessages((prev) => (prev.length === 0 ? idbMsgs : prev));
+        }
+      });
     }
 
-    getChatMessages(activeChatId).then((fresh) => {
-      setMessages(fresh);
-      setCachedMessages(activeChatId, fresh);
-    }).catch(() => {});
+    if (lastLoadedActiveChatRef.current === activeChatId) {
+      // Already freshly populated by loadChats in the same cycle!
+      lastLoadedActiveChatRef.current = null;
+      return;
+    }
+
+    if (activeChatAbortControllerRef.current) {
+      activeChatAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeChatAbortControllerRef.current = controller;
+
+    getChatMessages(activeChatId, controller.signal)
+      .then((fresh) => {
+        if (controller.signal.aborted) return;
+        setMessages(fresh);
+        setCachedMessages(activeChatId, fresh);
+      })
+      .catch((err) => {
+        if (err.name === 'AbortError') return;
+      });
+
+    return () => {
+      controller.abort();
+    };
   }, [activeChatId, task.id]);
 
   // Load models when tab CLI changes
@@ -1267,23 +1332,19 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   };
 
-  if (loadingChats) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full bg-cozy-bg text-cozy-muted gap-3 select-none">
-        <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
-      </div>
-    );
-  }
-
-  const activeChat = chats.find((c) => c.id === activeChatId);
-
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden">
       {/* Top Header: Tabs + Quick Action Buttons */}
       <div className="h-11 px-3 border-b border-cozy-border bg-cozy-surface flex items-center justify-between shrink-0 select-none gap-2">
         {/* Chat Tabs */}
         <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-2 touch-pan-x">
-          {chats.map((c) => {
+          {chats.length === 0 && loadingChats ? (
+            <div className="flex items-center gap-1.5 py-1">
+              <div className="w-20 h-6 rounded-lg bg-cozy-subtle animate-pulse" />
+              <div className="w-16 h-6 rounded-lg bg-cozy-subtle/60 animate-pulse" />
+            </div>
+          ) : (
+            chats.map((c) => {
             const isActive = c.id === activeChatId;
             const isEditing = editingChatId === c.id;
             return (
@@ -1339,7 +1400,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 )}
               </div>
             );
-          })}
+          }))}
           <button
             onClick={handleCreateChat}
             className="w-6 h-6 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors shrink-0"
@@ -1493,28 +1554,60 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       </div>
 
       {/* Messages Scroll Area */}
-      <ChatMessageList
-        messages={messages}
-        liveStreamingChunk={streamingChunk}
-        isStreaming={isStreaming}
-        taskId={task.id}
-        clis={clis}
-        currentCli={tabCli || settings?.agent_cli || 'codex'}
-        activeHitl={activeChatId ? activeHitl[activeChatId] : null}
-        onHitlSubmitted={() => {
-          if (activeChatId) {
-            setActiveHitl((prev) => {
-              const copy = { ...prev };
-              delete copy[activeChatId];
-              return copy;
-            });
-          }
-        }}
-        onRetryPrompt={handleRetryPrompt}
-        onSwitchCliAndRetry={handleSwitchCliAndRetry}
-        onOpenSettings={handleOpenSettings}
-        onAbort={handleAbort}
-      />
+      {loadingChats && messages.length === 0 ? (
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+          {/* User message skeleton */}
+          <div className="flex items-start gap-3 justify-end">
+            <div className="w-2/5 rounded-2xl p-4 bg-teal-500/10 border border-teal-500/20 animate-pulse space-y-2">
+              <div className="h-3.5 bg-teal-500/20 rounded w-4/5" />
+              <div className="h-3 bg-teal-500/15 rounded w-1/2" />
+            </div>
+            <div className="w-8 h-8 rounded-full bg-teal-500/20 animate-pulse shrink-0" />
+          </div>
+
+          {/* Assistant message skeleton */}
+          <div className="flex items-start gap-3 justify-start">
+            <div className="w-8 h-8 rounded-full bg-cozy-subtle animate-pulse shrink-0" />
+            <div className="w-3/5 rounded-2xl p-4 bg-cozy-subtle/70 border border-cozy-border/60 animate-pulse space-y-2.5">
+              <div className="h-3.5 bg-cozy-muted/20 rounded w-5/6" />
+              <div className="h-3.5 bg-cozy-muted/20 rounded w-full" />
+              <div className="h-3.5 bg-cozy-muted/15 rounded w-3/4" />
+              <div className="h-3 bg-cozy-muted/15 rounded w-2/5 pt-1" />
+            </div>
+          </div>
+
+          {/* Second User message skeleton */}
+          <div className="flex items-start gap-3 justify-end">
+            <div className="w-1/3 rounded-2xl p-4 bg-teal-500/10 border border-teal-500/20 animate-pulse space-y-2">
+              <div className="h-3.5 bg-teal-500/20 rounded w-3/4" />
+            </div>
+            <div className="w-8 h-8 rounded-full bg-teal-500/20 animate-pulse shrink-0" />
+          </div>
+        </div>
+      ) : (
+        <ChatMessageList
+          messages={messages}
+          liveStreamingChunk={streamingChunk}
+          isStreaming={isStreaming}
+          taskId={task.id}
+          clis={clis}
+          currentCli={tabCli || settings?.agent_cli || 'codex'}
+          activeHitl={activeChatId ? activeHitl[activeChatId] : null}
+          onHitlSubmitted={() => {
+            if (activeChatId) {
+              setActiveHitl((prev) => {
+                const copy = { ...prev };
+                delete copy[activeChatId];
+                return copy;
+              });
+            }
+          }}
+          onRetryPrompt={handleRetryPrompt}
+          onSwitchCliAndRetry={handleSwitchCliAndRetry}
+          onOpenSettings={handleOpenSettings}
+          onAbort={handleAbort}
+        />
+      )}
       {/* Input Area */}
       <div
         className="relative w-full pb-3 pt-1 px-3 sm:px-4 bg-transparent shrink-0"

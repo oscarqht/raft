@@ -386,8 +386,18 @@ export async function restartDevServer(taskId: string): Promise<DevServerState> 
   return res.json();
 }
 
-export async function getTaskChats(taskId: string): Promise<ChatSession[]> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/chats`);
+export interface GetTaskChatsOptions {
+  includeMessages?: boolean;
+  activeChatId?: string;
+  signal?: AbortSignal;
+}
+
+export async function getTaskChats(taskId: string, options?: GetTaskChatsOptions): Promise<ChatSession[]> {
+  const params = new URLSearchParams();
+  if (options?.includeMessages) params.set('include_messages', 'true');
+  if (options?.activeChatId) params.set('active_chat_id', options.activeChatId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/chats${qs}`, { signal: options?.signal });
   return res.json();
 }
 
@@ -418,8 +428,8 @@ export async function deleteChatSession(id: string): Promise<{ success: boolean 
   return res.json();
 }
 
-export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`);
+export async function getChatMessages(sessionId: string, signal?: AbortSignal): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`, { signal });
   return res.json();
 }
 

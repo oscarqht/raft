@@ -55,6 +55,8 @@ export interface Task {
   created_at: number;
   updated_at: number;
   project?: Project;
+  chats?: ChatSession[];
+  initial_chat?: ChatSession;
 }
 
 export interface ChatSession {
@@ -69,6 +71,7 @@ export interface ChatSession {
   cli_session_agent?: string;
   created_at: number;
   updated_at: number;
+  messages?: ChatMessage[];
 }
 
 export interface FileAttachment {

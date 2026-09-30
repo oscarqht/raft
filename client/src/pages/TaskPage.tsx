@@ -49,7 +49,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     return getCachedTask(taskId);
   });
   const [loading, setLoading] = useState(!task);
-  const [isSwitchingTask, setIsSwitchingTask] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
@@ -118,19 +117,18 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     if (!taskId) {
       setError('Task ID is missing');
       setLoading(false);
-      setIsSwitchingTask(false);
       return;
     }
 
     let isCurrent = true;
     if (!task || task.id !== taskId) {
-      const cached = getCachedTask(taskId);
+      const navTask = (location.state as any)?.task as Task | undefined;
+      const cached = (navTask && navTask.id === taskId) ? navTask : getCachedTask(taskId);
       if (cached) {
         setTask(cached);
         setLoading(false);
-        setIsSwitchingTask(false);
       } else {
-        setIsSwitchingTask(true);
+        setLoading(true);
       }
     }
     setError(null);
@@ -140,7 +138,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         if (!isCurrent) return;
         setTask(t);
         setCachedTask(t);
-        setIsSwitchingTask(false);
         // Canonicalize URL to /projects/:projectId/tasks/:taskId if reached via /tasks/:taskId
         if (!routeProjectId && t.project_id) {
           navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true, state: { task: t } });
@@ -151,7 +148,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         if (!task) {
           setError(err?.message || 'Task not found');
         }
-        setIsSwitchingTask(false);
       })
       .finally(() => {
         if (!isCurrent) return;
@@ -225,8 +221,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     return null;
   }
 
-  const isChatLoading = isSwitchingTask || task.id !== taskId;
-
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
       <div className="flex-1 flex flex-row h-[calc(100vh-3rem)] overflow-hidden relative p-0 bg-cozy-bg">
@@ -235,14 +229,16 @@ export const TaskPage: React.FC<TaskPageProps> = ({
           <ProjectsTasksSidebar
             currentTaskId={taskId}
             currentProjectId={task.project_id || routeProjectId}
-            onSelectTask={(selectedTaskId, selectedProjectId) => {
+            onSelectTask={(selectedTaskId, selectedProjectId, selectedTask) => {
               if (selectedTaskId === taskId) return;
-              setIsSwitchingTask(true);
-              if (selectedProjectId) {
-                navigate(`/projects/${selectedProjectId}/tasks/${selectedTaskId}`);
-              } else {
-                navigate(`/tasks/${selectedTaskId}`);
+              if (selectedTask) {
+                setTask(selectedTask);
+                setCachedTask(selectedTask);
               }
+              const route = selectedProjectId
+                ? `/projects/${selectedProjectId}/tasks/${selectedTaskId}`
+                : `/tasks/${selectedTaskId}`;
+              navigate(route, { state: { task: selectedTask } });
             }}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
@@ -306,23 +302,18 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             mobileActivePane={mobileTab === 'chat' ? 'left' : 'right'}
             rightCollapsed={!isPreviewOpen}
             left={
-              isChatLoading ? (
-                <div className="flex-1 flex flex-col items-center justify-center h-full bg-cozy-bg text-cozy-muted gap-3 select-none">
-                  <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
-                </div>
-              ) : (
-                <ChatPane
-                  key={task.id}
-                  task={task}
-                  settings={settings}
-                  clis={clis}
-                  ws={ws}
-                  onOpenRebase={() => setIsRebaseOpen(true)}
-                  onOpenSubmit={() => setIsSubmitOpen(true)}
-                  onOpenScripts={() => setIsRunScriptOpen(true)}
-                  onDeleteTask={onDeleteTask}
-                  isDeletingTask={isDeletingTask}
-                  isPreviewOpen={isPreviewOpen}
+              <ChatPane
+                key={task.id}
+                task={task}
+                settings={settings}
+                clis={clis}
+                ws={ws}
+                onOpenRebase={() => setIsRebaseOpen(true)}
+                onOpenSubmit={() => setIsSubmitOpen(true)}
+                onOpenScripts={() => setIsRunScriptOpen(true)}
+                onDeleteTask={onDeleteTask}
+                isDeletingTask={isDeletingTask}
+                isPreviewOpen={isPreviewOpen}
                   onTogglePreview={() => {
                     if (window.innerWidth < 1200) {
                       setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
@@ -332,7 +323,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                   }}
                   isDevRunning={isDevRunning}
                 />
-              )
             }
             right={
               <PreviewPane

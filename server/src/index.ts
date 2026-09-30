@@ -1461,6 +1461,7 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
     `).run(chatSessionId, id, 'Chat 1', defaultCli, defaultModel, defaultEffort, 'idle', now, now);
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+    const initialChat = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatSessionId) as any;
 
     // Auto-install project dependencies in the new worktree
     const installCmd = (project.install_cmd && project.install_cmd.trim()) || detectInstallCommand(worktreePath);
@@ -1478,7 +1479,12 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
       }
     }
 
-    res.json({ ...task, project: formatProject(project) });
+    res.json({
+      ...task,
+      project: formatProject(project),
+      chats: initialChat ? [initialChat] : [],
+      initial_chat: initialChat || null,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1896,7 +1902,17 @@ app.get('/api/tasks/:taskId/attachments/:attachmentId/content', (req: Request, r
 
 // Chat sessions & messages
 app.get('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
-  const chats = db.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at ASC').all(req.params.taskId);
+  const chats = db.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at ASC').all(req.params.taskId) as any[];
+  const includeMessages = req.query.include_messages === 'true';
+  const activeChatId = req.query.active_chat_id as string | undefined;
+
+  if (includeMessages && chats.length > 0) {
+    const targetChat = (activeChatId && chats.find((c) => c.id === activeChatId)) || chats[0];
+    if (targetChat) {
+      targetChat.messages = getSessionMessages(targetChat.id);
+    }
+  }
+
   res.json(chats);
 });
 
@@ -1954,6 +1970,35 @@ interface ActiveChatSession {
 }
 
 const activeChatSessions = new Map<string, ActiveChatSession>();
+
+function getSessionMessages(chatId: string) {
+  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
+
+  for (const msg of messages) {
+    if (msg.metadata) {
+      try {
+        const parsed = JSON.parse(msg.metadata);
+        if (parsed && Array.isArray(parsed.attachments)) {
+          msg.attachments = parsed.attachments;
+        }
+      } catch {}
+    }
+  }
+
+  // If there is an active running session for this chat, sync the in-memory latest content
+  const activeSession = activeChatSessions.get(chatId);
+  if (activeSession && messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && (lastMsg.id === activeSession.assistantMsgId || lastMsg.role === 'assistant')) {
+      const liveText = activeSession.getContent();
+      if (liveText) {
+        lastMsg.content = liveText;
+      }
+    }
+  }
+
+  return messages;
+}
 
 function broadcastWs(data: any) {
   const payload = JSON.stringify(data);
@@ -2081,31 +2126,7 @@ app.delete('/api/messages/:id', (req: Request, res: Response) => {
 
 app.get('/api/chats/:id/messages', (req: Request, res: Response) => {
   const chatId = req.params.id as string;
-  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
-
-  for (const msg of messages) {
-    if (msg.metadata) {
-      try {
-        const parsed = JSON.parse(msg.metadata);
-        if (parsed && Array.isArray(parsed.attachments)) {
-          msg.attachments = parsed.attachments;
-        }
-      } catch {}
-    }
-  }
-
-  // If there is an active running session for this chat, sync the in-memory latest content
-  const activeSession = activeChatSessions.get(chatId);
-  if (activeSession && messages.length > 0) {
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg && (lastMsg.id === activeSession.assistantMsgId || lastMsg.role === 'assistant')) {
-      const liveText = activeSession.getContent();
-      if (liveText) {
-        lastMsg.content = liveText;
-      }
-    }
-  }
-
+  const messages = getSessionMessages(chatId);
   res.json(messages);
 });
 
