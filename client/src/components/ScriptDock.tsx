@@ -1,5 +1,6 @@
 import React from 'react';
 import { Terminal, X, Square, ExternalLink, Loader2, Check } from 'lucide-react';
+import { DockItem } from './DockStack';
 import { useScriptExecution } from '../contexts/ScriptExecutionContext';
 import { ScriptExecutionItem } from '../types';
 
@@ -18,7 +19,7 @@ export const ScriptDock: React.FC = () => {
   if (docked.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-40 flex flex-col gap-2 max-w-sm pointer-events-none">
+    <>
       {docked.map((item: ScriptExecutionItem) => {
         const isRunning = item.status === 'running';
         const isFailed = item.status === 'failed' || (item.exitCode !== null && item.exitCode !== 0);
@@ -26,8 +27,8 @@ export const ScriptDock: React.FC = () => {
         const isCanceled = item.status === 'canceled';
 
         return (
+          <DockItem key={item.id} createdAt={item.startedAt}>
           <div
-            key={item.id}
             className={`pointer-events-auto rounded-2.5xl glass-panel border p-3.5 w-full sm:w-84 text-xs shadow-soft-lg transition-all flex flex-col gap-2.5 ${
               isRunning
                 ? 'border-teal-400/40 shadow-glow-ocean/20'
@@ -140,8 +141,9 @@ export const ScriptDock: React.FC = () => {
               )}
             </div>
           </div>
+          </DockItem>
         );
       })}
-    </div>
+    </>
   );
 };

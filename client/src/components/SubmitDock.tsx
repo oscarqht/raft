@@ -1,5 +1,6 @@
 import React from 'react';
 import { UploadCloud, X, Loader2, Check, AlertTriangle, Maximize2 } from 'lucide-react';
+import { DockItem } from './DockStack';
 import { useSubmit } from '../contexts/SubmitContext';
 
 export const SubmitDock: React.FC = () => {
@@ -10,13 +11,13 @@ export const SubmitDock: React.FC = () => {
   if (docked.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-4 z-40 flex flex-col gap-2 max-w-sm pointer-events-none">
-      {docked.map(({ task, status }) => {
+    <>
+      {docked.map(({ task, status, createdAt }) => {
         const isRunning = status === 'submitting';
         const isFailed = status === 'error';
         return (
+          <DockItem key={task.id} createdAt={createdAt}>
           <div
-            key={task.id}
             className={`pointer-events-auto rounded-2.5xl glass-panel border p-3.5 w-full sm:w-84 text-xs shadow-soft-lg flex flex-col gap-2.5 ${
               isRunning
                 ? 'border-teal-400/40 shadow-glow-ocean/20'
@@ -77,8 +78,9 @@ export const SubmitDock: React.FC = () => {
               </button>
             </div>
           </div>
+          </DockItem>
         );
       })}
-    </div>
+    </>
   );
 };
