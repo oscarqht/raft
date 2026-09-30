@@ -1348,6 +1348,8 @@ app.post('/api/tasks/:taskId/scripts/run', (req: Request, res: Response) => {
     }
   }
 
+  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
+
   const execution = scriptManager.startExecution({
     taskId,
     projectId: task.project_id,
@@ -1404,17 +1406,42 @@ app.delete('/api/projects/:id', (req: Request, res: Response) => {
 
 // Tasks
 app.get('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
-  const tasks = db.prepare(`
-    SELECT t.*,
-           CASE WHEN EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.task_id = t.id AND cs.status = 'running')
-                THEN 'WIP'
-                ELSE 'idle'
-           END AS agent_status
-    FROM tasks t
-    WHERE t.project_id = ?
-    ORDER BY t.created_at DESC
-  `).all(req.params.projectId);
-  res.json(tasks);
+  try {
+    const tasks = db.prepare(`
+      SELECT t.*,
+             CASE WHEN EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.task_id = t.id AND cs.status = 'running')
+                  THEN 'WIP'
+                  ELSE 'idle'
+             END AS agent_status,
+             MAX(
+               COALESCE(t.updated_at, 0),
+               COALESCE(t.created_at, 0),
+               COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.task_id = t.id), 0),
+               COALESCE((SELECT MAX(cs.created_at) FROM chat_sessions cs WHERE cs.task_id = t.id), 0),
+               COALESCE((
+                 SELECT MAX(cm.timestamp)
+                 FROM chat_messages cm
+                 JOIN chat_sessions cs ON cm.session_id = cs.id
+                 WHERE cs.task_id = t.id
+               ), 0)
+             ) AS effective_updated_at
+      FROM tasks t
+      WHERE t.project_id = ?
+      ORDER BY effective_updated_at DESC
+    `).all(req.params.projectId) as any[];
+
+    const result = tasks.map((t) => {
+      const { effective_updated_at, ...taskFields } = t;
+      return {
+        ...taskFields,
+        updated_at: effective_updated_at || taskFields.updated_at || taskFields.created_at,
+      };
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list project tasks' });
+  }
 });
 
 app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) => {
@@ -1532,7 +1559,18 @@ app.get('/api/tasks', (_req: Request, res: Response) => {
                   THEN 'WIP'
                   ELSE 'idle'
              END AS agent_status,
-             MAX(t.updated_at, COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.task_id = t.id), t.updated_at)) AS effective_updated_at
+             MAX(
+               COALESCE(t.updated_at, 0),
+               COALESCE(t.created_at, 0),
+               COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.task_id = t.id), 0),
+               COALESCE((SELECT MAX(cs.created_at) FROM chat_sessions cs WHERE cs.task_id = t.id), 0),
+               COALESCE((
+                 SELECT MAX(cm.timestamp)
+                 FROM chat_messages cm
+                 JOIN chat_sessions cs ON cm.session_id = cs.id
+                 WHERE cs.task_id = t.id
+               ), 0)
+             ) AS effective_updated_at
       FROM tasks t
       ORDER BY effective_updated_at DESC
     `).all() as any[];
@@ -1544,7 +1582,7 @@ app.get('/api/tasks', (_req: Request, res: Response) => {
       const { effective_updated_at, ...taskFields } = t;
       return {
         ...taskFields,
-        updated_at: effective_updated_at || taskFields.updated_at,
+        updated_at: effective_updated_at || taskFields.updated_at || taskFields.created_at,
         project: projectMap.get(t.project_id) || undefined,
       };
     });
@@ -1759,6 +1797,7 @@ app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
 
   const devCmd = project?.dev_cmd || 'npm run dev';
   const port = project?.dev_port || 5173;
+  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
   const state = devServerManager.startServer(task.id, task.worktree_path, devCmd, port);
   res.json(state);
 });
@@ -1855,6 +1894,8 @@ app.post('/api/tasks/:taskId/attachments', (req: Request, res: Response) => {
           url: `/api/tasks/${taskId}/attachments/${attachmentId}`,
         });
       }
+
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now, taskId);
 
       res.json(results);
     } catch (err: any) {
@@ -2000,6 +2041,7 @@ app.post('/api/tasks/:taskId/chats', async (req: Request, res: Response) => {
     INSERT INTO chat_sessions (id, task_id, title, agent_cli, model, thinking_effort, status, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(id, req.params.taskId, title || 'New Chat', cli, mod, effort, 'idle', now, now);
+  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now, req.params.taskId);
 
   const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(id);
   res.json(session);
@@ -2142,6 +2184,7 @@ function setChatSessionStatus(sessionId: string, status: 'idle' | 'running', tim
   try {
     const session = db.prepare('SELECT task_id FROM chat_sessions WHERE id = ?').get(sessionId) as { task_id: string } | undefined;
     if (session?.task_id) {
+      db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(timestamp, session.task_id);
       const isRunning = Boolean(
         db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(session.task_id)
       );
@@ -2154,6 +2197,7 @@ function setChatSessionStatus(sessionId: string, status: 'idle' | 'running', tim
         taskName: task?.name,
         projectName: project?.name,
         agentStatus: isRunning ? 'WIP' : 'idle',
+        updatedAt: timestamp,
       });
     }
   } catch {}
@@ -2406,6 +2450,7 @@ wss.on('connection', (ws: WebSocket) => {
         const { taskId } = msg;
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
+        db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
         const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
 
         const defaultCli = getEffectiveAgentCli();
@@ -2440,6 +2485,7 @@ wss.on('connection', (ws: WebSocket) => {
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
         const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+        db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
 
         const defaultCli = getEffectiveAgentCli();
         const defaultModel = getSetting<string>('default_model', '');
@@ -2539,10 +2585,14 @@ wss.on('connection', (ws: WebSocket) => {
           INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(userMsgId, sessionId, 'user', prompt, userMetadata, now);
+        db.prepare('UPDATE chat_sessions SET updated_at = ? WHERE id = ?').run(now, sessionId);
+        db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now, session.task_id);
 
         broadcastWs({
           type: 'message_saved',
+          taskId: session.task_id,
           sessionId,
+          updatedAt: now,
           message: {
             id: userMsgId,
             session_id: sessionId,

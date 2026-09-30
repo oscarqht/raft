@@ -33,6 +33,7 @@ import {
   getCachedChats,
   setCachedChats,
   setCachedMessages,
+  getCachedTask,
   setCachedTask,
   getCachedAllTasksGitStatus,
   setCachedAllTasksGitStatus,
@@ -69,6 +70,22 @@ const SIDEBAR_WIDTH_KEY = 'raft.tasksSidebarWidth';
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 560;
 const SIDEBAR_DEFAULT_WIDTH = 256;
+
+const compareTasksByLastActive = (
+  a: Task,
+  b: Task,
+  agentStatuses?: Record<string, 'WIP' | 'idle'>
+) => {
+  const aWip = (agentStatuses && agentStatuses[a.id] === 'WIP') || a.agent_status === 'WIP';
+  const bWip = (agentStatuses && agentStatuses[b.id] === 'WIP') || b.agent_status === 'WIP';
+  if (aWip && !bWip) return -1;
+  if (!aWip && bWip) return 1;
+
+  const timeA = Math.max(a.updated_at || 0, a.created_at || 0);
+  const timeB = Math.max(b.updated_at || 0, b.created_at || 0);
+  if (timeB !== timeA) return timeB - timeA;
+  return (b.created_at || 0) - (a.created_at || 0);
+};
 
 export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   currentTaskId,
@@ -186,8 +203,8 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
 
   // Handle agent replying status updates & unread completed reply notifications
   const handleTaskAgentStatus = useCallback(
-    (data: { taskId?: string; sessionId?: string; agentStatus?: 'WIP' | 'idle' }) => {
-      const { taskId, sessionId, agentStatus } = data;
+    (data: { taskId?: string; sessionId?: string; agentStatus?: 'WIP' | 'idle'; updatedAt?: number }) => {
+      const { taskId, sessionId, agentStatus, updatedAt } = data;
       if (!taskId || !agentStatus) return;
 
       const prevStatus = tasksAgentStatusRef.current[taskId] || 'idle';
@@ -196,6 +213,26 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         tasksAgentStatusRef.current = next;
         return next;
       });
+
+      const activeTime = updatedAt || Date.now();
+      setTasks((prev) => {
+        const next = prev.map((t) =>
+          t.id === taskId
+            ? { ...t, agent_status: agentStatus, updated_at: Math.max(t.updated_at || 0, activeTime) }
+            : t
+        );
+        setCachedAllTasks(next);
+        return next;
+      });
+
+      const cached = getCachedTask(taskId);
+      if (cached) {
+        setCachedTask({
+          ...cached,
+          agent_status: agentStatus,
+          updated_at: Math.max(cached.updated_at || 0, activeTime),
+        });
+      }
 
       if (agentStatus === 'WIP') {
         removeUnreadReplyTaskId(taskId);
@@ -341,7 +378,18 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
 
   // Listen for task and project update events
   useEffect(() => {
-    const handleUpdate = () => {
+    const handleUpdate = (e?: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.id) {
+        setTasks((prev) => {
+          const exists = prev.some((t) => t.id === detail.id);
+          const next = exists
+            ? prev.map((t) => (t.id === detail.id ? { ...t, ...detail } : t))
+            : [detail, ...prev];
+          setCachedAllTasks(next);
+          return next;
+        });
+      }
       fetchData();
     };
     const handleStatusUpdate = (e?: Event) => {
@@ -440,6 +488,20 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
           });
         } else if (msg.type === 'task_agent_status') {
           handleTaskAgentStatus(msg);
+        } else if (
+          (msg.type === 'message_saved' || msg.type === 'chat_completed' || msg.type === 'task_activity') &&
+          msg.taskId
+        ) {
+          const activeTime = msg.updatedAt || Date.now();
+          setTasks((prev) => {
+            const next = prev.map((t) =>
+              t.id === msg.taskId
+                ? { ...t, updated_at: Math.max(t.updated_at || 0, activeTime) }
+                : t
+            );
+            setCachedAllTasks(next);
+            return next;
+          });
         }
       } catch {}
     };
@@ -456,10 +518,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
 
     const projTasks = tasks
       .filter((t) => t.project_id === currentTask.project_id)
-      .sort(
-        (a, b) =>
-          (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
-      );
+      .sort((a, b) => compareTasksByLastActive(a, b, tasksAgentStatus));
 
     const taskIndex = projTasks.findIndex((t) => t.id === currentTaskId);
     if (taskIndex >= 10) {
@@ -469,7 +528,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         return next;
       });
     }
-  }, [currentTaskId, tasks]);
+  }, [currentTaskId, tasks, tasksAgentStatus]);
 
   // Pinned tasks list (matches search query if active, sorted by latest activity descending)
   const pinnedTasks = useMemo(() => {
@@ -486,10 +545,8 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         })
       : pinned;
 
-    return filtered.sort(
-      (a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
-    );
-  }, [tasks, searchQuery]);
+    return filtered.sort((a, b) => compareTasksByLastActive(a, b, tasksAgentStatus));
+  }, [tasks, searchQuery, tasksAgentStatus]);
 
   // Group unpinned tasks by project and sort
   const groupedProjects = useMemo(() => {
@@ -541,15 +598,21 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         continue;
       }
 
-      const sortedTasks = [...data.tasks].sort(
-        (a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
+      const sortedTasks = [...data.tasks].sort((a, b) =>
+        compareTasksByLastActive(a, b, tasksAgentStatus)
       );
 
       // Latest task activity across all tasks of this project (including pinned tasks)
       const allProjTasks = tasks.filter((t) => (t.project_id || 'unknown') === projectId);
       const latestTaskTime =
         allProjTasks.length > 0
-          ? Math.max(...allProjTasks.map((t) => t.updated_at || t.created_at || 0))
+          ? Math.max(
+              ...allProjTasks.map((t) => {
+                const isWip = (tasksAgentStatus && tasksAgentStatus[t.id] === 'WIP') || t.agent_status === 'WIP';
+                const baseTime = Math.max(t.updated_at || 0, t.created_at || 0);
+                return isWip ? Math.max(baseTime, Date.now()) : baseTime;
+              })
+            )
           : 0;
 
       const latestUpdatedAt = Math.max(
@@ -570,7 +633,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     groups.sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
 
     return groups;
-  }, [projects, tasks, searchQuery]);
+  }, [projects, tasks, searchQuery, tasksAgentStatus]);
 
   const handleTogglePin = useCallback(async (e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
