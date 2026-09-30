@@ -1501,7 +1501,12 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
             }
           },
           project.path,
-          branch
+          branch,
+          {
+            projectName: project.name,
+            taskName: task.name,
+            systemPrompt: project.system_prompt,
+          }
         );
       } catch (agentErr) {
         console.warn(`Failed to spawn background rebase agent for conflicted task ${id}:`, agentErr);
@@ -1707,13 +1712,20 @@ app.post('/api/tasks/:id/git/commit-message', async (req: Request, res: Response
   const defaultEffort = req.body?.thinkingEffort || getSetting<string>('thinking_effort', 'medium');
 
   try {
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
     const result = await runCommitMessageAgent(
       task.worktree_path,
       task.name,
       task.branch,
       defaultCli,
       defaultModel,
-      defaultEffort
+      defaultEffort,
+      undefined,
+      {
+        projectName: project?.name,
+        baseBranch: task.base_branch || project?.base_branch || project?.branch_convention || 'main',
+        systemPrompt: project?.system_prompt,
+      }
     );
     res.json(result);
   } catch (err: any) {
@@ -2329,10 +2341,22 @@ wss.on('connection', (ws: WebSocket) => {
         const effortToUse = thinkingEffort || getSetting<string>('thinking_effort', 'medium');
         send({ type: 'status', text: `Scanning repository at ${projectPath}...` });
 
+        const project = db.prepare('SELECT * FROM projects WHERE path = ?').get(projectPath) as any;
+
         try {
-          const result = await runDiscoveryAgent(projectPath, cli, modelToUse, effortToUse, (ev) => {
-            send({ type: 'discovery_event', event: ev });
-          });
+          const result = await runDiscoveryAgent(
+            projectPath,
+            cli,
+            modelToUse,
+            effortToUse,
+            (ev) => {
+              send({ type: 'discovery_event', event: ev });
+            },
+            {
+              projectName: project?.name,
+              systemPrompt: project?.system_prompt,
+            }
+          );
           send({ type: 'discovery_done', result });
         } catch (err: any) {
           send({ type: 'error', error: err.message });
@@ -2397,7 +2421,12 @@ wss.on('connection', (ws: WebSocket) => {
             send({ type: 'rebase_event', event: ev });
           },
           project?.path,
-          task.branch
+          task.branch,
+          {
+            projectName: project?.name,
+            taskName: task.name,
+            systemPrompt: project?.system_prompt,
+          }
         );
       }
 
@@ -2406,6 +2435,7 @@ wss.on('connection', (ws: WebSocket) => {
         const { taskId, commitMessage } = msg;
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
+        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
 
         const defaultCli = getEffectiveAgentCli();
         const defaultModel = getSetting<string>('default_model', '');
@@ -2424,7 +2454,12 @@ wss.on('connection', (ws: WebSocket) => {
             }
             send({ type: 'submit_event', taskId, event: ev });
           },
-          task.base_branch
+          task.base_branch,
+          {
+            projectName: project?.name,
+            taskName: task.name,
+            systemPrompt: project?.system_prompt,
+          }
         );
       }
 
@@ -2433,6 +2468,7 @@ wss.on('connection', (ws: WebSocket) => {
         const { taskId } = msg;
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
         if (!task) return send({ type: 'error', error: 'Task not found' });
+        const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
 
         const defaultCli = msg.agentCli || getEffectiveAgentCli();
         const defaultModel = msg.model || getSetting<string>('default_model', '');
@@ -2448,6 +2484,11 @@ wss.on('connection', (ws: WebSocket) => {
             defaultEffort,
             (ev) => {
               send({ type: 'commit_message_event', event: ev });
+            },
+            {
+              projectName: project?.name,
+              baseBranch: task.base_branch || project?.base_branch || project?.branch_convention || 'main',
+              systemPrompt: project?.system_prompt,
             }
           );
           send({ type: 'commit_message_result', result });
@@ -2593,7 +2634,26 @@ wss.on('connection', (ws: WebSocket) => {
         `).all(sessionId) as Array<{ id: string }>;
         const isFirstAlphaTurn = isFirstTurn || prevAlphaMessages.length === 0;
 
-        if (cliToUse === 'alpha' && isFirstAlphaTurn) {
+        if (cliToUse === 'alpha') {
+          if (isFirstAlphaTurn) {
+            effectiveAgentPrompt = buildAlphaPromptWithContext(effectiveAgentPrompt, {
+              projectName: project?.name,
+              taskName: task?.name,
+              worktreePath: effectiveWorktreePath || project?.path,
+              branch: task?.branch,
+              baseBranch: task?.base_branch || project?.branch_convention || 'main',
+              systemPrompt: project?.system_prompt,
+              isAlpha: true,
+            });
+          } else {
+            effectiveAgentPrompt = buildAlphaPromptWithContext(effectiveAgentPrompt, {
+              worktreePath: effectiveWorktreePath || project?.path,
+              branch: task?.branch,
+              isAlpha: true,
+              isSubsequentTurn: true,
+            });
+          }
+        } else if (isFirstTurn) {
           effectiveAgentPrompt = buildAlphaPromptWithContext(effectiveAgentPrompt, {
             projectName: project?.name,
             taskName: task?.name,
@@ -2601,9 +2661,8 @@ wss.on('connection', (ws: WebSocket) => {
             branch: task?.branch,
             baseBranch: task?.base_branch || project?.branch_convention || 'main',
             systemPrompt: project?.system_prompt,
+            isAlpha: false,
           });
-        } else if (isFirstTurn && project?.system_prompt && project.system_prompt.trim().length > 0) {
-          effectiveAgentPrompt = `[Project Instructions]\n${project.system_prompt.trim()}\n\n[User Request]\n${effectiveAgentPrompt}`;
         }
 
         let effectivePrompt = resolveSkillPrompt(cliToUse, effectiveAgentPrompt, effectiveWorktreePath);

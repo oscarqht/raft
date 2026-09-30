@@ -1,5 +1,6 @@
 import type { AgentStep, StreamEvent } from './agentRunner.js';
 import { alphaDeviceService } from './alphaDeviceService.js';
+import { getSetting } from './db.js';
 
 export interface HitlRequiredPayload {
   state: string;
@@ -71,50 +72,132 @@ export interface ProjectTaskContext {
   branch?: string;
   baseBranch?: string;
   systemPrompt?: string;
+  isAlpha?: boolean;
+  isSubsequentTurn?: boolean;
+  jobRequirementTitle?: string;
 }
 
 /**
- * Injects project & task context into the first message of an Alpha Intelligence chat turn
- * so that the remote cloud SuperAgent knows the exact project, branch, worktree directory,
- * and how to operate the connected local device terminal.
+ * Injects project & task context into an agent prompt
+ * so that the AI agent (especially remote cloud SuperAgent like Alpha Intelligence)
+ * knows the exact project, branch, worktree directory, and how to operate the connected local device terminal.
  */
 export function buildAlphaPromptWithContext(
   userPrompt: string,
   context: ProjectTaskContext
 ): string {
-  const sections: string[] = [];
-
-  const projectName = context.projectName || 'Unknown Project';
-  const taskName = context.taskName || 'General Task';
   const branch = context.branch || 'main';
-  const baseBranch = context.baseBranch || 'main';
   const worktreeDir = context.worktreePath || process.cwd();
 
+  // If subsequent turn in an ongoing chat session, provide a lightweight workspace reminder
+  if (context.isSubsequentTurn) {
+    const sections: string[] = [];
+    const reminderLines = [
+      `[Active Workspace Reminder]`,
+      `- Working Directory: ${worktreeDir}`,
+      `- Git Branch: ${branch}`,
+    ];
+    if (context.isAlpha !== false) {
+      reminderLines.push(`Run terminal commands inside this working directory using run_command.`);
+    }
+    sections.push(reminderLines.join('\n'));
+    sections.push(`[User Request]\n${userPrompt.trim()}`);
+    return sections.join('\n\n');
+  }
+
+  const sections: string[] = [];
+  const projectName = context.projectName || 'Unknown Project';
+  const taskName = context.taskName;
+  const baseBranch = context.baseBranch || 'main';
+
   // 1. [Project & Task Context]
-  sections.push(
-    `[Project & Task Context]\n` +
-    `- Project: ${projectName}\n` +
-    `- Task: ${taskName}\n` +
-    `- Working Directory: ${worktreeDir}\n` +
-    `- Git Branch: ${branch} (base: ${baseBranch})`
-  );
+  let contextSection = `[Project & Task Context]\n- Project: ${projectName}\n`;
+  if (taskName) {
+    contextSection += `- Task: ${taskName}\n`;
+  }
+  contextSection += `- Working Directory: ${worktreeDir}\n`;
+  contextSection += `- Git Branch: ${branch} (base: ${baseBranch})`;
+  sections.push(contextSection);
 
   // 2. [Project Instructions] (if configured)
   if (context.systemPrompt && context.systemPrompt.trim().length > 0) {
     sections.push(`[Project Instructions]\n${context.systemPrompt.trim()}`);
   }
 
-  // 3. [Workspace Execution Guidance]
-  sections.push(
-    `[Workspace Execution Guidance]\n` +
-    `You are connected to this local computer via a local device terminal runner.\n` +
-    `Always run your terminal commands (using run_command) inside the working directory above (${worktreeDir}) to view, edit, build, or test code for this task.`
-  );
+  // 3. [Workspace Execution Guidance] (included when agent is Alpha Intelligence or not explicitly false)
+  if (context.isAlpha !== false) {
+    sections.push(
+      `[Workspace Execution Guidance]\n` +
+      `You are connected to this local computer via a local device terminal runner.\n` +
+      `Always run your terminal commands (using run_command) inside the working directory above (${worktreeDir}) to view, edit, build, or test code for this task.`
+    );
+  }
 
-  // 4. [User Request]
-  sections.push(`[User Request]\n${userPrompt.trim()}`);
+  // 4. [Job Requirement / User Request]
+  const reqTitle = context.jobRequirementTitle || 'User Request';
+  sections.push(`[${reqTitle}]\n${userPrompt.trim()}`);
 
   return sections.join('\n\n');
+}
+
+export const buildPromptWithContext = buildAlphaPromptWithContext;
+
+export interface AlphaAuxiliaryJobOptions {
+  prompt: string;
+  worktreePath: string;
+  onEvent?: (event: StreamEvent) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Runs a single-turn auxiliary job (discovery, commit message, conflict resolution)
+ * using Alpha Intelligence in an isolated, ephemeral session.
+ * Reconnects device bridge if needed, and fails with descriptive error if unconfigured/offline.
+ */
+export async function executeAlphaAuxiliaryJob(
+  options: AlphaAuxiliaryJobOptions
+): Promise<{ fullContent: string; steps: AgentStep[] }> {
+  const { prompt, worktreePath, onEvent, signal } = options;
+
+  const apiUrl = getSetting<string>('alpha_intelligence_api_url', '');
+  const apiKey = getSetting<string>('alpha_intelligence_api_key', '');
+
+  if (!apiUrl || !apiKey) {
+    throw new Error('Alpha Intelligence is not configured. Please set API URL and API Key in Settings > Alpha Intelligence.');
+  }
+
+  if (worktreePath) {
+    alphaDeviceService.setActiveWorktree(worktreePath);
+  }
+
+  // Quick reconnect attempt if disconnected
+  if (!alphaDeviceService.getStatus().connected) {
+    onEvent?.({ type: 'status', content: 'Connecting to Alpha Intelligence device bridge...\n' });
+    await alphaDeviceService.ensureConnected(5000).catch(() => {});
+    if (!alphaDeviceService.getStatus().connected) {
+      throw new Error('Alpha Intelligence device bridge is not connected. Please pair and connect your device in Settings > Alpha Intelligence.');
+    }
+  }
+
+  const ephemeralSessionId = `aux-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const ephemeralMsgId = `aux-msg-${Date.now()}`;
+
+  const result = await runAlphaIntelligenceTurn({
+    apiUrl,
+    apiKey,
+    userEmail: getSetting<string>('alpha_intelligence_email', '') || undefined,
+    prompt,
+    worktreePath,
+    sessionId: ephemeralSessionId,
+    messageId: ephemeralMsgId,
+    signal,
+    onEvent: onEvent || (() => {}),
+  });
+
+  return {
+    fullContent: result.fullContent,
+    steps: result.steps,
+  };
 }
 
 export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promise<{

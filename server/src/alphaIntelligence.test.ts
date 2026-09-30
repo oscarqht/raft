@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from './index.js';
-import { db } from './db.js';
-import { normalizeAlphaApiUrl, isDeviceSelectionInput, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
+import { db, setSetting } from './db.js';
+import { normalizeAlphaApiUrl, isDeviceSelectionInput, buildAlphaPromptWithContext, executeAlphaAuxiliaryJob } from './alphaAgentRunner.js';
 import { getAvailableClis, getModelsForCli } from './agentRunner.js';
 import { alphaDeviceService, isTokenExpiring } from './alphaDeviceService.js';
 
@@ -171,6 +171,75 @@ test('buildAlphaPromptWithContext formats cleanly without project system prompt'
   assert.ok(!result.includes('[Project Instructions]'));
   assert.ok(result.includes('[Workspace Execution Guidance]'));
   assert.ok(result.includes('[User Request]\nShow files'));
+});
+
+test('buildAlphaPromptWithContext formats subsequent chat turn reminder', () => {
+  const result = buildAlphaPromptWithContext('Can you also add tests?', {
+    worktreePath: '/Users/test/projects/my-project-worktree',
+    branch: 'feat-new-stuff',
+    isAlpha: true,
+    isSubsequentTurn: true,
+  });
+
+  assert.ok(result.includes('[Active Workspace Reminder]'));
+  assert.ok(result.includes('Working Directory: /Users/test/projects/my-project-worktree'));
+  assert.ok(result.includes('Branch: feat-new-stuff'));
+  assert.ok(!result.includes('[Workspace Execution Guidance]'));
+  assert.ok(result.includes('[User Request]\nCan you also add tests?'));
+});
+
+test('buildAlphaPromptWithContext omits Alpha execution guidance when isAlpha is false', () => {
+  const result = buildAlphaPromptWithContext('Refactor code', {
+    projectName: 'other-project',
+    taskName: 'Refactor task',
+    worktreePath: '/Users/test/projects/other-project',
+    branch: 'refactor-1',
+    baseBranch: 'main',
+    isAlpha: false,
+  });
+
+  assert.ok(result.includes('[Project & Task Context]'));
+  assert.ok(result.includes('- Project: other-project'));
+  assert.ok(!result.includes('[Workspace Execution Guidance]'));
+  assert.ok(result.includes('[User Request]\nRefactor code'));
+});
+
+test('buildAlphaPromptWithContext formats custom jobRequirementTitle for auxiliary tasks', () => {
+  const result = buildAlphaPromptWithContext('Inspect repository and return JSON', {
+    projectName: 'aux-project',
+    worktreePath: '/Users/test/projects/aux-project',
+    isAlpha: true,
+    jobRequirementTitle: 'Job Requirement: Auto-Discover Project Settings and Scripts',
+  });
+
+  assert.ok(result.includes('[Project & Task Context]'));
+  assert.ok(result.includes('[Job Requirement: Auto-Discover Project Settings and Scripts]\nInspect repository and return JSON'));
+  assert.ok(!result.includes('[User Request]'));
+});
+
+test('executeAlphaAuxiliaryJob throws error if API URL or Key is not configured', async () => {
+  db.prepare('DELETE FROM settings WHERE key LIKE ?').run('alpha_intelligence_%');
+  await assert.rejects(
+    () => executeAlphaAuxiliaryJob({
+      prompt: 'Do something',
+      worktreePath: '/tmp/test',
+    }),
+    /Alpha Intelligence is not configured/
+  );
+});
+
+test('executeAlphaAuxiliaryJob throws error if device bridge is not connected', async () => {
+  setSetting('alpha_intelligence_api_url', 'https://ai.insea.io/api/superagents/123/run?stream=true');
+  setSetting('alpha_intelligence_api_key', 'test-key');
+  alphaDeviceService.disconnect();
+
+  await assert.rejects(
+    () => executeAlphaAuxiliaryJob({
+      prompt: 'Do something',
+      worktreePath: '/tmp/test',
+    }),
+    /Alpha Intelligence device bridge is not connected/
+  );
 });
 
 test('isTokenExpiring correctly identifies expired or near-expiry tokens', () => {
