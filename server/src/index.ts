@@ -1622,6 +1622,11 @@ app.post('/api/tasks/:id/git/commit-message', async (req: Request, res: Response
 });
 
 // Dev Server Control
+app.get('/api/dev-servers/active', (req: Request, res: Response) => {
+  const activeTaskIds = devServerManager.getActiveDevServerTaskIds();
+  res.json({ activeTaskIds });
+});
+
 app.get('/api/tasks/:id/dev-server', (req: Request, res: Response) => {
   const taskId = req.params.id as string;
   const state = devServerManager.getServerState(taskId);
@@ -1922,6 +1927,15 @@ alphaDeviceService.on('status_change', (deviceStatus) => {
       apiUrl,
       device: deviceStatus,
     },
+  });
+});
+
+// Forward dev server state changes to all connected clients
+devServerManager.on('state_change', (state) => {
+  broadcastWs({
+    type: 'dev_server_state_update',
+    taskId: state.taskId,
+    status: state.status,
   });
 });
 

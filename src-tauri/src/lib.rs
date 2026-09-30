@@ -175,8 +175,8 @@ pub fn run() {
                                 let _ = app_handle
                                     .notification()
                                     .builder()
-                                    .title("Raft Permissions")
-                                    .body("Raft needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.")
+                                    .title("Alpha Bro Permissions")
+                                    .body("Alpha Bro needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.")
                                     .show();
                             }
                         }
@@ -185,8 +185,8 @@ pub fn run() {
                         eprintln!("[raft] Failed to start server: {e}");
                         let _ = app_handle
                             .dialog()
-                            .message(format!("Failed to start Raft server:\n\n{e}"))
-                            .title("Raft Error")
+                            .message(format!("Failed to start Alpha Bro server:\n\n{e}"))
+                            .title("Alpha Bro Error")
                             .kind(MessageDialogKind::Error)
                             .blocking_show();
                         app_handle.exit(1);

@@ -139,7 +139,7 @@ pub fn setup_tray(
         "Copy Local URL"
     };
 
-    let open_item = MenuItem::with_id(app, "open_browser", "Open Raft in Browser", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, "open_browser", "Open Alpha Bro in Browser", true, None::<&str>)?;
     let copy_item = MenuItem::with_id(app, "copy_url", copy_label, true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
@@ -201,7 +201,7 @@ pub fn setup_tray(
         None::<&str>,
     )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit Raft", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Alpha Bro", true, None::<&str>)?;
 
     #[cfg(target_os = "macos")]
     let menu = Menu::with_items(
@@ -255,11 +255,11 @@ pub fn setup_tray(
         .icon(icon_image)
         .menu(&menu)
         .show_menu_on_left_click(false)
-        .tooltip("Raft — AI Coding Workspace");
+        .tooltip("Alpha Bro — AI Coding Workspace");
 
     #[cfg(target_os = "macos")]
     {
-        tray_builder = tray_builder.icon_as_template(true);
+        tray_builder = tray_builder.icon_as_template(false);
     }
 
     tray_builder

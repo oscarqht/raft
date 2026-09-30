@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
-  Paperclip, Loader2, AlertCircle, Trash2
+  Paperclip, Loader2, AlertCircle, Trash2, ArrowUp
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload } from '../types';
 import { ChatMessageList } from './ChatMessageList';
@@ -38,6 +38,9 @@ interface ChatPaneProps {
   onOpenScripts?: () => void;
   onDeleteTask?: () => void;
   isDeletingTask?: boolean;
+  isPreviewOpen?: boolean;
+  onTogglePreview?: () => void;
+  isDevRunning?: boolean;
 }
 
 export const ChatPane: React.FC<ChatPaneProps> = ({
@@ -50,6 +53,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   onOpenScripts,
   onDeleteTask,
   isDeletingTask,
+  isPreviewOpen = false,
+  onTogglePreview,
+  isDevRunning = false,
 }) => {
   const navigate = useNavigate();
   // Synchronous cache initialization for 0ms instantaneous load
@@ -1095,9 +1101,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden">
       {/* Top Header: Tabs + Quick Action Buttons */}
-      <div className="min-h-[64px] py-3.5 px-4 sm:px-5 border-b border-cozy-border/50 bg-cozy-surface/40 backdrop-blur-md flex items-center justify-between shrink-0 select-none gap-3">
+      <div className="h-11 px-3 border-b border-cozy-border bg-cozy-surface flex items-center justify-between shrink-0 select-none gap-2">
         {/* Chat Tabs */}
-        <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar flex-1 mr-2 touch-pan-x">
+        <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-2 touch-pan-x">
           {chats.map((c) => {
             const isActive = c.id === activeChatId;
             const isEditing = editingChatId === c.id;
@@ -1105,10 +1111,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <div
                 key={c.id}
                 onClick={() => setActiveChatId(c.id)}
-                className={`group flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium cursor-pointer transition-all border shrink-0 ${
+                className={`group flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors border shrink-0 ${
                   isActive
-                    ? 'bg-teal-500/10 border-teal-400/40 text-teal-600 dark:text-teal-400 shadow-soft-sm font-semibold'
-                    : 'bg-cozy-subtle/50 border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/80'
+                    ? 'bg-cozy-subtle dark:bg-[#282828] text-cozy-text border-cozy-border font-medium'
+                    : 'bg-transparent border-transparent text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/50'
                 }`}
               >
                 {isEditing ? (
@@ -1120,7 +1126,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     onBlur={() => handleSaveRename(c.id)}
                     onKeyDown={(e) => handleRenameKeyDown(c.id, e)}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-cozy-surface text-cozy-text border border-teal-400 rounded-full px-2 py-0.5 text-xs outline-none w-24"
+                    className="bg-cozy-surface text-cozy-text border border-teal-500 rounded-md px-1.5 py-0.5 text-xs outline-none w-24"
                     autoFocus
                   />
                 ) : (
@@ -1135,7 +1141,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     <button
                       type="button"
                       onClick={(e) => handleStartRename(c, e)}
-                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-teal-500 transition-opacity"
+                      className="p-0.5 rounded text-cozy-muted opacity-0 group-hover:opacity-100 hover:text-cozy-text transition-opacity"
                       title="Rename chat"
                     >
                       <Pencil className="w-3 h-3" />
@@ -1157,7 +1163,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           })}
           <button
             onClick={handleCreateChat}
-            className="w-7 h-7 rounded-full text-cozy-muted hover:text-teal-500 bg-cozy-subtle/60 hover:bg-cozy-subtle border border-cozy-border/50 flex items-center justify-center transition-all shrink-0"
+            className="w-6 h-6 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors shrink-0"
             title="Open new chat agent tab"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -1165,11 +1171,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </div>
 
         {/* Desktop Action Buttons: Scripts, Sync/Rebase & Submit */}
-        <div className="hidden sm:flex items-center space-x-2 shrink-0">
+        <div className="hidden sm:flex items-center space-x-1.5 shrink-0">
           {onOpenScripts && (
             <button
               onClick={onOpenScripts}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 border border-cozy-border/70 text-cozy-text hover:border-teal-400/40 hover:text-teal-600 dark:hover:text-teal-400 transition-all shadow-soft-sm"
+              className="h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium bg-cozy-subtle border border-cozy-border text-cozy-text hover:bg-cozy-subtle/80 transition-colors"
               title="Run project scripts or custom terminal commands"
             >
               <Terminal className="w-3.5 h-3.5 text-teal-500" />
@@ -1179,7 +1185,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
           <button
             onClick={onOpenRebase}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-all shadow-soft-sm"
+            className="h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors"
             title="Rebase branch and resolve conflicts"
           >
             <GitMerge className="w-3.5 h-3.5 text-amber-500" />
@@ -1188,12 +1194,36 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
           <button
             onClick={onOpenSubmit}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean"
+            className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors"
             title="Submit changes: commit and push"
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>Submit</span>
           </button>
+
+          {onTogglePreview && (
+            <button
+              type="button"
+              onClick={onTogglePreview}
+              className={`h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                isPreviewOpen
+                  ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400 font-medium'
+                  : 'bg-cozy-subtle hover:bg-cozy-subtle/80 border-cozy-border text-cozy-muted hover:text-cozy-text'
+              }`}
+              title={isPreviewOpen ? 'Hide preview pane' : 'Open preview pane'}
+            >
+              <Globe className="w-3.5 h-3.5 text-teal-500" />
+              <span>Preview</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                  isDevRunning
+                    ? 'bg-emerald-500'
+                    : 'bg-zinc-400/50'
+                }`}
+                title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
+              />
+            </button>
+          )}
         </div>
 
         {/* Mobile Dropdown Action Menu */}
@@ -1208,7 +1238,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </button>
 
           {showMobileActionsMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-44 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
+            <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
+              {onTogglePreview && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMobileActionsMenu(false);
+                    onTogglePreview();
+                  }}
+                  className="flex items-center justify-between px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Globe className="w-3.5 h-3.5 text-teal-500" />
+                    <span>{isPreviewOpen ? 'Hide Preview' : 'Show Preview'}</span>
+                  </div>
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isDevRunning ? 'bg-emerald-400 shadow-glow-mint' : 'bg-zinc-400/40'
+                    }`}
+                  />
+                </button>
+              )}
               {onOpenScripts && (
                 <button
                   type="button"
@@ -1288,54 +1338,55 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       />
       {/* Input Area */}
       <div
-        className="relative p-4 sm:p-5 border-t border-cozy-border/50 bg-cozy-surface/50 backdrop-blur-md"
+        className="relative w-full pb-3 pt-1 px-3 sm:px-4 bg-transparent shrink-0"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Drag and Drop Overlay */}
-        {isDragOver && (
-          <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-teal-500/15 backdrop-blur-md border-2 border-dashed border-teal-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
-            <div className="p-3.5 rounded-2xl bg-cozy-surface shadow-xl text-teal-500 mb-2 border border-teal-400/30">
-              <UploadCloud className="w-8 h-8 animate-bounce text-teal-500" />
+        <div className="max-w-3xl lg:max-w-4xl mx-auto w-full relative">
+          {/* Drag and Drop Overlay */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-teal-500/15 backdrop-blur-md border-2 border-dashed border-teal-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
+              <div className="p-3.5 rounded-2xl bg-cozy-surface shadow-xl text-teal-500 mb-2 border border-teal-400/30">
+                <UploadCloud className="w-8 h-8 animate-bounce text-teal-500" />
+              </div>
+              <p className="text-sm font-semibold text-cozy-text">Drop files to attach to this message</p>
+              <p className="text-xs text-cozy-muted mt-1">Images, code, documents up to 50MB (max 10 files)</p>
             </div>
-            <p className="text-sm font-semibold text-cozy-text">Drop files to attach to this message</p>
-            <p className="text-xs text-cozy-muted mt-1">Images, code, documents up to 50MB (max 10 files)</p>
-          </div>
-        )}
-        {/* Hidden File Picker Input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) {
-              handleUploadFiles(e.target.files);
-            }
-          }}
-        />
+          )}
+          {/* Hidden File Picker Input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files && e.target.files.length > 0) {
+                handleUploadFiles(e.target.files);
+              }
+            }}
+          />
 
-        {/* Upload Error Banner */}
-        {uploadError && (
-          <div className="mb-2 p-2 px-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-500 text-xs flex items-center justify-between">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{uploadError}</span>
+          {/* Upload Error Banner */}
+          {uploadError && (
+            <div className="mb-2 p-2 px-3 rounded-xl bg-red-500/10 border border-red-400/30 text-red-500 text-xs flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{uploadError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUploadError(null)}
+                className="p-1 hover:bg-red-500/20 rounded-md transition-colors"
+                title="Dismiss error"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setUploadError(null)}
-              className="p-1 hover:bg-red-500/20 rounded-md transition-colors"
-              title="Dismiss error"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* Editor Box */}
-        <div className="relative flex flex-col rounded-2xl bg-cozy-surface/90 dark:bg-slate-900/80 border border-cozy-border/80 focus-within:border-teal-400/60 focus-within:ring-2 focus-within:ring-teal-400/20 shadow-soft-sm transition-all p-2.5">
+          {/* Editor Box */}
+          <div className="relative flex flex-col rounded-3xl bg-cozy-surface dark:bg-[#2f2f2f] border border-cozy-border focus-within:border-cozy-muted/60 shadow-sm transition-all p-3">
           {/* Skills Autocompletion Popup */}
           {showSkillsPopup && (
             <div
@@ -1483,37 +1534,37 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 ref={configBtnRef}
                 type="button"
                 onClick={() => setShowConfig((prev) => !prev)}
-                className={`inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full text-xs font-medium border transition-all group max-w-full min-w-0 ${
+                className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border transition-colors group max-w-full min-w-0 ${
                   showConfig
-                    ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400 shadow-soft-sm'
-                    : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm'
+                    ? 'bg-cozy-subtle border-cozy-border text-cozy-text'
+                    : 'bg-transparent hover:bg-cozy-subtle border-transparent hover:border-cozy-border text-cozy-muted hover:text-cozy-text'
                 }`}
                 title={tabCli?.toLowerCase() === 'alpha' ? 'Click to configure agent' : 'Click to configure agent, model, and reasoning effort'}
               >
                 <Sliders className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-                <span className="font-semibold text-teal-600 dark:text-teal-400 shrink-0">{tabCli || 'agy'}</span>
+                <span className="font-semibold text-cozy-text shrink-0">{tabCli || 'agy'}</span>
                 {tabCli?.toLowerCase() !== 'alpha' && (
                   <>
-                    <span className="text-cozy-muted/50 shrink-0">·</span>
-                    <span className="truncate max-w-[120px] sm:max-w-[200px]">
-                      {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default Model'}
+                    <span className="text-cozy-muted/40 shrink-0">·</span>
+                    <span className="truncate max-w-[120px] sm:max-w-[180px]">
+                      {availableModels.find((m) => m.id === tabModel)?.name || tabModel || 'Default'}
                     </span>
                     {tabEffort && (
                       <>
-                        <span className="text-cozy-muted/50 shrink-0">·</span>
+                        <span className="text-cozy-muted/40 shrink-0">·</span>
                         <span className="text-cozy-muted capitalize shrink-0">{tabEffort}</span>
                       </>
                     )}
                   </>
                 )}
-                <ChevronDown className={`w-3.5 h-3.5 text-cozy-muted group-hover:text-teal-500 ml-0.5 transition-transform shrink-0 ${showConfig ? 'rotate-180 text-teal-500' : ''}`} />
+                <ChevronDown className={`w-3 h-3 text-cozy-muted ml-0.5 transition-transform shrink-0 ${showConfig ? 'rotate-180 text-cozy-text' : ''}`} />
               </button>
 
               {/* Model / Agent Config Popover */}
               {showConfig && (
                 <div
                   ref={configRef}
-                  className="absolute bottom-full left-0 mb-2 p-3.5 rounded-2xl popup-surface bg-white dark:bg-[#0c1322] border border-cozy-border/80 shadow-xl z-30 transition-all space-y-2.5 min-w-[280px] sm:min-w-[360px] max-w-[calc(100vw-3rem)]"
+                  className="absolute bottom-full left-0 mb-2 p-3.5 rounded-2xl popup-surface bg-white dark:bg-[#1f1f1f] border border-cozy-border shadow-xl z-30 transition-all space-y-2.5 min-w-[280px] sm:min-w-[360px] max-w-[calc(100vw-3rem)]"
                 >
                   <div className="flex items-center justify-between pb-2 border-b border-cozy-border/50 text-[11px] font-medium text-cozy-muted">
                     <span className="flex items-center gap-2 text-cozy-text font-semibold">
@@ -1608,7 +1659,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isStreaming || isUploading}
-                className="p-2 rounded-xl text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-colors disabled:opacity-40 shrink-0"
+                className="w-8 h-8 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors disabled:opacity-40 shrink-0 cursor-pointer"
                 title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
               >
                 <Paperclip className="w-4 h-4" />
@@ -1617,24 +1668,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               {/* Send / Abort Button */}
               {isStreaming ? (
                 <button
+                  type="button"
                   onClick={handleAbort}
-                  className="p-2 rounded-xl bg-red-500/15 text-red-500 hover:bg-red-500/25 transition-all shrink-0"
+                  className="w-8 h-8 rounded-full bg-cozy-text text-cozy-bg hover:opacity-90 flex items-center justify-center transition-all shrink-0 cursor-pointer"
                   title="Stop generation"
                 >
-                  <Square className="w-4 h-4 fill-current" />
+                  <Square className="w-3.5 h-3.5 fill-current" />
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={handleSendMessage}
                   disabled={(!inputPrompt.trim() && pendingAttachments.length === 0) || isUploading}
-                  className="p-2 rounded-xl bg-teal-500 text-white hover:bg-teal-600 disabled:opacity-35 disabled:hover:bg-teal-500 transition-all shadow-glow-ocean shrink-0"
+                  className="w-8 h-8 rounded-full bg-cozy-text text-cozy-bg hover:opacity-90 disabled:opacity-20 flex items-center justify-center transition-all shrink-0 cursor-pointer"
                   title="Send message"
                 >
-                  <Send className="w-4 h-4" />
+                  <ArrowUp className="w-4 h-4" />
                 </button>
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

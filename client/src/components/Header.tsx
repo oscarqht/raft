@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2 } from 'lucide-react';
 import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus, updateTask } from '../api';
-import { TaskQuickSwitcher } from './TaskQuickSwitcher';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
 
@@ -115,33 +114,32 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="relative z-40 h-16 border-b border-cozy-border/60 glass-panel px-4 sm:px-6 flex items-center justify-between shrink-0 select-none gap-3 shadow-soft-sm">
+    <header className="relative z-40 h-12 border-b border-cozy-border bg-cozy-surface px-3 sm:px-4 flex items-center justify-between shrink-0 select-none gap-3">
       {/* Left: Brand & Breadcrumbs */}
-      <div className="flex items-center space-x-2 sm:space-x-3 text-sm min-w-0">
+      <div className="flex items-center space-x-1.5 sm:space-x-2 text-sm min-w-0">
         <Link
           to="/"
-          className="flex items-center space-x-2.5 text-cozy-text font-semibold hover:opacity-90 transition-all shrink-0 group"
+          className="flex items-center space-x-2 text-cozy-text font-semibold hover:opacity-85 transition-opacity shrink-0 group mr-1"
         >
-          <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center overflow-hidden shrink-0 shadow-soft-sm group-hover:scale-105 transition-transform">
-            <img src="/logo.png" alt="Raft logo" className="w-6 h-6 object-contain drop-shadow-sm" />
+          <div className="w-7 h-7 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center overflow-hidden shrink-0">
+            <img src="/logo.png" alt="Alpha Bro logo" className="w-5 h-5 object-contain" />
           </div>
-          <span className="text-lg tracking-tight font-semibold text-cozy-text flex items-center gap-1.5">
-            Raft
-            <Sparkles className="w-4 h-4 text-teal-400 fill-teal-400/20 inline group-hover:rotate-12 transition-transform duration-300" />
+          <span className="text-sm font-semibold tracking-tight text-cozy-text flex items-center gap-1">
+            Alpha Bro
           </span>
         </Link>
 
         {currentPath?.projectName && currentPath?.projectId && (
-          <div className="hidden min-[1200px]:flex items-center space-x-2 text-cozy-muted min-w-0">
-            <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
+          <div className="hidden min-[1200px]:flex items-center space-x-1.5 text-cozy-muted min-w-0">
+            <span className="text-cozy-border select-none">/</span>
             <Link
               to={`/projects/${currentPath.projectId}`}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-all max-w-[120px] sm:max-w-[200px] truncate shadow-soft-sm text-xs font-medium"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-cozy-subtle text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-colors max-w-[140px] sm:max-w-[200px] truncate text-xs font-medium"
             >
               {currentPath.projectIcon ? (
-                <span className="text-sm shrink-0 leading-none">{currentPath.projectIcon}</span>
+                <span className="text-xs shrink-0 leading-none">{currentPath.projectIcon}</span>
               ) : (
-                <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0 hidden sm:inline" />
+                <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0" />
               )}
               <span className="truncate">{currentPath.projectName}</span>
             </Link>
@@ -149,23 +147,23 @@ export const Header: React.FC<HeaderProps> = ({
         )}
 
         {currentPath?.taskName && (
-          <div className="hidden min-[1200px]:flex items-center space-x-2 text-cozy-muted min-w-0">
-            <ChevronRight className="w-4 h-4 text-cozy-border/80 shrink-0" />
+          <div className="hidden min-[1200px]:flex items-center space-x-1.5 text-cozy-muted min-w-0">
+            <span className="text-cozy-border select-none">/</span>
             <div className="flex items-center gap-1.5 min-w-0 flex-nowrap">
               <button
                 type="button"
                 onClick={onEditTask}
                 disabled={!onEditTask || isDeletingTask}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full bg-cozy-subtle/70 hover:bg-cozy-subtle border border-cozy-border/60 hover:border-teal-400/30 transition-all text-left shadow-soft-sm text-xs font-medium shrink-0 ${
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-md hover:bg-cozy-subtle transition-colors text-left text-xs font-medium shrink-0 ${
                   onEditTask && !isDeletingTask ? 'group cursor-pointer' : 'cursor-default'
                 }`}
                 title={onEditTask ? 'Click to edit task details' : undefined}
               >
-                <span className="text-cozy-text font-medium max-w-[100px] sm:max-w-[220px] truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
+                <span className="text-cozy-text font-medium max-w-[120px] sm:max-w-[220px] truncate group-hover:text-teal-600 dark:group-hover:text-teal-400">
                   {currentPath.taskName}
                 </span>
                 {onEditTask && (
-                  <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-teal-400 transition-opacity shrink-0 hidden sm:inline" />
+                  <Pencil className="w-3 h-3 text-cozy-muted opacity-0 group-hover:opacity-100 group-hover:text-teal-400 transition-opacity shrink-0" />
                 )}
               </button>
 
@@ -185,13 +183,13 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={onDeleteTask}
                   disabled={isDeletingTask}
-                  className="w-7 h-7 rounded-full bg-cozy-subtle/70 hover:bg-red-500/15 border border-cozy-border/60 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
+                  className="w-6 h-6 rounded-md hover:bg-red-500/10 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                   title="Delete task and clean up git worktree"
                 >
                   {isDeletingTask ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                    <Loader2 className="w-3 h-3 animate-spin text-red-500" />
                   ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3 h-3" />
                   )}
                 </button>
               )}
@@ -201,7 +199,7 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right: Task Switcher, Agent Status & Controls */}
-      <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+      <div className="flex items-center space-x-2 shrink-0">
         {currentPath?.taskId && taskStatus && (
           <div className="min-[1200px]:hidden flex items-center shrink-0">
             <TaskStatusBadges
@@ -219,12 +217,12 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onNewTask}
-            className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-glow-ocean cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors cursor-pointer shrink-0"
             title="Start a new task in this project"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Start New Task</span>
-            <span className="sm:hidden">New Task</span>
+            <span className="hidden sm:inline">New Task</span>
+            <span className="sm:hidden">New</span>
           </button>
         )}
 
@@ -233,7 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
             type="button"
             onClick={onDeleteTask}
             disabled={isDeletingTask}
-            className="min-[1200px]:hidden w-8 h-8 rounded-full bg-cozy-subtle/80 hover:bg-red-500/15 border border-cozy-border/70 hover:border-red-500/30 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-all cursor-pointer shadow-soft-sm disabled:opacity-60 disabled:cursor-wait"
+            className="min-[1200px]:hidden w-7 h-7 rounded-md hover:bg-red-500/10 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
             title="Delete task and clean up git worktree"
           >
             {isDeletingTask ? (
@@ -244,23 +242,17 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        <TaskQuickSwitcher
-          currentTaskId={currentPath?.taskId}
-          currentTaskName={currentPath?.taskName}
-          onNavigate={handleNav}
-        />
-
         {settings && (
           <Link
             to="/settings"
-            className="hidden min-[1200px]:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-cozy-subtle/80 hover:bg-cozy-subtle border border-cozy-border/80 hover:border-teal-400/40 text-cozy-muted hover:text-cozy-text shadow-soft-sm transition-all shrink-0"
+            className="hidden min-[1200px]:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-muted hover:text-cozy-text transition-colors shrink-0"
             title="Active AI Agent CLI"
           >
-            <span className="w-2 h-2 rounded-full bg-teal-400 shadow-glow-ocean"></span>
-            <span className="font-semibold text-teal-600 dark:text-teal-400">{settings.agent_cli}</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
+            <span className="font-medium text-teal-600 dark:text-teal-400">{settings.agent_cli}</span>
             {settings.agent_cli?.toLowerCase() !== 'alpha' && (
               <>
-                <span className="text-cozy-border/80 hidden sm:inline">•</span>
+                <span className="text-cozy-border hidden sm:inline">•</span>
                 <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
               </>
             )}
@@ -271,7 +263,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         <Link
           to="/settings"
-          className="w-9 h-9 rounded-full bg-cozy-subtle/80 hover:bg-cozy-surface border border-cozy-border/70 hover:border-teal-400/30 shadow-soft-sm flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-all"
+          className="w-7 h-7 rounded-lg hover:bg-cozy-subtle flex items-center justify-center text-cozy-muted hover:text-cozy-text transition-colors"
           title="Settings"
         >
           <SettingsIcon className="w-4 h-4" />

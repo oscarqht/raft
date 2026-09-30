@@ -9,6 +9,7 @@ interface DraggableSplitProps {
   storageKey?: string;
   mobileActivePane?: 'left' | 'right';
   mobileBreakpoint?: number;
+  rightCollapsed?: boolean;
 }
 
 export const DraggableSplit: React.FC<DraggableSplitProps> = ({
@@ -20,6 +21,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   storageKey = 'raft:split-ratio',
   mobileActivePane = 'left',
   mobileBreakpoint = 1200,
+  rightCollapsed = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < mobileBreakpoint);
@@ -148,53 +150,44 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
       {/* Left Pane */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'left' ? '100%' : '0px') : `calc(${ratio * 100}% - 7px)`,
+          width: isMobile
+            ? mobileActivePane === 'left' ? '100%' : '0px'
+            : rightCollapsed ? '100%' : `calc(${ratio * 100}% - 0.5px)`,
           display: isMobile && mobileActivePane !== 'left' ? 'none' : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className={`h-full flex flex-col min-w-0 overflow-hidden relative ${
-          isMobile
-            ? 'rounded-none border-0 shadow-none bg-cozy-surface/60'
-            : 'rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg'
-        }`}
+        className="h-full flex flex-col min-w-0 overflow-hidden relative rounded-none border-0 shadow-none bg-cozy-surface"
       >
         {left}
       </div>
 
-      {/* Draggable Divider with Airy Gutter */}
-      {!isMobile && (
+      {/* Draggable Divider with Hairline 1px border */}
+      {!isMobile && !rightCollapsed && (
         <div
           onPointerDown={handlePointerDown}
-          className={`relative w-3 h-full cursor-col-resize transition-all flex items-center justify-center shrink-0 z-20 select-none group touch-none mx-0.5 rounded-full ${
-            isDragging ? 'bg-teal-500/10' : 'hover:bg-teal-500/5'
+          className={`relative w-[1px] h-full cursor-col-resize transition-colors shrink-0 z-20 select-none group touch-none ${
+            isDragging ? 'bg-teal-500' : 'bg-cozy-border hover:bg-teal-500/80'
           }`}
           title="Drag to resize panels"
         >
           {/* Invisible wider hit area for easier grabbing */}
-          <div className="absolute inset-y-0 -left-2 -right-2 z-10 cursor-col-resize" />
-
-          <div
-            className={`w-1 rounded-full transition-all z-20 ${
-              isDragging
-                ? 'bg-teal-400 h-16 shadow-glow-ocean'
-                : 'h-8 bg-cozy-border/80 group-hover:bg-teal-400 group-hover:h-12'
-            }`}
-          />
+          <div className="absolute inset-y-0 -left-1.5 -right-1.5 z-10 cursor-col-resize" />
         </div>
       )}
 
       {/* Right Pane */}
       <div
         style={{
-          width: isMobile ? (mobileActivePane === 'right' ? '100%' : '0px') : `calc(${(1 - ratio) * 100}% - 7px)`,
-          display: isMobile && mobileActivePane !== 'right' ? 'none' : 'flex',
+          width: isMobile
+            ? mobileActivePane === 'right' ? '100%' : '0px'
+            : rightCollapsed ? '0px' : `calc(${(1 - ratio) * 100}% - 0.5px)`,
+          display:
+            (isMobile && mobileActivePane !== 'right') || (!isMobile && rightCollapsed)
+              ? 'none'
+              : 'flex',
           pointerEvents: isDragging ? 'none' : 'auto',
         }}
-        className={`h-full flex flex-col min-w-0 overflow-hidden relative ${
-          isMobile
-            ? 'rounded-none border-0 shadow-none bg-cozy-surface/60'
-            : 'rounded-squircle glass-panel border border-white/80 dark:border-white/10 shadow-soft-md transition-shadow hover:shadow-soft-lg'
-        }`}
+        className="h-full flex flex-col min-w-0 overflow-hidden relative rounded-none border-0 shadow-none bg-cozy-surface"
       >
         {right}
       </div>

@@ -321,6 +321,17 @@ export async function generateTaskCommitMessage(taskId: string): Promise<CommitM
   return data;
 }
 
+export async function getActiveDevServers(): Promise<string[]> {
+  try {
+    const res = await fetch(`${API_BASE}/dev-servers/active`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.activeTaskIds || [];
+  } catch {
+    return [];
+  }
+}
+
 export async function getDevServerState(taskId: string): Promise<DevServerState> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server`);
   return res.json();

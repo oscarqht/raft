@@ -858,7 +858,7 @@ const AgentActivityView: React.FC<{
       <button
         type="button"
         onClick={() => setIsManuallyToggled(!isExpanded)}
-        className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-all py-1 px-3 rounded-full bg-cozy-subtle/80 border border-cozy-border/70 hover:border-teal-400/40 shadow-soft-sm cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
+        className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-colors py-1 px-2.5 rounded-lg bg-cozy-subtle hover:bg-cozy-subtle/80 border border-cozy-border cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
       >
         {isStreaming && activeStep ? (
           <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin shrink-0" />
@@ -871,13 +871,13 @@ const AgentActivityView: React.FC<{
             • {totalDuration.toFixed(1)}s
           </span>
         )}
-        <span className="px-2 py-0.2 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 text-[10px] font-semibold shrink-0">
+        <span className="px-1.5 py-0.2 rounded-md bg-cozy-surface text-cozy-muted border border-cozy-border text-[10px] font-medium shrink-0">
           {summary.count} {summary.count === 1 ? 'step' : 'steps'}
         </span>
         {isExpanded ? (
-          <ChevronDown className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
+          <ChevronDown className="w-3 h-3 ml-auto text-cozy-muted shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 ml-auto text-cozy-muted shrink-0" />
+          <ChevronRight className="w-3 h-3 ml-auto text-cozy-muted shrink-0" />
         )}
       </button>
 
@@ -887,7 +887,7 @@ const AgentActivityView: React.FC<{
           <div
             ref={containerRef}
             onScroll={handleScroll}
-            className="w-full p-3.5 sm:p-4 rounded-2xl bg-cozy-surface/90 border border-cozy-border/70 shadow-soft-inner flex flex-col gap-2 max-h-96 overflow-y-auto animate-in fade-in duration-200"
+            className="w-full p-3 rounded-xl bg-cozy-subtle/40 dark:bg-[#1f1f1f] border border-cozy-border flex flex-col gap-2 max-h-96 overflow-y-auto"
           >
             <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
               <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
@@ -1052,72 +1052,66 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
     <div
       ref={scrollContainerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 md:p-7 space-y-6 min-w-0 overscroll-y-contain [transform:translateZ(0)]"
+      className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 overscroll-y-contain [transform:translateZ(0)]"
     >
-      {messages.length === 0 && !isStreaming && (
-        <div className="h-full flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
-          <div className="w-14 h-14 rounded-2.5xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 flex items-center justify-center mb-3.5 shadow-soft-sm">
-            <Sparkles className="w-6 h-6 text-teal-500 fill-teal-400/20" />
+      <div className="max-w-3xl lg:max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6">
+        {messages.length === 0 && !isStreaming && (
+          <div className="min-h-[45vh] flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
+            <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3">
+              <Sparkles className="w-5 h-5 text-teal-500" />
+            </div>
+            <h3 className="text-base font-semibold text-cozy-text mb-1">How can I help you today?</h3>
+            <p className="text-xs max-w-sm text-cozy-muted leading-relaxed">
+              Ask the AI agent to explore your files, build new features, test code, or preview your application.
+            </p>
           </div>
-          <h3 className="text-base font-semibold text-cozy-text mb-1.5">Ready to collaborate</h3>
-          <p className="text-xs max-w-sm text-cozy-muted leading-relaxed">
-            Ask the AI agent to explore your files, build new features, run tests, or refine designs in this cozy workspace.
-          </p>
-        </div>
-      )}
+        )}
 
-      {messages.map((msg, index) => {
-        const previousUserMsg = messages.slice(0, index).reverse().find((m) => m.role === 'user');
-        const previousUserPrompt = previousUserMsg ? previousUserMsg.content : '';
-        return (
-          <MessageItem
-            key={msg.id}
-            msg={msg}
-            isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
-            onCopy={handleCopy}
-            onPreviewImage={handlePreviewImage}
-            onPreviewFile={handlePreviewFile}
-            clis={clis}
-            currentCli={currentCli}
-            previousUserPrompt={previousUserPrompt}
-            onRetryPrompt={onRetryPrompt}
-            onSwitchCliAndRetry={onSwitchCliAndRetry}
-            onOpenSettings={onOpenSettings}
-            onAbort={onAbort}
-          />
-        );
-      })}
+        {messages.map((msg, index) => {
+          const previousUserMsg = messages.slice(0, index).reverse().find((m) => m.role === 'user');
+          const previousUserPrompt = previousUserMsg ? previousUserMsg.content : '';
+          return (
+            <MessageItem
+              key={msg.id}
+              msg={msg}
+              isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
+              onCopy={handleCopy}
+              onPreviewImage={handlePreviewImage}
+              onPreviewFile={handlePreviewFile}
+              clis={clis}
+              currentCli={currentCli}
+              previousUserPrompt={previousUserPrompt}
+              onRetryPrompt={onRetryPrompt}
+              onSwitchCliAndRetry={onSwitchCliAndRetry}
+              onOpenSettings={onOpenSettings}
+              onAbort={onAbort}
+            />
+          );
+        })}
 
-      {/* Human-in-the-loop input card */}
-      {activeHitl && (
-        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
-          <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-sky-500/10 border border-sky-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
-            <Bot className="w-4 h-4 text-sky-500" />
+        {/* Human-in-the-loop input card */}
+        {activeHitl && (
+          <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200">
+            <div className="w-full space-y-2 min-w-0 flex flex-col items-start">
+              <HumanInputCard hitl={activeHitl} onSubmitted={onHitlSubmitted} />
+            </div>
           </div>
-          <div className="w-full max-w-full min-[1200px]:max-w-[92%] min-[1200px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
-            <HumanInputCard hitl={activeHitl} onSubmitted={onHitlSubmitted} />
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Fallback streaming thinking indicator if no assistant message exists yet */}
-      {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-        <div className="flex items-start justify-start min-[1200px]:space-x-3 min-w-0 w-full animate-in fade-in duration-200">
-          <div className="hidden min-[1200px]:flex w-8 h-8 rounded-full bg-teal-500/10 border border-teal-400/30 items-center justify-center shrink-0 mt-0.5 shadow-soft-sm">
-            <Bot className="w-4 h-4 text-teal-500 animate-pulse" />
-          </div>
-          <div className="w-full max-w-full min-[1200px]:max-w-[92%] min-[1200px]:flex-1 space-y-2 min-w-0 flex flex-col items-start">
-            <div className="bg-cozy-surface/90 dark:bg-slate-900/90 border border-cozy-border/70 rounded-2xl rounded-tl-sm px-6 py-4 text-sm text-cozy-text shadow-soft-sm w-full">
+        {/* Fallback streaming thinking indicator if no assistant message exists yet */}
+        {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
+          <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200">
+            <div className="w-full py-2 text-sm text-cozy-text">
               <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                 <Sparkles className="w-3.5 h-3.5" />
                 Thinking and exploring codebase...
               </span>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <div ref={listEndRef} />
+        <div ref={listEndRef} />
+      </div>
 
       {/* Attachment Preview Modals */}
       <ImageLightboxModal
@@ -1349,39 +1343,16 @@ const MessageItem: React.FC<{
 
   return (
     <div
-      className={`flex items-start min-w-0 w-full min-[1200px]:space-x-3 ${
-        isUser
-          ? 'justify-end min-[1200px]:justify-start min-[1200px]:flex-row-reverse min-[1200px]:space-x-reverse'
-          : 'justify-start'
+      className={`flex items-start min-w-0 w-full ${
+        isUser ? 'justify-end' : 'justify-start'
       }`}
     >
-      {/* Avatar */}
-      <div
-        className={`hidden min-[1200px]:flex w-8 h-8 rounded-full items-center justify-center shrink-0 mt-0.5 border shadow-soft-sm ${
-          isUser
-            ? 'bg-gradient-to-tr from-teal-500 to-cyan-600 border-teal-400/30 text-white shadow-glow-ocean'
-            : authInfo.isAuthRequired || spendCapInfo.isSpendCap
-            ? 'bg-amber-500/10 border-amber-400/30 text-amber-500'
-            : 'bg-cozy-surface border-teal-400/20 text-teal-500'
-        }`}
-      >
-        {isUser ? (
-          <User className="w-4 h-4" />
-        ) : authInfo.isAuthRequired ? (
-          <KeyRound className="w-4 h-4 text-amber-500" />
-        ) : spendCapInfo.isSpendCap ? (
-          <AlertTriangle className="w-4 h-4 text-amber-500" />
-        ) : (
-          <Bot className="w-4 h-4" />
-        )}
-      </div>
-
       {/* Bubble Content */}
       <div
-        className={`space-y-1.5 min-w-0 flex flex-col max-w-full ${
+        className={`space-y-1.5 min-w-0 flex flex-col ${
           isUser
-            ? 'items-end min-[1200px]:max-w-[78%]'
-            : 'items-start w-full min-[1200px]:max-w-[92%]'
+            ? 'items-end max-w-[85%] sm:max-w-[75%]'
+            : 'items-start w-full'
         }`}
       >
         {/* Agent Activity Timeline & Steps (Both streaming & completed) */}
@@ -1395,12 +1366,12 @@ const MessageItem: React.FC<{
         )}
 
         <div
-          className={`group relative rounded-2xl text-sm shadow-soft-sm transition-colors duration-150 min-w-0 max-w-full ${
+          className={`group relative text-sm transition-colors duration-150 min-w-0 max-w-full ${
             isUser
-              ? 'bg-teal-500 text-white rounded-tr-sm shadow-glow-ocean px-6 sm:px-7 py-3 sm:py-3.5 pr-11 sm:pr-12 break-words [overflow-wrap:anywhere] font-medium'
+              ? 'bg-[#f4f4f4] dark:bg-[#2f2f2f] text-cozy-text rounded-3xl px-4 py-2.5 break-words [overflow-wrap:anywhere] font-normal'
               : authInfo.isAuthRequired || spendCapInfo.isSpendCap
-              ? 'rounded-tl-sm w-full border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/5 p-5 sm:p-6 text-cozy-text shadow-soft-sm break-words [overflow-wrap:anywhere]'
-              : 'bg-cozy-surface/95 dark:bg-[#111b2e]/95 border border-cozy-border/70 text-cozy-text rounded-tl-sm w-full px-6 sm:px-8 md:px-9 py-5 sm:py-6 pr-12 sm:pr-14 break-words [overflow-wrap:anywhere]'
+              ? 'rounded-xl w-full border border-amber-500/35 bg-gradient-to-br from-amber-500/10 via-rose-500/5 to-amber-500/5 p-4 sm:p-5 text-cozy-text break-words [overflow-wrap:anywhere]'
+              : 'w-full bg-transparent border-0 text-cozy-text px-0 py-1 break-words [overflow-wrap:anywhere]'
           }`}
         >
           {/* Active Skills Chips */}
@@ -1803,19 +1774,34 @@ const MessageItem: React.FC<{
             </div>
           )}
 
-          {/* Copy Button (Both User & Assistant) */}
-          {textToCopy && (
+          {/* Action Row for Assistant Message */}
+          {!isUser && textToCopy && !isStreaming && (
+            <div className="flex items-center gap-1.5 mt-2 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={() => handleCopyText('msg', textToCopy)}
+                className="p-1 rounded-md hover:bg-cozy-subtle hover:text-cozy-text transition-colors cursor-pointer"
+                title={copiedTarget === 'msg' ? 'Copied!' : 'Copy response'}
+              >
+                {copiedTarget === 'msg' ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Copy Button (User Message) */}
+          {isUser && textToCopy && (
             <button
+              type="button"
               onClick={() => handleCopyText('msg', textToCopy)}
-              className={`absolute top-3.5 right-3.5 p-1.5 rounded-xl transition-all opacity-0 group-hover:opacity-100 ${
-                isUser
-                  ? 'bg-teal-600/80 hover:bg-teal-700 text-teal-100 hover:text-white'
-                  : 'bg-cozy-subtle/80 hover:bg-cozy-surface text-cozy-muted hover:text-teal-500 shadow-soft-sm'
-              }`}
-              title={copiedTarget === 'msg' ? 'Copied!' : isUser ? 'Copy message' : 'Copy response'}
+              className="absolute top-2 right-2 p-1 rounded-md text-cozy-muted hover:text-cozy-text opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              title={copiedTarget === 'msg' ? 'Copied!' : 'Copy message'}
             >
               {copiedTarget === 'msg' ? (
-                <Check className={`w-3.5 h-3.5 ${isUser ? 'text-emerald-300' : 'text-emerald-400'}`} />
+                <Check className="w-3.5 h-3.5 text-emerald-500" />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
@@ -1823,11 +1809,7 @@ const MessageItem: React.FC<{
           )}
         </div>
 
-        <div
-          className={`text-[10px] text-cozy-muted/60 px-1 font-medium text-right min-[1200px]:${
-            isUser ? 'text-right' : 'text-left'
-          }`}
-        >
+        <div className="text-[10px] text-cozy-muted/50 px-1 font-medium">
           {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>

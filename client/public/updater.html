@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Raft Software Update</title>
+  <title>Alpha Bro Software Update</title>
   <style>
     :root {
       --bg: #ffffff;
@@ -395,7 +395,7 @@
               </svg>
             </div>
             <p class="state-title" style="margin: 14px 0 6px 0;">You're up to date!</p>
-            <p class="state-desc">Raft <strong style="color: var(--highlight-text);">v${escapeHtml(ver)}</strong> is currently the newest version available.</p>
+            <p class="state-desc">Alpha Bro <strong style="color: var(--highlight-text);">v${escapeHtml(ver)}</strong> is currently the newest version available.</p>
           </div>
         `;
       } else if (status.status === 'Downloading') {
@@ -422,7 +422,7 @@
                 <span class="version-arrow">→</span>
                 <span class="version-new">v${escapeHtml(d.version || '')}</span>
               </div>
-              <p class="state-title" style="margin: 6px 0 12px 0;">Downloading update...</p>
+              <p class="state-title" style="margin: 6px 0 10px 0;">Downloading update...</p>
               <div class="progress-track">
                 <div id="progress-fill" class="progress-fill" style="width: ${barWidth}%;"></div>
               </div>
@@ -442,7 +442,7 @@
             <div class="release-notes-body">${escapeHtml(d.body)}</div>
           </div>
         ` : `
-          <p class="state-desc">Download completed. Click below to install and relaunch Raft immediately.</p>
+          <p class="state-desc">Download completed. Click below to install and relaunch Alpha Bro immediately.</p>
         `;
 
         content.innerHTML = `

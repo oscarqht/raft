@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Settings, CliInfo, ProjectCustomScript } from '../types';
-import { getTask, getDevServerState, stopDevServer, scheduleDevServerStop, cancelDevServerStop } from '../api';
+import { getTask, getDevServerState } from '../api';
 import { getCachedTask, setCachedTask } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
@@ -13,7 +13,8 @@ import { ScriptDock } from '../components/ScriptDock';
 import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
 import { RunScriptModal } from '../components/RunScriptModal';
 import { ManageScriptsModal } from '../components/ManageScriptsModal';
-import { ArrowLeft, MessageSquare, Globe } from 'lucide-react';
+import { ProjectsTasksSidebar } from '../components/ProjectsTasksSidebar';
+import { ArrowLeft, MessageSquare, Globe, PanelLeftOpen } from 'lucide-react';
 
 interface TaskPageProps {
   taskId?: string;
@@ -55,6 +56,22 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
   const [mobileTab, setMobileTab] = useState<'chat' | 'preview'>('chat');
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('raft:task-sidebar-collapsed');
+      return saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('raft:task-sidebar-collapsed', String(isSidebarCollapsed));
+    } catch {}
+  }, [isSidebarCollapsed]);
+
   const [isDevRunning, setIsDevRunning] = useState(false);
   const isDevRunningRef = useRef(false);
   const taskRef = useRef(task);
@@ -65,9 +82,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   useEffect(() => {
     if (!taskId) return;
 
-    // Immediately cancel any pending stop for this task (e.g. from page reload)
-    cancelDevServerStop(taskId);
-
     getDevServerState(taskId)
       .then((s) => {
         const active = s.status === 'running' || s.status === 'starting';
@@ -75,37 +89,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         isDevRunningRef.current = active;
       })
       .catch(() => {});
-
-    const handleUnload = () => {
-      if (isDevRunningRef.current) {
-        scheduleDevServerStop(taskId, 3000);
-      }
-    };
-
-    window.addEventListener('pagehide', handleUnload);
-    window.addEventListener('beforeunload', handleUnload);
-
-    return () => {
-      window.removeEventListener('pagehide', handleUnload);
-      window.removeEventListener('beforeunload', handleUnload);
-
-      // In-app navigation / unmount / task switch:
-      if (isDevRunningRef.current && !isDeletingTaskRef.current) {
-        const taskName = taskRef.current?.name || 'Task';
-        stopDevServer(taskId, { onlyIfNoSubscribers: true })
-          .then((res) => {
-            if (res?.wasRunning) {
-              window.dispatchEvent(
-                new CustomEvent('show-dev-server-stopped-toast', {
-                  detail: { taskId, taskName },
-                })
-              );
-            }
-          })
-          .catch(() => {});
-        isDevRunningRef.current = false;
-      }
-    };
   }, [taskId]);
 
   useEffect(() => {
@@ -222,74 +205,119 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
-      <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] overflow-hidden relative p-0 min-[1200px]:p-4 bg-cozy-bg">
-        {/* Mobile Header Tabs */}
-        <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface shrink-0 select-none">
-          <button
-            type="button"
-            onClick={() => setMobileTab('chat')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
-              mobileTab === 'chat'
-                ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
-                : 'border-transparent text-cozy-muted hover:text-cozy-text'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>Chat</span>
-          </button>
-          <div className="w-[1px] h-4 bg-cozy-border/40 shrink-0" />
-          <button
-            type="button"
-            onClick={() => setMobileTab('preview')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
-              mobileTab === 'preview'
-                ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
-                : 'border-transparent text-cozy-muted hover:text-cozy-text'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Preview</span>
-            <span
-              className={`w-2 h-2 rounded-full transition-all ${
-                isDevRunning
-                  ? 'bg-emerald-400 shadow-glow-mint'
-                  : 'bg-zinc-400/40'
-              }`}
-              title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
-            />
-          </button>
+      <div className="flex-1 flex flex-row h-[calc(100vh-3rem)] overflow-hidden relative p-0 bg-cozy-bg">
+        {/* Left Projects & Tasks Sidebar (Desktop) */}
+        <div className="hidden min-[1200px]:flex h-full shrink-0">
+          <ProjectsTasksSidebar
+            currentTaskId={task.id}
+            currentProjectId={task.project_id}
+            onSelectTask={(selectedTaskId, selectedProjectId) => {
+              if (selectedTaskId === task.id) return;
+              if (selectedProjectId) {
+                navigate(`/projects/${selectedProjectId}/tasks/${selectedTaskId}`);
+              } else {
+                navigate(`/tasks/${selectedTaskId}`);
+              }
+            }}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+            ws={ws}
+          />
         </div>
 
-        <DraggableSplit
-          mobileActivePane={mobileTab === 'chat' ? 'left' : 'right'}
-          left={
-            <ChatPane
-              task={task}
-              settings={settings}
-              clis={clis}
-              ws={ws}
-              onOpenRebase={() => setIsRebaseOpen(true)}
-              onOpenSubmit={() => setIsSubmitOpen(true)}
-              onOpenScripts={() => setIsRunScriptOpen(true)}
-              onDeleteTask={onDeleteTask}
-              isDeletingTask={isDeletingTask}
-            />
-          }
-          right={
-            <PreviewPane
-              task={task}
-              ws={ws}
-              onAttachToChat={(attachments, url) => {
-                window.dispatchEvent(
-                  new CustomEvent('add-pending-attachments', {
-                    detail: { attachments, url },
-                  })
-                );
-                setMobileTab('chat');
-              }}
-            />
-          }
-        />
+        {/* Main Workspace Area (Chat + Preview) */}
+        <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
+          {/* Collapsed sidebar toggle button (desktop) */}
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="hidden min-[1200px]:flex absolute top-2 left-2 z-30 w-7 h-7 rounded-md bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text items-center justify-center transition-colors cursor-pointer"
+              title="Expand projects & tasks sidebar"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            </button>
+          )}
+
+          {/* Mobile Header Tabs */}
+          <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface shrink-0 select-none">
+            <button
+              type="button"
+              onClick={() => setMobileTab('chat')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
+                mobileTab === 'chat'
+                  ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
+                  : 'border-transparent text-cozy-muted hover:text-cozy-text'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>Chat</span>
+            </button>
+            <div className="w-[1px] h-4 bg-cozy-border/40 shrink-0" />
+            <button
+              type="button"
+              onClick={() => setMobileTab('preview')}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-medium border-b-2 transition-all ${
+                mobileTab === 'preview'
+                  ? 'border-teal-500 text-teal-600 dark:text-teal-400 font-semibold bg-teal-500/5'
+                  : 'border-transparent text-cozy-muted hover:text-cozy-text'
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Preview</span>
+              <span
+                className={`w-2 h-2 rounded-full transition-all ${
+                  isDevRunning
+                    ? 'bg-emerald-400 shadow-glow-mint'
+                    : 'bg-zinc-400/40'
+                }`}
+                title={isDevRunning ? 'Dev server is running' : 'Dev server is offline'}
+              />
+            </button>
+          </div>
+
+          <DraggableSplit
+            mobileActivePane={mobileTab === 'chat' ? 'left' : 'right'}
+            rightCollapsed={!isPreviewOpen}
+            left={
+              <ChatPane
+                task={task}
+                settings={settings}
+                clis={clis}
+                ws={ws}
+                onOpenRebase={() => setIsRebaseOpen(true)}
+                onOpenSubmit={() => setIsSubmitOpen(true)}
+                onOpenScripts={() => setIsRunScriptOpen(true)}
+                onDeleteTask={onDeleteTask}
+                isDeletingTask={isDeletingTask}
+                isPreviewOpen={isPreviewOpen}
+                onTogglePreview={() => {
+                  if (window.innerWidth < 1200) {
+                    setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
+                  } else {
+                    setIsPreviewOpen((prev) => !prev);
+                  }
+                }}
+                isDevRunning={isDevRunning}
+              />
+            }
+            right={
+              <PreviewPane
+                task={task}
+                ws={ws}
+                onAttachToChat={(attachments, url) => {
+                  window.dispatchEvent(
+                    new CustomEvent('add-pending-attachments', {
+                      detail: { attachments, url },
+                    })
+                  );
+                  setMobileTab('chat');
+                }}
+              />
+            }
+          />
+        </div>
 
         {/* Floating Bottom-Right Script Dock */}
         <ScriptDock />

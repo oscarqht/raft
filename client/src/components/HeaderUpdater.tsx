@@ -152,7 +152,7 @@ export const HeaderUpdater: React.FC = () => {
             ? 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted'
             : 'bg-cozy-subtle/80 hover:bg-cozy-subtle border-cozy-border/70 text-cozy-muted hover:text-cozy-text hover:border-teal-400/30'
         }`}
-        title={hasUpdateReady ? 'Update ready to install' : `Raft ${displayVersion}`}
+        title={hasUpdateReady ? 'Update ready to install' : `Alpha Bro ${displayVersion}`}
         aria-label="Software Updates"
       >
         {isChecking ? (
@@ -222,9 +222,9 @@ export const HeaderUpdater: React.FC = () => {
                 <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3 shadow-soft-sm">
                   <Loader2 className="w-6 h-6 animate-spin text-teal-500" />
                 </div>
-                <p className="text-sm font-semibold text-cozy-text mb-1">Restarting Raft…</p>
+                <p className="text-sm font-semibold text-cozy-text mb-1">Restarting Alpha Bro…</p>
                 <p className="text-xs text-cozy-muted leading-relaxed max-w-xs">
-                  Installing update and relaunching the server. This page will reconnect automatically once Raft is back online.
+                  Installing update and relaunching the server. This page will reconnect automatically once Alpha Bro is back online.
                 </p>
               </div>
             ) : status.status === 'Checking' ? (
@@ -333,7 +333,7 @@ export const HeaderUpdater: React.FC = () => {
                   </div>
                   <p className="text-sm font-semibold text-cozy-text mb-1">Restart required</p>
                   <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
-                    Raft has updated to <strong className="text-cozy-text">v{status.data.current_version}</strong>, but the background server is running <strong className="text-cozy-text">v{currentVersion}</strong>. Restart to complete the update.
+                    Alpha Bro has updated to <strong className="text-cozy-text">v{status.data.current_version}</strong>, but the background server is running <strong className="text-cozy-text">v{currentVersion}</strong>. Restart to complete the update.
                   </p>
                   <button
                     type="button"
@@ -350,7 +350,7 @@ export const HeaderUpdater: React.FC = () => {
                   </div>
                   <p className="text-sm font-semibold text-cozy-text mb-1">You're up to date!</p>
                   <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
-                    Raft <strong className="text-cozy-text font-medium">v{currentVersion || status.data.current_version}</strong> is the latest version available.
+                    Alpha Bro <strong className="text-cozy-text font-medium">v{currentVersion || status.data.current_version}</strong> is the latest version available.
                   </p>
                   <button
                     type="button"
@@ -390,10 +390,10 @@ export const HeaderUpdater: React.FC = () => {
               // Idle state
               <div className="py-4 px-3 flex flex-col items-center text-center">
                 <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-teal-500/20 via-cyan-500/15 to-sky-500/20 border border-teal-400/30 flex items-center justify-center overflow-hidden mb-3 shadow-soft-sm">
-                  <img src="/logo.png" alt="Raft logo" className="w-8 h-8 object-contain drop-shadow-sm" />
+                  <img src="/logo.png" alt="Alpha Bro logo" className="w-8 h-8 object-contain drop-shadow-sm" />
                 </div>
                 <p className="text-sm font-semibold text-cozy-text mb-1">
-                  Raft {currentVersion ? `v${currentVersion}` : ''}
+                  Alpha Bro {currentVersion ? `v${currentVersion}` : ''}
                 </p>
                 <p className="text-xs text-cozy-muted leading-relaxed mb-4 max-w-xs">
                   Check for the latest features, improvements, and bug fixes.
