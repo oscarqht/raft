@@ -15,7 +15,7 @@ import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
 import { PreviewPane } from '../components/PreviewPane';
 import { RebaseDrawer } from '../components/RebaseDrawer';
-import { SubmitModal } from '../components/SubmitModal';
+import { useSubmit } from '../contexts/SubmitContext';
 import { ScriptExecutionProvider } from '../contexts/ScriptExecutionContext';
 import { ScriptDock } from '../components/ScriptDock';
 import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
@@ -62,7 +62,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [loading, setLoading] = useState(Boolean(taskId && !task));
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
-  const [isSubmitOpen, setIsSubmitOpen] = useState(false);
+  const { openSubmit } = useSubmit();
   const [isRunScriptOpen, setIsRunScriptOpen] = useState(false);
   const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
@@ -281,18 +281,19 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   useEffect(() => {
     setIsRebaseOpen(false);
-    setIsSubmitOpen(false);
     setIsRunScriptOpen(false);
     setIsManageScriptsOpen(false);
   }, [taskId]);
 
   useEffect(() => {
-    const handleOpenSubmit = () => setIsSubmitOpen(true);
+    const handleOpenSubmit = () => {
+      if (task) openSubmit(task);
+    };
     window.addEventListener('open-submit-modal', handleOpenSubmit);
     return () => {
       window.removeEventListener('open-submit-modal', handleOpenSubmit);
     };
-  }, []);
+  }, [task, openSubmit]);
 
   const handleCreateTask = async (taskName: string, selectedBaseBranch: string, initialPrompt: string) => {
     if (!routeProjectId) return;
@@ -535,7 +536,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 clis={clis}
                 ws={ws}
                 onOpenRebase={() => setIsRebaseOpen(true)}
-                onOpenSubmit={() => setIsSubmitOpen(true)}
+                onOpenSubmit={() => task && openSubmit(task)}
                 onOpenScripts={() => setIsRunScriptOpen(true)}
                 onDeleteTask={onDeleteTask}
                 isDeletingTask={isDeletingTask}
@@ -603,15 +604,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
           task={task}
           isOpen={isRebaseOpen}
           onClose={() => setIsRebaseOpen(false)}
-          ws={ws}
-        />
-
-        {/* Submit Changes Modal */}
-        <SubmitModal
-          key={`submit-${task.project_id}-${task.id}`}
-          task={task}
-          isOpen={isSubmitOpen}
-          onClose={() => setIsSubmitOpen(false)}
           ws={ws}
         />
 

@@ -2,13 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
-import { setCachedTaskGitStatus } from '../cache';
+import { useSubmit } from '../contexts/SubmitContext';
 
 interface SubmitModalProps {
   task: Task;
   isOpen: boolean;
   onClose: () => void;
-  ws: WebSocket | null;
 }
 
 const getDefaultCommitMessage = (task: Task) =>
@@ -18,16 +17,19 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   task,
   isOpen,
   onClose,
-  ws,
 }) => {
-  const [gitStatus, setGitStatus] = useState<GitStatus>({ staged: [], unstaged: [], untracked: [] });
+  const { jobs, startSubmit, dismissJob } = useSubmit();
+  const job = jobs[task.id];
+  const [localGitStatus, setGitStatus] = useState<GitStatus>({ staged: [], unstaged: [], untracked: [] });
   const [commitMessage, setCommitMessage] = useState(() => getDefaultCommitMessage(task));
   const [commitDetails, setCommitDetails] = useState('');
   const [isLargeChange, setIsLargeChange] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [isSuccess, setIsSuccess] = useState<boolean | null>(null);
+
+  const gitStatus = job?.gitStatus ?? localGitStatus;
+  const isSubmitting = job?.status === 'submitting';
+  const isSuccess: boolean | null = job ? (job.status === 'done' ? true : job.status === 'error' ? false : null) : null;
+  const logs = job?.logs ?? [];
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const hasUserEditedRef = useRef(false);
@@ -40,9 +42,6 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
     setCommitDetails('');
     setIsLargeChange(false);
     setIsGenerating(false);
-    setIsSubmitting(false);
-    setLogs([]);
-    setIsSuccess(null);
     setGitStatus({ staged: [], unstaged: [], untracked: [] });
   }, []);
 
@@ -92,9 +91,6 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
         resetToDefault(task);
       } else {
         hasUserEditedRef.current = false;
-        setIsSuccess(null);
-        setLogs([]);
-        setIsSubmitting(false);
       }
 
       const targetTaskId = task.id;
@@ -103,7 +99,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           if (prevTaskIdRef.current !== targetTaskId) return;
           setGitStatus(status);
           const total = status.staged.length + status.unstaged.length + status.untracked.length;
-          if (total > 0) {
+          if (total > 0 && !job) {
             handleGenerateAiCommit(targetTaskId);
           } else {
             setCommitMessage('');
@@ -115,61 +111,24 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   }, [isOpen, task.id, task.project_id, task, resetToDefault]);
 
   useEffect(() => {
-    if (!ws) return;
-
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'submit_event') {
-          const ev = msg.event;
-          if (ev.content) {
-            setLogs((prev) => [...prev, ev.content]);
-          }
-          if (ev.type === 'done') {
-            setIsSubmitting(false);
-            setIsSuccess(true);
-            getTaskGitStatus(task.id, true).then((s) => {
-              setGitStatus(s);
-              setCachedTaskGitStatus(task.id, s, task.project_id);
-              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id, status: s } }));
-            }).catch(() => {
-              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id } }));
-            });
-          } else if (ev.type === 'error') {
-            setIsSubmitting(false);
-            setIsSuccess(false);
-          }
-        }
-      } catch {}
-    };
-
-    ws.addEventListener('message', handleMessage);
-    return () => ws.removeEventListener('message', handleMessage);
-  }, [ws, task.id]);
-
-  useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
   const handleSubmit = () => {
-    if (!ws || isSubmitting || isGenerating || hasNothingToSubmit) return;
+    if (isSubmitting || isGenerating || hasNothingToSubmit) return;
     if (totalChanges > 0 && !commitMessage.trim()) return;
-
-    setIsSubmitting(true);
-    setIsSuccess(null);
-    setLogs([]);
 
     const trimmedTitle = commitMessage.trim();
     const trimmedDetails = commitDetails.trim();
     const fullMessage = trimmedDetails ? `${trimmedTitle}\n\n${trimmedDetails}` : trimmedTitle;
 
-    ws.send(
-      JSON.stringify({
-        type: 'start_submit',
-        taskId: task.id,
-        commitMessage: fullMessage,
-      })
-    );
+    startSubmit(task, fullMessage);
+    onClose();
+  };
+
+  const handleDone = () => {
+    dismissJob(task.id);
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -238,9 +197,6 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
                 <span className="font-medium text-cozy-text flex items-center gap-1.5">
                   <GitCommit className="w-3.5 h-3.5 text-sky-400" />
                   Unpushed Commits ({unpushedCount})
-                </span>
-                <span className="text-[11px] text-sky-400/90 font-mono">
-                  Ready to push to remote
                 </span>
               </div>
               <div className="p-3 rounded-xl bg-cozy-bg border border-sky-500/20 max-h-28 overflow-y-auto space-y-1 font-mono text-xs">
@@ -406,7 +362,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             Cancel
           </button>
           <button
-            onClick={isSuccess ? onClose : handleSubmit}
+            onClick={isSuccess ? handleDone : handleSubmit}
             disabled={!isSuccess && (isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim()))}
             title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-ocean cursor-pointer"
