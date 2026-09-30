@@ -2531,6 +2531,9 @@ export function runSubmitAgent(
         const userToAuth = gitAccount.username || detectedUser || 'git';
         const authBasic = Buffer.from(`${userToAuth}:${gitAccount.token}`).toString('base64');
         pushArgs.unshift('-c', `http.extraheader=AUTHORIZATION: basic ${authBasic}`);
+        // Auth is supplied via the header; disable credential helpers so a successful push
+        // doesn't block on the helper (e.g. macOS keychain) storing credentials.
+        pushArgs.unshift('-c', 'credential.helper=');
         if (userToAuth) {
           pushArgs.unshift('-c', `credential.username=${userToAuth}`);
         }
@@ -2571,6 +2574,10 @@ export function runSubmitAgent(
             shell: false,
           });
           currentChild = proc;
+          const pushTimeout = setTimeout(() => {
+            pushErrOutput += 'git push timed out after 180s';
+            proc.kill('SIGKILL');
+          }, 180_000);
           proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
           proc.stderr?.on('data', (d) => {
             const str = d.toString('utf-8');
@@ -2578,10 +2585,14 @@ export function runSubmitAgent(
             emit({ type: 'chunk', content: sanitize(str) });
           });
           proc.on('close', (code) => {
+            clearTimeout(pushTimeout);
             if (code === 0) resolve();
             else reject(new Error(`git push failed with exit code ${code}:\n${pushErrOutput}`));
           });
-          proc.on('error', reject);
+          proc.on('error', (e) => {
+            clearTimeout(pushTimeout);
+            reject(e);
+          });
         });
       };
 
