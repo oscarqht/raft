@@ -1948,8 +1948,12 @@ app.get('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
 });
 
 app.post('/api/tasks/:taskId/chats', async (req: Request, res: Response) => {
-  const { title, agent_cli, model, thinking_effort } = req.body;
-  const id = uuidv4();
+  const { title, agent_cli, model, thinking_effort, id: clientId } = req.body;
+  // Clients may supply the id so they can create the chat optimistically
+  const id = typeof clientId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(clientId) ? clientId : uuidv4();
+  if (db.prepare('SELECT 1 FROM chat_sessions WHERE id = ?').get(id)) {
+    return res.status(409).json({ error: 'Chat session already exists' });
+  }
   const now = Date.now();
   const cli = agent_cli || getEffectiveAgentCli();
   let mod = model;

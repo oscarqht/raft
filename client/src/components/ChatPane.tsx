@@ -107,6 +107,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   queuedMessagesRef.current = queuedMessages;
 
   const activeChatIdRef = useRef<string | null>(activeChatId);
+  // Chats created optimistically that the server hasn't confirmed yet
+  const pendingChatIdsRef = useRef<Set<string>>(new Set());
   activeChatIdRef.current = activeChatId;
 
   const isStreamingRef = useRef(isStreaming);
@@ -448,11 +450,18 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     if (cached && cached.length > 0) {
       setMessages(cached);
     } else {
+      // Never show the previous chat's messages while this one loads
+      setMessages([]);
       loadCachedMessagesAsync(activeChatId).then((idbMsgs) => {
         if (idbMsgs && idbMsgs.length > 0) {
           setMessages((prev) => (prev.length === 0 ? idbMsgs : prev));
         }
       });
+    }
+
+    if (pendingChatIdsRef.current.has(activeChatId)) {
+      // Brand-new chat: nothing to fetch, and the server may not have it yet
+      return;
     }
 
     if (lastLoadedActiveChatRef.current === activeChatId) {
@@ -844,23 +853,56 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       tabEffort
     );
 
-    const newChat = await createChatSession(
-      task.id,
-      newTitle,
-      cliToUse,
-      modelId,
-      effort
-    );
+    const newId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const now = Date.now();
+    const optimisticChat: ChatSession = {
+      id: newId,
+      task_id: task.id,
+      title: newTitle,
+      agent_cli: cliToUse,
+      model: modelId,
+      thinking_effort: effort,
+      status: 'idle',
+      created_at: now,
+      updated_at: now,
+    };
+
     userSelectedCliRef.current = null;
     userSelectedModelRef.current = null;
     userSelectedEffortRef.current = null;
-    lastSyncedChatIdRef.current = newChat.id;
+    lastSyncedChatIdRef.current = newId;
+    pendingChatIdsRef.current.add(newId);
 
-    const nextChats = [...chats, newChat];
+    const nextChats = [...chats, optimisticChat];
     setChats(nextChats);
-    setActiveChatId(newChat.id);
+    setMessages([]);
+    setActiveChatId(newId);
     setCachedChats(task.id, nextChats);
-    setCachedActiveChatId(task.id, newChat.id);
+    setCachedActiveChatId(task.id, newId);
+
+    try {
+      const created = await createChatSession(task.id, newTitle, cliToUse, modelId, effort, newId);
+      pendingChatIdsRef.current.delete(newId);
+      setChats((prev) => {
+        const merged = prev.map((c) => (c.id === newId ? { ...c, ...created } : c));
+        setCachedChats(task.id, merged);
+        return merged;
+      });
+    } catch {
+      pendingChatIdsRef.current.delete(newId);
+      deleteCachedChat(task.id, newId);
+      const remaining = chatsRef.current.filter((c) => c.id !== newId);
+      setChats(remaining);
+      setCachedChats(task.id, remaining);
+      if (activeChatIdRef.current === newId) {
+        const fallback = remaining[remaining.length - 1]?.id || null;
+        setActiveChatId(fallback);
+        if (fallback) setCachedActiveChatId(task.id, fallback);
+      }
+    }
   };
 
   const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
