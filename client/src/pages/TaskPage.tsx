@@ -87,6 +87,20 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [newTaskError, setNewTaskError] = useState<string | null>(null);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  // Project chosen via a sidebar item's settings button; null = current page's project
+  const [configProjectOverride, setConfigProjectOverride] = useState<Project | null>(null);
+  const closeConfigModal = () => {
+    setIsConfigModalOpen(false);
+    setConfigProjectOverride(null);
+  };
+  const handleConfigureProject = (projectId: string) => {
+    getProject(projectId)
+      .then((p) => {
+        setConfigProjectOverride(p);
+        setIsConfigModalOpen(true);
+      })
+      .catch((err) => console.error('Failed to load project for configuration:', err));
+  };
 
   useEffect(() => {
     try {
@@ -103,7 +117,10 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   // Listen for open-project-config global event (e.g. from Header)
   useEffect(() => {
-    const handleOpenProjectConfig = () => setIsConfigModalOpen(true);
+    const handleOpenProjectConfig = () => {
+      setConfigProjectOverride(null);
+      setIsConfigModalOpen(true);
+    };
     window.addEventListener('open-project-config', handleOpenProjectConfig);
     return () => window.removeEventListener('open-project-config', handleOpenProjectConfig);
   }, []);
@@ -326,7 +343,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 : `/tasks/${selectedTaskId}`;
               navigate(route, { state: { task: selectedTask } });
             }}
-            onConfigureProject={() => setIsConfigModalOpen(true)}
+            onConfigureProject={handleConfigureProject}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
             ws={ws}
@@ -381,13 +398,13 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         {/* Project Configuration Modal */}
         {isConfigModalOpen && project && (
           <ProjectConfigModal
-            project={project}
+            project={configProjectOverride ?? project}
             isOpen={isConfigModalOpen}
-            onClose={() => setIsConfigModalOpen(false)}
+            onClose={closeConfigModal}
             onSuccess={(updated) => {
-              setProject(updated);
+              if (!configProjectOverride || configProjectOverride.id === project.id) setProject(updated);
               setCachedProject(updated);
-              setIsConfigModalOpen(false);
+              closeConfigModal();
             }}
             settings={settings}
             ws={ws}
@@ -448,7 +465,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 : `/tasks/${selectedTaskId}`;
               navigate(route, { state: { task: selectedTask } });
             }}
-            onConfigureProject={() => setIsConfigModalOpen(true)}
+            onConfigureProject={handleConfigureProject}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
             ws={ws}
@@ -601,14 +618,16 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         {/* Project Configuration Modal in Task Mode */}
         {isConfigModalOpen && (task.project || project) && (
           <ProjectConfigModal
-            project={(task.project || project)!}
+            project={(configProjectOverride ?? task.project ?? project)!}
             isOpen={isConfigModalOpen}
-            onClose={() => setIsConfigModalOpen(false)}
+            onClose={closeConfigModal}
             onSuccess={(updated) => {
-              setTask((prev) => (prev ? { ...prev, project: updated } : prev));
-              setProject(updated);
+              if (updated.id === (task.project_id ?? task.project?.id)) {
+                setTask((prev) => (prev ? { ...prev, project: updated } : prev));
+                setProject(updated);
+              }
               setCachedProject(updated);
-              setIsConfigModalOpen(false);
+              closeConfigModal();
             }}
             settings={settings}
             ws={ws}
