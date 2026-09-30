@@ -205,18 +205,21 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             <div className="p-3 rounded-xl bg-cozy-bg border border-cozy-border max-h-36 overflow-y-auto space-y-1 font-mono text-xs">
               {totalChanges === 0 && <div className="text-cozy-muted/60">No pending changes detected.</div>}
               {gitStatus.staged.map((f) => (
-                <div key={f} className="text-emerald-400 flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-bold text-emerald-500/70">staged</span> {f}
+                <div key={f} className="text-emerald-400 flex items-center gap-2 min-w-0" title={f}>
+                  <span className="text-[10px] uppercase font-bold text-emerald-500/70 shrink-0">staged</span>
+                  <span className="truncate">{f}</span>
                 </div>
               ))}
               {gitStatus.unstaged.map((f) => (
-                <div key={f} className="text-amber-400 flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-bold text-amber-500/70">modified</span> {f}
+                <div key={f} className="text-amber-400 flex items-center gap-2 min-w-0" title={f}>
+                  <span className="text-[10px] uppercase font-bold text-amber-500/70 shrink-0">modified</span>
+                  <span className="truncate">{f}</span>
                 </div>
               ))}
               {gitStatus.untracked.map((f) => (
-                <div key={f} className="text-sky-400 flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-bold text-sky-500/70">untracked</span> {f}
+                <div key={f} className="text-sky-400 flex items-center gap-2 min-w-0" title={f}>
+                  <span className="text-[10px] uppercase font-bold text-sky-500/70 shrink-0">untracked</span>
+                  <span className="truncate">{f}</span>
                 </div>
               ))}
             </div>
