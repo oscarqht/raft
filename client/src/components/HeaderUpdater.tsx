@@ -141,7 +141,7 @@ export const HeaderUpdater: React.FC = () => {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all shrink-0 cursor-pointer shadow-soft-sm ${
+        className={`h-7 flex items-center gap-1.5 px-3 rounded-full text-xs font-medium border transition-all shrink-0 cursor-pointer shadow-soft-sm ${
           isOpen
             ? 'bg-teal-500/10 border-teal-400/50 text-teal-600 dark:text-teal-400 shadow-glow-ocean'
             : hasUpdateReady

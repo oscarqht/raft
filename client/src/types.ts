@@ -107,6 +107,17 @@ export interface ChatMessage {
   steps?: AgentStep[];
 }
 
+export interface QueuedMessage {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  attachments?: FileAttachment[];
+  agentCli?: string;
+  model?: string;
+  thinkingEffort?: string;
+  createdAt: number;
+}
+
 export interface Settings {
   agent_cli: string;
   default_model: string;

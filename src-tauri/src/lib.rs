@@ -183,13 +183,20 @@ pub fn run() {
                     }
                     Err(e) => {
                         eprintln!("[raft] Failed to start server: {e}");
-                        let _ = app_handle
+                        #[cfg(target_os = "macos")]
+                        {
+                            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+                        }
+                        let handle = app_handle.clone();
+                        app_handle
                             .dialog()
                             .message(format!("Failed to start Alpha Bro server:\n\n{e}"))
                             .title("Alpha Bro Error")
                             .kind(MessageDialogKind::Error)
-                            .blocking_show();
-                        app_handle.exit(1);
+                            .show(move |_| {
+                                handle.exit(1);
+                                std::process::exit(1);
+                            });
                     }
                 }
             });

@@ -98,7 +98,27 @@ def generate():
         scaled.save(out)
 
     # Tray icon (44x44 for retina status bar)
-    tray_44 = master.resize((44, 44), Image.Resampling.LANCZOS)
+    tray_source = 'assets/tray-icon-source.png'
+    if os.path.exists(tray_source):
+        tray_src = Image.open(tray_source).convert('RGBA')
+        r, g, b, a = tray_src.split()
+        a = a.point(lambda p: 0 if p <= 5 else p)
+        white = Image.new('L', tray_src.size, 255)
+        cleaned = Image.merge('RGBA', (white, white, white, a))
+        bbox = cleaned.getbbox()
+        if bbox:
+            cropped = cleaned.crop(bbox)
+            h = 34
+            w = int(round(h * cropped.width / cropped.height))
+            resized = cropped.resize((w, h), Image.Resampling.LANCZOS)
+            tray_44 = Image.new('RGBA', (44, 44), (0, 0, 0, 0))
+            ox = (44 - w) // 2
+            oy = (44 - h) // 2
+            tray_44.paste(resized, (ox, oy), resized)
+        else:
+            tray_44 = Image.new('RGBA', (44, 44), (0, 0, 0, 0))
+    else:
+        tray_44 = master.resize((44, 44), Image.Resampling.LANCZOS)
     tray_44.save('src-tauri/icons/tray-icon.png')
     tray_44.save('assets/tray-icon.png')
 

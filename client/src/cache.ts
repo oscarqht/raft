@@ -1,4 +1,4 @@
-import { Task, ChatSession, ChatMessage, ModelOption, AgentUsageSnapshot } from './types';
+import { Task, ChatSession, ChatMessage, ModelOption, AgentUsageSnapshot, QueuedMessage } from './types';
 
 const PREFIX = 'raft:';
 const LEGACY_PREFIX = 'termai:';
@@ -321,5 +321,34 @@ export function setCachedAgentUsages(usages: Record<string, AgentUsageSnapshot>)
   inMemoryAgentUsages = usages;
   try {
     localStorage.setItem(`${PREFIX}agent_usages`, JSON.stringify(usages));
+  } catch {}
+}
+
+// Queued Messages Cache
+export function getCachedQueuedMessages(sessionId: string): QueuedMessage[] {
+  if (!sessionId) return [];
+  try {
+    const raw = localStorage.getItem(`${PREFIX}queue:${sessionId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setCachedQueuedMessages(sessionId: string, queue: QueuedMessage[]): void {
+  if (!sessionId) return;
+  try {
+    if (!queue || queue.length === 0) {
+      localStorage.removeItem(`${PREFIX}queue:${sessionId}`);
+    } else {
+      localStorage.setItem(`${PREFIX}queue:${sessionId}`, JSON.stringify(queue));
+    }
+  } catch {}
+}
+
+export function clearCachedQueuedMessages(sessionId: string): void {
+  if (!sessionId) return;
+  try {
+    localStorage.removeItem(`${PREFIX}queue:${sessionId}`);
   } catch {}
 }

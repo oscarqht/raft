@@ -32,6 +32,16 @@ await esbuild.build({
 console.log('✓ Server code bundled to resources/server/index.mjs');
 
 console.log('--- 3. Preparing production node_modules (better-sqlite3) ---');
+// Verify better-sqlite3 native binary compatibility with the Node version we are bundling/staging
+try {
+  execSync(`"${process.execPath}" -e "require('better-sqlite3')"`, { cwd: root, stdio: 'pipe' });
+  console.log(`✓ better-sqlite3 native addon is compatible with Node.js ${process.version}`);
+} catch (err) {
+  console.log(`⚠️ better-sqlite3 is incompatible with current Node.js ${process.version}. Rebuilding native addon...`);
+  execSync('npm rebuild better-sqlite3', { cwd: root, stdio: 'inherit' });
+  console.log(`✓ Successfully rebuilt better-sqlite3 for Node.js ${process.version}`);
+}
+
 const destModules = path.join(serverOutDir, 'node_modules');
 fs.mkdirSync(destModules, { recursive: true });
 
@@ -48,6 +58,13 @@ for (const pkg of copyPackages) {
     fs.cpSync(src, dest, { recursive: true, force: true });
     console.log(`✓ Copied ${pkg} to resources/server/node_modules/`);
   }
+}
+
+// Sync to Tauri debug target cache if present so dev builds pick up updated native modules immediately
+const debugTargetModules = path.join(root, 'src-tauri', 'target', 'debug', '_up_', 'resources', 'server', 'node_modules');
+if (fs.existsSync(path.dirname(debugTargetModules))) {
+  fs.cpSync(destModules, debugTargetModules, { recursive: true, force: true });
+  console.log('✓ Synced production node_modules to src-tauri debug target cache');
 }
 
 // Prune build artifacts (.pdb, .iobj, .ipdb, obj/) from better-sqlite3 to save ~30MB

@@ -5,8 +5,9 @@ import {
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
   Paperclip, Loader2, AlertCircle, Trash2, ArrowUp
 } from 'lucide-react';
-import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload } from '../types';
+import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage } from '../types';
 import { ChatMessageList } from './ChatMessageList';
+import { ChatQueueDrawer } from './ChatQueueDrawer';
 import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, deleteChatMessage, getModels, getSkills, uploadTaskAttachments } from '../api';
 import {
   formatFileSize,
@@ -26,6 +27,8 @@ import {
   getCachedProviderPreference,
   setCachedProviderPreference,
   resolveModelAndEffort,
+  getCachedQueuedMessages,
+  setCachedQueuedMessages,
 } from '../cache';
 
 interface ChatPaneProps {
@@ -83,6 +86,33 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
   const [showConfig, setShowConfig] = useState(false);
   const [activeHitl, setActiveHitl] = useState<Record<string, AlphaHitlPayload>>({});
+
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>(() => {
+    const cachedActive = getCachedActiveChatId(task.id);
+    const cachedSessions = getCachedChats(task.id) || [];
+    const targetId =
+      cachedActive && cachedSessions.some((c) => c.id === cachedActive)
+        ? cachedActive
+        : cachedSessions[0]?.id;
+    return targetId ? getCachedQueuedMessages(targetId) : [];
+  });
+  const queuedMessagesRef = useRef<QueuedMessage[]>(queuedMessages);
+  queuedMessagesRef.current = queuedMessages;
+
+  const activeChatIdRef = useRef<string | null>(activeChatId);
+  activeChatIdRef.current = activeChatId;
+
+  const isSteeringRef = useRef(false);
+  const dispatchMessageRef = useRef<
+    | ((
+        promptText: string,
+        msgAttachments?: FileAttachment[],
+        cliOverride?: string,
+        modelOverride?: string,
+        effortOverride?: string
+      ) => void)
+    | null
+  >(null);
 
   // Tab overrides
   const [tabCli, setTabCli] = useState<string>('');
@@ -266,10 +296,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   }, [activeChatId, chats, settings]);
 
-  // Load messages when active chat changes (instant cached + revalidate in background)
+  // Load messages and queued messages when active chat changes (instant cached + revalidate in background)
   useEffect(() => {
     if (!activeChatId) return;
     setCachedActiveChatId(task.id, activeChatId);
+    setQueuedMessages(getCachedQueuedMessages(activeChatId));
 
     // If cached messages exist for this chat, display immediately
     const cached = getCachedMessages(activeChatId);
@@ -563,7 +594,29 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               setCachedMessages(eventSessionId, next);
               return next;
             });
+
+            // Automatically check and dispatch next message in queue
+            const targetSessionId = msg.sessionId || eventSessionId;
+            const currentQueue = queuedMessagesRef.current;
+            if (currentQueue && currentQueue.length > 0 && targetSessionId === activeChatIdRef.current) {
+              const [nextItem, ...remaining] = currentQueue;
+              setQueuedMessages(remaining);
+              setCachedQueuedMessages(targetSessionId, remaining);
+              setTimeout(() => {
+                dispatchMessageRef.current?.(
+                  nextItem.prompt,
+                  nextItem.attachments,
+                  nextItem.agentCli,
+                  nextItem.model,
+                  nextItem.thinkingEffort
+                );
+              }, 60);
+            }
           } else if (msg.type === 'aborted') {
+            if (isSteeringRef.current) {
+              isSteeringRef.current = false;
+              return;
+            }
             setIsStreaming(false);
             setStreamingChunk('');
             setActiveHitl((prev) => {
@@ -833,92 +886,190 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setPendingAttachments((prev) => prev.filter((att) => att.id !== id));
   };
 
+  const dispatchMessage = useCallback(
+    (
+      promptText: string,
+      msgAttachments?: FileAttachment[],
+      cliOverride?: string,
+      modelOverride?: string,
+      effortOverride?: string
+    ) => {
+      const targetSessionId = activeChatIdRef.current;
+      if (!targetSessionId || !ws) return;
+
+      const newMsgId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const now = Date.now();
+      const currentAttachments = msgAttachments ? [...msgAttachments] : [];
+
+      const matchedActiveSkills = skills.filter((s) => {
+        const textWithoutUrls = promptText.replace(/https?:\/\/[^\s]+/g, ' ');
+        const regex = new RegExp(`(?:^|[\\s/])/${s.name}(?=[^\\w\\-]|$)`, 'i');
+        return regex.test(textWithoutUrls);
+      });
+
+      const optimisticMetadata =
+        matchedActiveSkills.length > 0 || currentAttachments.length > 0
+          ? JSON.stringify({
+              attachments: currentAttachments,
+              skills: matchedActiveSkills.map((s) => ({
+                name: s.name,
+                description: s.description,
+                content: s.content,
+              })),
+            })
+          : undefined;
+
+      const optimisticUserMessage: ChatMessage = {
+        id: newMsgId,
+        session_id: targetSessionId,
+        role: 'user',
+        content: promptText,
+        metadata: optimisticMetadata,
+        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+        timestamp: now,
+      };
+
+      const optimisticAssistantMessage: ChatMessage = {
+        id: `pending-${now}`,
+        session_id: targetSessionId,
+        role: 'assistant',
+        content: '',
+        timestamp: now + 1,
+      };
+
+      setMessages((prev) => {
+        const next = [...prev, optimisticUserMessage, optimisticAssistantMessage];
+        setCachedMessages(targetSessionId, next);
+        return next;
+      });
+
+      setIsStreaming(true);
+      setStreamingChunk('');
+
+      const effectiveCli = cliOverride || tabCli;
+      let modelToSend = modelOverride || tabModel;
+      let effortToSend = effortOverride || tabEffort;
+
+      if (availableModels.length > 0) {
+        const isValid = availableModels.some((m) => m.id === modelToSend);
+        if (!isValid) {
+          const resolved = resolveModelAndEffort(effectiveCli, availableModels, undefined, effortToSend);
+          modelToSend = resolved.modelId;
+          effortToSend = resolved.effort;
+        }
+      }
+
+      ws.send(
+        JSON.stringify({
+          type: 'send_chat_message',
+          sessionId: targetSessionId,
+          messageId: newMsgId,
+          prompt: promptText,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          agentCli: effectiveCli,
+          model: modelToSend,
+          thinkingEffort: effortToSend,
+        })
+      );
+    },
+    [skills, tabCli, tabModel, tabEffort, availableModels, ws]
+  );
+  dispatchMessageRef.current = dispatchMessage;
+
   const handleSendMessage = () => {
     const hasText = Boolean(inputPrompt.trim());
     const hasAttachments = pendingAttachments.length > 0;
-    if ((!hasText && !hasAttachments) || !activeChatId || !ws || isStreaming || isUploading) return;
+    if ((!hasText && !hasAttachments) || !activeChatId || !ws || isUploading) return;
     const prompt = inputPrompt.trim() || 'Please inspect the attached file(s).';
-    const newMsgId =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const now = Date.now();
+
+    if (isStreaming) {
+      // Put message in a queue, send immediately after agent finish replying
+      const queuedId =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `queue-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      const newQueuedItem: QueuedMessage = {
+        id: queuedId,
+        sessionId: activeChatId,
+        prompt,
+        attachments: pendingAttachments.length > 0 ? [...pendingAttachments] : undefined,
+        agentCli: tabCli,
+        model: tabModel,
+        thinkingEffort: tabEffort,
+        createdAt: Date.now(),
+      };
+
+      setQueuedMessages((prev) => {
+        const updated = [...prev, newQueuedItem];
+        setCachedQueuedMessages(activeChatId, updated);
+        return updated;
+      });
+
+      setInputPrompt('');
+      setPendingAttachments([]);
+      setUploadError(null);
+      return;
+    }
 
     const currentAttachments = [...pendingAttachments];
-
-    const matchedActiveSkills = skills.filter((s) => {
-      const textWithoutUrls = prompt.replace(/https?:\/\/[^\s]+/g, ' ');
-      const regex = new RegExp(`(?:^|[\\s/])/${s.name}(?=[^\\w\\-]|$)`, 'i');
-      return regex.test(textWithoutUrls);
-    });
-
-    const optimisticMetadata =
-      matchedActiveSkills.length > 0 || currentAttachments.length > 0
-        ? JSON.stringify({
-            attachments: currentAttachments,
-            skills: matchedActiveSkills.map((s) => ({
-              name: s.name,
-              description: s.description,
-              content: s.content,
-            })),
-          })
-        : undefined;
-
-    const optimisticUserMessage: ChatMessage = {
-      id: newMsgId,
-      session_id: activeChatId,
-      role: 'user',
-      content: prompt,
-      metadata: optimisticMetadata,
-      attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
-      timestamp: now,
-    };
-
-    const optimisticAssistantMessage: ChatMessage = {
-      id: `pending-${now}`,
-      session_id: activeChatId,
-      role: 'assistant',
-      content: '',
-      timestamp: now + 1,
-    };
-
-    const updatedMessages = [...messages, optimisticUserMessage, optimisticAssistantMessage];
-    setMessages(updatedMessages);
-    setCachedMessages(activeChatId, updatedMessages);
     setInputPrompt('');
     setPendingAttachments([]);
     setUploadError(null);
-    setIsStreaming(true);
-    setStreamingChunk('');
 
-    // Ensure the model and effort being sent are valid for tabCli
-    let modelToSend = tabModel;
-    let effortToSend = tabEffort;
-    if (availableModels.length > 0) {
-      const isValid = availableModels.some((m) => m.id === tabModel);
-      if (!isValid) {
-        const resolved = resolveModelAndEffort(tabCli, availableModels, undefined, tabEffort);
-        modelToSend = resolved.modelId;
-        effortToSend = resolved.effort;
-      }
-    }
-
-    ws.send(
-      JSON.stringify({
-        type: 'send_chat_message',
-        sessionId: activeChatId,
-        messageId: newMsgId,
-        prompt,
-        attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
-        agentCli: tabCli,
-        model: modelToSend,
-        thinkingEffort: effortToSend,
-      })
-    );
+    dispatchMessage(prompt, currentAttachments, tabCli, tabModel, tabEffort);
   };
 
+  const handleSteer = useCallback(
+    (item: QueuedMessage) => {
+      if (!activeChatId || !ws) return;
+
+      // 1. Remove this item from the queue
+      setQueuedMessages((prev) => {
+        const remaining = prev.filter((m) => m.id !== item.id);
+        setCachedQueuedMessages(activeChatId, remaining);
+        return remaining;
+      });
+
+      // 2. Set isSteering flag so the incoming 'aborted' broadcast from the cancelled turn is ignored
+      isSteeringRef.current = true;
+
+      // 3. Dispatch this message immediately
+      dispatchMessage(item.prompt, item.attachments, item.agentCli, item.model, item.thinkingEffort);
+    },
+    [activeChatId, ws, dispatchMessage]
+  );
+
+  const handleDeleteQueuedMessage = useCallback(
+    (id: string) => {
+      if (!activeChatId) return;
+      setQueuedMessages((prev) => {
+        const updated = prev.filter((item) => item.id !== id);
+        setCachedQueuedMessages(activeChatId, updated);
+        return updated;
+      });
+    },
+    [activeChatId]
+  );
+
+  const handleUpdateQueuedPrompt = useCallback(
+    (id: string, newPrompt: string) => {
+      if (!activeChatId) return;
+      setQueuedMessages((prev) => {
+        const updated = prev.map((item) => (item.id === id ? { ...item, prompt: newPrompt } : item));
+        setCachedQueuedMessages(activeChatId, updated);
+        return updated;
+      });
+    },
+    [activeChatId]
+  );
+
   const handleAbort = useCallback(() => {
-    if (!ws) return;
+    if (!ws || !activeChatId) return;
+    isSteeringRef.current = false;
     ws.send(JSON.stringify({ type: 'abort', sessionId: activeChatId }));
     setIsStreaming(false);
     setStreamingChunk('');
@@ -1344,6 +1495,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         onDrop={handleDrop}
       >
         <div className="max-w-3xl lg:max-w-4xl mx-auto w-full relative">
+          {/* Floating Queue Drawer */}
+          <ChatQueueDrawer
+            queue={queuedMessages}
+            onSteer={handleSteer}
+            onDelete={handleDeleteQueuedMessage}
+            onUpdatePrompt={handleUpdateQueuedPrompt}
+          />
+
           {/* Drag and Drop Overlay */}
           {isDragOver && (
             <div className="absolute inset-0 z-40 m-2 rounded-2.5xl bg-teal-500/15 backdrop-blur-md border-2 border-dashed border-teal-400 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-150 pointer-events-none">
@@ -1521,7 +1680,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder={`Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`}
+            placeholder={
+              isStreaming
+                ? `Queue message for ${tabCli || 'AI agent'} on ${task.branch}... (Press Enter to queue)`
+                : `Message ${tabCli || 'AI agent'} on ${task.branch}... (Type / for skills, Enter to send)`
+            }
             rows={2}
             className="w-full bg-transparent border-0 text-sm text-cozy-text placeholder-cozy-muted/60 resize-none focus:outline-none px-2 py-1 leading-relaxed min-h-[48px] max-h-48"
           />
@@ -1652,29 +1815,43 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               )}
             </div>
 
-            {/* Bottom Right: Attachment Button + Send Button */}
+            {/* Bottom Right: Attachment Button + Send / Stop Buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
               {/* Paperclip Button */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isStreaming || isUploading}
+                disabled={isUploading}
                 className="w-8 h-8 rounded-full text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors disabled:opacity-40 shrink-0 cursor-pointer"
                 title="Attach files (images, code, documents) or paste with Cmd/Ctrl+V"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
 
-              {/* Send / Abort Button */}
+              {/* Send / Abort Buttons */}
               {isStreaming ? (
-                <button
-                  type="button"
-                  onClick={handleAbort}
-                  className="w-8 h-8 rounded-full bg-cozy-text text-cozy-bg hover:opacity-90 flex items-center justify-center transition-all shrink-0 cursor-pointer"
-                  title="Stop generation"
-                >
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleAbort}
+                    className="w-8 h-8 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/20 flex items-center justify-center transition-all shrink-0 cursor-pointer shadow-xs"
+                    title="Stop generation"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  </button>
+
+                  {(Boolean(inputPrompt.trim()) || pendingAttachments.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleSendMessage}
+                      disabled={isUploading}
+                      className="w-8 h-8 rounded-full bg-teal-600 hover:bg-teal-500 text-white flex items-center justify-center transition-all shrink-0 cursor-pointer shadow-sm animate-in fade-in duration-150"
+                      title="Queue message (will send after agent finishes reply)"
+                    >
+                      <ArrowUp className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               ) : (
                 <button
                   type="button"

@@ -259,7 +259,7 @@ pub fn setup_tray(
 
     #[cfg(target_os = "macos")]
     {
-        tray_builder = tray_builder.icon_as_template(false);
+        tray_builder = tray_builder.icon_as_template(true);
     }
 
     tray_builder

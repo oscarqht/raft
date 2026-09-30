@@ -5,6 +5,7 @@ import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus, updateTask } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
+import { ProjectIcon } from './ProjectIcon';
 
 interface HeaderProps {
   currentPath?: {
@@ -143,11 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
               to={`/projects/${currentPath.projectId}`}
               className="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-cozy-subtle text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-colors max-w-[140px] sm:max-w-[200px] truncate text-xs font-medium"
             >
-              {currentPath.projectIcon ? (
-                <span className="text-xs shrink-0 leading-none">{currentPath.projectIcon}</span>
-              ) : (
-                <FolderGit2 className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-              )}
+              <ProjectIcon icon={currentPath.projectIcon} className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{currentPath.projectName}</span>
             </Link>
           </div>
@@ -224,7 +221,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onNewTask}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors cursor-pointer shrink-0"
+            className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors cursor-pointer shrink-0"
             title="Start a new task in this project"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -252,7 +249,7 @@ export const Header: React.FC<HeaderProps> = ({
         {settings && (
           <Link
             to="/settings"
-            className="hidden min-[1200px]:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-muted hover:text-cozy-text transition-colors shrink-0"
+            className="hidden min-[1200px]:flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-muted hover:text-cozy-text transition-colors shrink-0"
             title="Active AI Agent CLI"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>

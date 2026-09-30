@@ -915,10 +915,41 @@ function parseScripts(raw: any) {
   }
 }
 
+export const DEFAULT_PROJECT_ICON = 'purple-triangle';
+export const VALID_PROJECT_ICONS = new Set([
+  'purple-triangle',
+  'coral-circle-smile',
+  'blue-square',
+  'yellow-diamond-wink',
+  'green-star',
+  'orange-hexagon-angry',
+  'pink-heart',
+  'teal-triangle-smile',
+  'purple-flower',
+  'blue-capsule-sleep',
+  'green-square',
+  'yellow-star-smile',
+  'coral-triangle-squint',
+  'orange-circle',
+  'purple-pentagon',
+  'blue-diamond',
+  'purple-cloud-smile',
+  'green-heart',
+  'coral-hexagon-cross',
+  'yellow-triangle',
+  'pink-flower',
+  'teal-capsule-wink',
+  'indigo-square-smile',
+  'green-circle',
+  'orange-star-angry',
+]);
+
 function formatProject(p: any) {
   if (!p) return null;
+  const isCustomOrValid = p.icon && (VALID_PROJECT_ICONS.has(p.icon) || p.icon.startsWith('icon-'));
   return {
     ...p,
+    icon: isCustomOrValid ? p.icon : DEFAULT_PROJECT_ICON,
     system_prompt: p.system_prompt || '',
     custom_scripts: parseScripts(p.custom_scripts),
   };
@@ -967,7 +998,7 @@ app.post('/api/projects', (req: Request, res: Response) => {
       test_cmd || 'npm test',
       effectiveInstallCmd,
       branch_convention || repoInfo.currentBranch || 'main',
-      icon || '📦',
+      icon && (VALID_PROJECT_ICONS.has(icon) || icon.startsWith('icon-')) ? icon : DEFAULT_PROJECT_ICON,
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
       custom_scripts ? JSON.stringify(custom_scripts) : '[]',
@@ -1133,9 +1164,9 @@ app.post('/api/projects/create-new', (req: Request, res: Response) => {
 
     const stmt = db.prepare(`
       INSERT INTO projects (
-        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention,
+        id, name, path, dev_cmd, dev_port, build_cmd, test_cmd, install_cmd, branch_convention, icon,
         default_agent_cli, default_model, custom_scripts, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -1148,6 +1179,7 @@ app.post('/api/projects/create-new', (req: Request, res: Response) => {
       'npm test',
       detectInstallCommand(targetPath),
       repoInfo.currentBranch || defaultBranch || 'main',
+      DEFAULT_PROJECT_ICON,
       getEffectiveAgentCli(),
       getSetting('default_model', ''),
       '[]',
@@ -1195,6 +1227,11 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
       ? parseInt(String(dev_port), 10)
       : null;
 
+  const sanitizedIcon =
+    icon !== undefined
+      ? (icon && (VALID_PROJECT_ICONS.has(icon) || icon.startsWith('icon-')) ? icon : DEFAULT_PROJECT_ICON)
+      : null;
+
   db.prepare(`
     UPDATE projects SET
       name = coalesce(?, name),
@@ -1219,7 +1256,7 @@ app.put('/api/projects/:id', (req: Request, res: Response) => {
     test_cmd !== undefined ? test_cmd : null,
     install_cmd !== undefined ? install_cmd : null,
     branch_convention !== undefined ? branch_convention : null,
-    icon !== undefined ? icon : null,
+    sanitizedIcon,
     default_agent_cli !== undefined ? default_agent_cli : null,
     default_model !== undefined ? default_model : null,
     custom_scripts !== undefined ? JSON.stringify(custom_scripts) : null,

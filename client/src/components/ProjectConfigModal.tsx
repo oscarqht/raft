@@ -23,7 +23,9 @@ import {
 } from 'lucide-react';
 import { Settings, Project, ProjectCustomScript } from '../types';
 import { updateProject, validateProjectPath, createWebSocketConnection } from '../api';
-import { ProjectEmojiPicker } from './ProjectEmojiPicker';
+import { ProjectIconPicker } from './ProjectIconPicker';
+import { ProjectIcon } from './ProjectIcon';
+import { DEFAULT_PROJECT_ICON_ID, getProjectCardTheme } from '../utils/projectIcons';
 
 export type ProjectConfigTab = 'settings' | 'system_prompt' | 'scripts';
 
@@ -184,7 +186,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
   availableBranches: propBranches,
 }) => {
   const [name, setName] = useState(project.name);
-  const [icon, setIcon] = useState(project.icon || '📦');
+  const [icon, setIcon] = useState(project.icon || DEFAULT_PROJECT_ICON_ID);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [branchConvention, setBranchConvention] = useState(project.branch_convention || 'main');
   const [devCmd, setDevCmd] = useState(project.dev_cmd || 'npm run dev');
@@ -234,7 +236,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
     if (!isOpen) return;
 
     setName(project.name);
-    setIcon(project.icon || '📦');
+    setIcon(project.icon || DEFAULT_PROJECT_ICON_ID);
     setIsEmojiPickerOpen(false);
     setBranchConvention(project.branch_convention || 'main');
     setDevCmd(project.dev_cmd || 'npm run dev');
@@ -406,7 +408,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
       const updated = await updateProject(project.id, {
         name: name.trim(),
         branch_convention: branchConvention.trim() || 'main',
-        icon: icon || '📦',
+        icon: icon || DEFAULT_PROJECT_ICON_ID,
         dev_cmd: devCmd.trim(),
         dev_port: devPort,
         build_cmd: buildCmd.trim(),
@@ -437,23 +439,36 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
         <div className="p-4 sm:p-5 border-b border-cozy-border/50 flex items-center justify-between bg-cozy-subtle/50 relative z-20">
           <div className="flex items-center space-x-3">
             <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
-                className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-teal-500/15 via-cyan-500/10 to-sky-500/15 border border-teal-400/25 hover:border-teal-400/50 flex items-center justify-center text-xl shadow-soft-sm shrink-0 cursor-pointer active:scale-95 transition-all group relative"
-                title="Click to change project emoji icon"
-              >
-                <span>{icon || '📦'}</span>
-                <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-teal-500 text-white flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Smile className="w-2.5 h-2.5" />
-                </span>
-              </button>
+              {(() => {
+                const iconTheme = getProjectCardTheme(icon);
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setIsEmojiPickerOpen((prev) => !prev)}
+                    className="w-10 h-10 rounded-2xl flex items-center justify-center p-1.5 shadow-soft-sm shrink-0 cursor-pointer active:scale-95 transition-all group relative border"
+                    style={{
+                      backgroundColor: iconTheme.iconBg,
+                      borderColor: iconTheme.iconBorder,
+                    }}
+                    title="Click to change project icon"
+                  >
+                    <ProjectIcon icon={icon} className="w-full h-full drop-shadow-sm" />
+                    <span
+                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full text-white flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ backgroundColor: iconTheme.color }}
+                    >
+                      <Smile className="w-2.5 h-2.5" />
+                    </span>
+                  </button>
+                );
+              })()}
 
               {isEmojiPickerOpen && (
                 <div className="absolute top-full left-0 mt-2 z-50">
-                  <ProjectEmojiPicker
-                    onSelectEmoji={(selectedEmoji) => {
-                      setIcon(selectedEmoji);
+                  <ProjectIconPicker
+                    selectedIcon={icon}
+                    onSelectIcon={(selectedIcon) => {
+                      setIcon(selectedIcon);
                       setIsEmojiPickerOpen(false);
                     }}
                     onClose={() => setIsEmojiPickerOpen(false)}

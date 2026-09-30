@@ -158,6 +158,21 @@ try {
   // column already exists
 }
 try {
+  db.exec(`
+    UPDATE projects
+    SET icon = 'purple-triangle'
+    WHERE icon IS NULL OR icon = '' OR icon = '📦' OR icon NOT IN (
+      'purple-triangle', 'coral-circle-smile', 'blue-square', 'yellow-diamond-wink', 'green-star',
+      'orange-hexagon-angry', 'pink-heart', 'teal-triangle-smile', 'purple-flower', 'blue-capsule-sleep',
+      'green-square', 'yellow-star-smile', 'coral-triangle-squint', 'orange-circle', 'purple-pentagon',
+      'blue-diamond', 'purple-cloud-smile', 'green-heart', 'coral-hexagon-cross', 'yellow-triangle',
+      'pink-flower', 'teal-capsule-wink', 'indigo-square-smile', 'green-circle', 'orange-star-angry'
+    )
+  `);
+} catch {
+  // ignore
+}
+try {
   db.exec('ALTER TABLE projects ADD COLUMN system_prompt TEXT');
 } catch {
   // column already exists

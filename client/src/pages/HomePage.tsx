@@ -6,6 +6,8 @@ import { getProjects, deleteProject, validateProjectPath } from '../api';
 import { DiscoveryModal } from '../components/DiscoveryModal';
 import { AddProjectModal } from '../components/AddProjectModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
+import { ProjectIcon } from '../components/ProjectIcon';
+import { getProjectCardTheme } from '../utils/projectIcons';
 
 interface HomePageProps {
   onSelectProject?: (projectId: string) => void;
@@ -78,7 +80,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-cozy-text flex items-center gap-2.5">
-            Local Projects
+            Projects
             <Sparkles className="w-5 h-5 text-teal-400 fill-teal-400/20" />
           </h1>
           <p className="text-sm text-cozy-muted mt-1 leading-relaxed">
@@ -120,56 +122,92 @@ export const HomePage: React.FC<HomePageProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((p) => (
-            <div
-              key={p.id}
-              onClick={() => handleSelect(p.id)}
-              className="group relative p-5 rounded-xl border border-cozy-border bg-cozy-surface hover:border-teal-500/50 transition-colors cursor-pointer flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between mb-3.5">
-                  <div className="w-10 h-10 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 text-xl select-none">
-                    {p.icon ? <span>{p.icon}</span> : <FolderGit2 className="w-6 h-6" />}
+          {projects.map((p) => {
+            const theme = getProjectCardTheme(p.icon);
+            return (
+              <div
+                key={p.id}
+                onClick={() => handleSelect(p.id)}
+                className="group relative p-5 rounded-2xl border border-cozy-border bg-cozy-surface cursor-pointer flex flex-col justify-between overflow-hidden transition-all duration-300 hover:-translate-y-0.5"
+                style={{
+                  '--card-accent': theme.color,
+                } as React.CSSProperties}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = theme.hoverBorder;
+                  e.currentTarget.style.boxShadow = theme.hoverShadow;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '';
+                  e.currentTarget.style.boxShadow = '';
+                }}
+              >
+                {/* Graceful soft smooth gradient wash */}
+                <div
+                  className="absolute inset-0 pointer-events-none transition-opacity duration-500 opacity-90 group-hover:opacity-0"
+                  style={{
+                    background: theme.gradientBackground,
+                  }}
+                />
+                <div
+                  className="absolute inset-0 pointer-events-none transition-opacity duration-500 opacity-0 group-hover:opacity-100"
+                  style={{
+                    background: theme.hoverGradientBackground,
+                  }}
+                />
+
+                <div className="relative z-10 flex flex-col justify-between h-full">
+                  <div>
+                    <div className="flex items-start justify-between mb-3.5">
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center p-1.5 shrink-0 select-none shadow-soft-sm transition-all duration-300 group-hover:scale-105"
+                        style={{
+                          backgroundColor: theme.iconBg,
+                          borderColor: theme.iconBorder,
+                          borderWidth: '1px',
+                          borderStyle: 'solid',
+                        }}
+                      >
+                        <ProjectIcon icon={p.icon} className="w-full h-full drop-shadow-sm" />
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingProject(p);
+                          }}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-all"
+                          title="Edit project configuration"
+                        >
+                          <Sliders className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDelete(p.id, e)}
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
+                          title="Remove project"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <h3 className="text-base font-semibold text-cozy-text mb-1 truncate transition-colors duration-200 group-hover:text-[var(--card-accent)]">
+                      {p.name}
+                    </h3>
+                    <p className="text-xs font-mono text-cozy-muted truncate mb-4" title={p.path}>
+                      {p.path}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingProject(p);
-                      }}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-cozy-subtle transition-all"
-                      title="Edit project configuration"
-                    >
-                      <Sliders className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => handleDelete(p.id, e)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
-                      title="Remove project"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+
+                  <div className="pt-3.5 border-t border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted font-medium">
+                    <span>{p.task_count || 0} active {p.task_count === 1 ? 'task' : 'tasks'}</span>
+                    <span className="flex items-center gap-1 text-[var(--card-accent)] group-hover:translate-x-1 transition-transform font-semibold">
+                      Open Project <ArrowRight className="w-3 h-3" />
+                    </span>
                   </div>
                 </div>
-
-                <h3 className="text-base font-semibold text-cozy-text mb-1 truncate group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
-                  {p.name}
-                </h3>
-                <p className="text-xs font-mono text-cozy-muted truncate mb-4" title={p.path}>
-                  {p.path}
-                </p>
-
-
               </div>
-
-              <div className="pt-3.5 border-t border-cozy-border/50 flex items-center justify-between text-xs text-cozy-muted font-medium">
-                <span>{p.task_count || 0} active {p.task_count === 1 ? 'task' : 'tasks'}</span>
-                <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 group-hover:translate-x-1 transition-transform font-semibold">
-                  Open Project <ArrowRight className="w-3 h-3" />
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
