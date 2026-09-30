@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 import { setCachedTaskGitStatus } from '../cache';
@@ -60,13 +60,13 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   const isPushOnly = totalChanges === 0 && unpushedCount > 0;
   const hasNothingToSubmit = totalChanges === 0 && unpushedCount === 0;
 
-  const handleGenerateAiCommit = async (force = false, forTaskId = task.id) => {
+  const handleGenerateAiCommit = async (forTaskId = task.id) => {
     if (isGenerating || isSubmitting) return;
     setIsGenerating(true);
     try {
       const res = await generateTaskCommitMessage(forTaskId);
       if (prevTaskIdRef.current !== forTaskId) return;
-      if (force || !hasUserEditedRef.current) {
+      if (!hasUserEditedRef.current) {
         if (res.title) {
           setCommitMessage(res.title);
         }
@@ -104,7 +104,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           setGitStatus(status);
           const total = status.staged.length + status.unstaged.length + status.untracked.length;
           if (total > 0) {
-            handleGenerateAiCommit(false, targetTaskId);
+            handleGenerateAiCommit(targetTaskId);
           } else {
             setCommitMessage('');
             setCommitDetails('');
@@ -269,25 +269,6 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
                   <label className="font-medium text-cozy-text flex items-center gap-1.5">
                     Commit Message
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => handleGenerateAiCommit(true, task.id)}
-                    disabled={isGenerating || isSubmitting || totalChanges === 0}
-                    className="text-[11px] text-sky-400 hover:text-sky-300 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-                    title={totalChanges === 0 ? 'No local file changes to analyze' : 'Generate commit message using AI Agent'}
-                  >
-                    {isGenerating ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
-                        <span>Generating with AI...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-3 h-3" />
-                        <span>Suggest with AI</span>
-                      </>
-                    )}
-                  </button>
                 </div>
                 <input
                   type="text"
@@ -432,13 +413,13 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>
-              {isSubmitting
+              {isSuccess
+                ? 'Done'
+                : isGenerating
+                ? 'Summarizing changes'
+                : isSubmitting
                 ? 'Pushing changes...'
-                : hasNothingToSubmit
-                ? 'No Changes to Commit'
-                : isPushOnly
-                ? `Push ${unpushedCount} Commit${unpushedCount > 1 ? 's' : ''}`
-                : 'Commit & Push'}
+                : 'Submit'}
             </span>
           </button>
         </div>
