@@ -2133,10 +2133,14 @@ function setChatSessionStatus(sessionId: string, status: 'idle' | 'running', tim
       const isRunning = Boolean(
         db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(session.task_id)
       );
+      const task = db.prepare('SELECT id, name, project_id FROM tasks WHERE id = ?').get(session.task_id) as any;
+      const project = task?.project_id ? db.prepare('SELECT id, name FROM projects WHERE id = ?').get(task.project_id) as any : null;
       broadcastWs({
         type: 'task_agent_status',
         taskId: session.task_id,
         sessionId,
+        taskName: task?.name,
+        projectName: project?.name,
         agentStatus: isRunning ? 'WIP' : 'idle',
       });
     }
@@ -2858,6 +2862,10 @@ wss.on('connection', (ws: WebSocket) => {
               broadcastWs({
                 type: 'chat_turn_complete',
                 sessionId,
+                taskId: task.id,
+                projectId: task.project_id,
+                taskName: task.name,
+                projectName: project?.name,
                 messageId: assistantMsgId,
                 message: {
                   id: assistantMsgId,
@@ -2915,6 +2923,10 @@ wss.on('connection', (ws: WebSocket) => {
               broadcastWs({
                 type: 'hitl_input_required',
                 sessionId,
+                taskId: task.id,
+                projectId: task.project_id,
+                taskName: task.name,
+                projectName: project?.name,
                 messageId: assistantMsgId,
                 hitl,
               });
@@ -3088,6 +3100,10 @@ wss.on('connection', (ws: WebSocket) => {
             broadcastWs({
               type: 'chat_turn_complete',
               sessionId,
+              taskId: task.id,
+              projectId: task.project_id,
+              taskName: task.name,
+              projectName: project?.name,
               message: {
                 id: assistantMsgId,
                 session_id: sessionId,
