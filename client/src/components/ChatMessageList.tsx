@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
   FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap,
   CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp,
-  KeyRound, RotateCcw, Braces
+  KeyRound, RotateCcw, Braces, ArrowDown
 } from 'lucide-react';
 import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload, ActivitySummary } from '../types';
 import { getMessageActivity } from '../api';
@@ -886,7 +886,11 @@ const AgentActivityView: React.FC<{
   );
 };
 
-interface ChatMessageListProps {
+export interface ChatMessageListHandle {
+  scrollToBottom: () => void;
+}
+
+export interface ChatMessageListProps {
   messages: ChatMessage[];
   liveStreamingChunk?: string;
   isStreaming?: boolean;
@@ -902,273 +906,366 @@ interface ChatMessageListProps {
   onHitlSubmitted?: () => void;
 }
 
-export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
-  messages,
-  liveStreamingChunk,
-  isStreaming,
-  taskId,
-  sessionId,
-  clis,
-  currentCli,
-  onRetryPrompt,
-  onSwitchCliAndRetry,
-  onOpenSettings,
-  onAbort,
-  activeHitl,
-  onHitlSubmitted,
-}) => {
-  const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
-  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
-  const listEndRef = useRef<HTMLDivElement>(null);
-  const isFirstRender = useRef(true);
-  const shouldScrollToBottomOnLoadRef = useRef(true);
-  const prevTaskIdRef = useRef<string | undefined>(taskId);
-  const prevSessionIdRef = useRef<string | undefined>(sessionId);
+export const ChatMessageList = React.memo(
+  forwardRef<ChatMessageListHandle, ChatMessageListProps>(({
+    messages,
+    liveStreamingChunk,
+    isStreaming,
+    taskId,
+    sessionId,
+    clis,
+    currentCli,
+    onRetryPrompt,
+    onSwitchCliAndRetry,
+    onOpenSettings,
+    onAbort,
+    activeHitl,
+    onHitlSubmitted,
+  }, ref) => {
+    const [previewImage, setPreviewImage] = useState<FileAttachment | null>(null);
+    const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+    const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+    const listEndRef = useRef<HTMLDivElement>(null);
+    const isFirstRender = useRef(true);
+    const shouldScrollToBottomOnLoadRef = useRef(true);
+    const prevTaskIdRef = useRef<string | undefined>(taskId);
+    const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
-  const fallbackCopy = useCallback((text: string) => {
-    try {
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-999999px';
-      textArea.style.top = '-999999px';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-    } catch {}
-  }, []);
+    const fallbackCopy = useCallback((text: string) => {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      } catch {}
+    }, []);
 
-  const handleCopy = useCallback((text: string) => {
-    if (navigator.clipboard && window.isSecureContext) {
-      navigator.clipboard.writeText(text).catch(() => {
+    const handleCopy = useCallback((text: string) => {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).catch(() => {
+          fallbackCopy(text);
+        });
+      } else {
         fallbackCopy(text);
-      });
-    } else {
-      fallbackCopy(text);
-    }
-  }, [fallbackCopy]);
+      }
+    }, [fallbackCopy]);
 
-  const handlePreviewImage = useCallback((att: FileAttachment) => {
-    setPreviewImage(att);
-  }, []);
+    const handlePreviewImage = useCallback((att: FileAttachment) => {
+      setPreviewImage(att);
+    }, []);
 
-  const handlePreviewFile = useCallback((att: FileAttachment) => {
-    setPreviewFile(att);
-  }, []);
+    const handlePreviewFile = useCallback((att: FileAttachment) => {
+      setPreviewFile(att);
+    }, []);
 
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isAutoScrollEnabled = useRef(true);
-  const scrollRafRef = useRef<number | null>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const contentRef = useRef<HTMLDivElement>(null);
+    const isAutoScrollEnabled = useRef(true);
+    const scrollRafRef = useRef<number | null>(null);
+    const scrollTimersRef = useRef<{ raf: number | null; t1: NodeJS.Timeout | null; t2: NodeJS.Timeout | null }>({
+      raf: null,
+      t1: null,
+      t2: null,
+    });
 
-  const handleScroll = useCallback(() => {
-    if (scrollRafRef.current != null) return;
-    scrollRafRef.current = requestAnimationFrame(() => {
-      scrollRafRef.current = null;
+    const clearScrollTimers = useCallback(() => {
+      if (scrollTimersRef.current.raf != null) {
+        cancelAnimationFrame(scrollTimersRef.current.raf);
+        scrollTimersRef.current.raf = null;
+      }
+      if (scrollTimersRef.current.t1 != null) {
+        clearTimeout(scrollTimersRef.current.t1);
+        scrollTimersRef.current.t1 = null;
+      }
+      if (scrollTimersRef.current.t2 != null) {
+        clearTimeout(scrollTimersRef.current.t2);
+        scrollTimersRef.current.t2 = null;
+      }
+    }, []);
+
+    const updateScrollState = useCallback(() => {
       const el = scrollContainerRef.current;
       if (!el) return;
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const hasOverflow = el.scrollHeight > el.clientHeight + 10;
+      const isNearBottom = distanceFromBottom <= 60;
       isAutoScrollEnabled.current = isNearBottom;
-    });
-  }, []);
+      setShowScrollBottomBtn(!isNearBottom && hasOverflow);
+    }, []);
 
-  useEffect(() => {
-    return () => {
-      if (scrollRafRef.current != null) {
-        cancelAnimationFrame(scrollRafRef.current);
-      }
-    };
-  }, []);
-
-  // O(N) pre-pass to map each message to its preceding user prompt
-  const previousUserPrompts = useMemo(() => {
-    let lastPrompt = '';
-    return messages.map((m) => {
-      const current = lastPrompt;
-      if (m.role === 'user') {
-        lastPrompt = typeof m.content === 'string' ? m.content : '';
-      }
-      return current;
-    });
-  }, [messages]);
-
-  const rowVirtualizer = useVirtualizer({
-    count: messages.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 140,
-    overscan: 5,
-  });
-
-  // When switching tasks or sessions, arm the instant scroll to bottom on load
-  useEffect(() => {
-    if (taskId !== prevTaskIdRef.current || sessionId !== prevSessionIdRef.current) {
-      prevTaskIdRef.current = taskId;
-      prevSessionIdRef.current = sessionId;
-      shouldScrollToBottomOnLoadRef.current = true;
-      isAutoScrollEnabled.current = true;
-    }
-  }, [taskId, sessionId]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-
-    const performInstantScroll = () => {
-      if (messages.length > 0) {
-        rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' });
-      }
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-      }
-    };
-
-    if (shouldScrollToBottomOnLoadRef.current || isFirstRender.current) {
-      shouldScrollToBottomOnLoadRef.current = false;
-      isFirstRender.current = false;
-      isAutoScrollEnabled.current = true;
-
-      // 1. Immediately scroll
-      performInstantScroll();
-
-      // 2. Next animation frame (once initial DOM nodes are created)
-      const raf = requestAnimationFrame(() => {
-        performInstantScroll();
+    const handleScroll = useCallback(() => {
+      if (scrollRafRef.current != null) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        updateScrollState();
       });
+    }, [updateScrollState]);
 
-      // 3. Short timeouts after TanStack virtualizer measureElement has measured dynamic row heights
-      const timer1 = setTimeout(() => {
-        performInstantScroll();
-      }, 50);
-
-      const timer2 = setTimeout(() => {
-        performInstantScroll();
-      }, 150);
-
+    useEffect(() => {
       return () => {
-        cancelAnimationFrame(raf);
-        clearTimeout(timer1);
-        clearTimeout(timer2);
+        clearScrollTimers();
+        if (scrollRafRef.current != null) {
+          cancelAnimationFrame(scrollRafRef.current);
+        }
       };
-    }
+    }, [clearScrollTimers]);
 
-    if (!isAutoScrollEnabled.current) return;
+    // O(N) pre-pass to map each message to its preceding user prompt
+    const previousUserPrompts = useMemo(() => {
+      let lastPrompt = '';
+      return messages.map((m) => {
+        const current = lastPrompt;
+        if (m.role === 'user') {
+          lastPrompt = typeof m.content === 'string' ? m.content : '';
+        }
+        return current;
+      });
+    }, [messages]);
 
-    if (isStreaming) {
-      const raf = requestAnimationFrame(() => {
+    const rowVirtualizer = useVirtualizer({
+      count: messages.length,
+      getScrollElement: () => scrollContainerRef.current,
+      estimateSize: () => 140,
+      overscan: 5,
+    });
+
+    const scrollToBottomInstant = useCallback(() => {
+      isAutoScrollEnabled.current = true;
+      setShowScrollBottomBtn(false);
+
+      const performScroll = () => {
+        if (messages.length > 0) {
+          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' });
+        }
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
         }
+      };
+
+      clearScrollTimers();
+      performScroll();
+
+      scrollTimersRef.current.raf = requestAnimationFrame(() => {
+        performScroll();
+        scrollTimersRef.current.raf = null;
       });
-      return () => cancelAnimationFrame(raf);
-    } else {
-      // Instant scroll to bottom when new messages arrive or turn finishes
-      performInstantScroll();
-    }
-  }, [messages, liveStreamingChunk, isStreaming, rowVirtualizer]);
 
-  return (
-    <div
-      ref={scrollContainerRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 overscroll-y-contain [transform:translateZ(0)]"
-    >
-      <div className="max-w-3xl lg:max-w-4xl mx-auto w-full px-4 sm:px-6 py-6">
-        {messages.length === 0 && !isStreaming && (
-          <div className="min-h-[45vh] flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
-            <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3">
-              <Sparkles className="w-5 h-5 text-teal-500" />
-            </div>
-            <h3 className="text-base font-semibold text-cozy-text mb-1">How can I help you today?</h3>
-            <p className="text-xs max-w-sm text-cozy-muted leading-relaxed">
-              Ask the AI agent to explore your files, build new features, test code, or preview your application.
-            </p>
-          </div>
-        )}
+      scrollTimersRef.current.t1 = setTimeout(() => {
+        performScroll();
+        scrollTimersRef.current.t1 = null;
+      }, 50);
 
-        {messages.length > 0 && (
-          <div
-            style={{
-              height: `${rowVirtualizer.getTotalSize()}px`,
-              width: '100%',
-              position: 'relative',
-            }}
-          >
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const index = virtualRow.index;
-              const msg = messages[index];
-              if (!msg) return null;
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-index={virtualRow.index}
-                  ref={rowVirtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className="pb-6"
-                >
-                  <MessageItem
-                    msg={msg}
-                    isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
-                    onCopy={handleCopy}
-                    onPreviewImage={handlePreviewImage}
-                    onPreviewFile={handlePreviewFile}
-                    clis={clis}
-                    currentCli={currentCli}
-                    previousUserPrompt={previousUserPrompts[index] || ''}
-                    onRetryPrompt={onRetryPrompt}
-                    onSwitchCliAndRetry={onSwitchCliAndRetry}
-                    onOpenSettings={onOpenSettings}
-                    onAbort={onAbort}
-                  />
+      scrollTimersRef.current.t2 = setTimeout(() => {
+        performScroll();
+        scrollTimersRef.current.t2 = null;
+      }, 150);
+    }, [clearScrollTimers, messages.length, rowVirtualizer]);
+
+    useImperativeHandle(ref, () => ({
+      scrollToBottom: scrollToBottomInstant,
+    }), [scrollToBottomInstant]);
+
+    // Observe content size changes to auto-scroll during streaming and sync scroll button state
+    useEffect(() => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+
+      const observer = new ResizeObserver(() => {
+        if (isStreaming && isAutoScrollEnabled.current) {
+          el.scrollTop = el.scrollHeight;
+        }
+        updateScrollState();
+      });
+
+      observer.observe(el);
+      if (contentRef.current) {
+        observer.observe(contentRef.current);
+      }
+
+      return () => observer.disconnect();
+    }, [isStreaming, updateScrollState]);
+
+    // Track last user message ID to trigger scroll when user sends a message
+    const latestUserMessageId = useMemo(() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return messages[i].id;
+      }
+      return null;
+    }, [messages]);
+
+    const prevLastUserMsgIdRef = useRef<string | null>(latestUserMessageId);
+
+    // When switching tasks or sessions, arm the instant scroll to bottom on load
+    useEffect(() => {
+      if (taskId !== prevTaskIdRef.current || sessionId !== prevSessionIdRef.current) {
+        prevTaskIdRef.current = taskId;
+        prevSessionIdRef.current = sessionId;
+        prevLastUserMsgIdRef.current = latestUserMessageId;
+        shouldScrollToBottomOnLoadRef.current = true;
+        isAutoScrollEnabled.current = true;
+        setShowScrollBottomBtn(false);
+        return;
+      }
+
+      // Scroll to bottom when user sends a new message
+      if (latestUserMessageId && latestUserMessageId !== prevLastUserMsgIdRef.current) {
+        prevLastUserMsgIdRef.current = latestUserMessageId;
+        scrollToBottomInstant();
+      }
+    }, [latestUserMessageId, taskId, sessionId, scrollToBottomInstant]);
+
+    useEffect(() => {
+      if (messages.length === 0) return;
+
+      if (shouldScrollToBottomOnLoadRef.current || isFirstRender.current) {
+        shouldScrollToBottomOnLoadRef.current = false;
+        isFirstRender.current = false;
+        scrollToBottomInstant();
+        return;
+      }
+
+      if (!isAutoScrollEnabled.current) return;
+
+      if (isStreaming) {
+        const raf = requestAnimationFrame(() => {
+          if (scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+          }
+        });
+        return () => cancelAnimationFrame(raf);
+      } else {
+        // Instant scroll to bottom when new messages arrive or turn finishes
+        scrollToBottomInstant();
+      }
+    }, [messages, liveStreamingChunk, isStreaming, scrollToBottomInstant]);
+
+    return (
+      <div className="relative flex-1 min-h-0 flex flex-col">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 overscroll-y-contain [transform:translateZ(0)]"
+        >
+          <div ref={contentRef} className="max-w-3xl lg:max-w-4xl mx-auto w-full px-4 sm:px-6 py-6">
+            {messages.length === 0 && !isStreaming && (
+              <div className="min-h-[45vh] flex flex-col items-center justify-center text-center p-8 text-cozy-muted">
+                <div className="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center mb-3">
+                  <Sparkles className="w-5 h-5 text-teal-500" />
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <h3 className="text-base font-semibold text-cozy-text mb-1">How can I help you today?</h3>
+                <p className="text-xs max-w-sm text-cozy-muted leading-relaxed">
+                  Ask the AI agent to explore your files, build new features, test code, or preview your application.
+                </p>
+              </div>
+            )}
 
-        {/* Human-in-the-loop input card */}
-        {activeHitl && (
-          <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200 mt-4">
-            <div className="w-full space-y-2 min-w-0 flex flex-col items-start">
-              <HumanInputCard hitl={activeHitl} onSubmitted={onHitlSubmitted} />
-            </div>
-          </div>
-        )}
+            {messages.length > 0 && (
+              <div
+                style={{
+                  height: `${rowVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const index = virtualRow.index;
+                  const msg = messages[index];
+                  if (!msg) return null;
+                  return (
+                    <div
+                      key={virtualRow.key}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                      className="pb-6"
+                    >
+                      <MessageItem
+                        msg={msg}
+                        isStreaming={Boolean(isStreaming && index === messages.length - 1 && msg.role === 'assistant')}
+                        onCopy={handleCopy}
+                        onPreviewImage={handlePreviewImage}
+                        onPreviewFile={handlePreviewFile}
+                        clis={clis}
+                        currentCli={currentCli}
+                        previousUserPrompt={previousUserPrompts[index] || ''}
+                        onRetryPrompt={onRetryPrompt}
+                        onSwitchCliAndRetry={onSwitchCliAndRetry}
+                        onOpenSettings={onOpenSettings}
+                        onAbort={onAbort}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-        {/* Fallback streaming thinking indicator if no assistant message exists yet */}
-        {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
-          <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200 mt-4">
-            <div className="w-full py-2 text-sm text-cozy-text">
-              <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
-                <Sparkles className="w-3.5 h-3.5" />
-                Thinking and exploring codebase...
-              </span>
-            </div>
-          </div>
-        )}
+            {/* Human-in-the-loop input card */}
+            {activeHitl && (
+              <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200 mt-4">
+                <div className="w-full space-y-2 min-w-0 flex flex-col items-start">
+                  <HumanInputCard hitl={activeHitl} onSubmitted={onHitlSubmitted} />
+                </div>
+              </div>
+            )}
 
-        <div ref={listEndRef} />
+            {/* Fallback streaming thinking indicator if no assistant message exists yet */}
+            {isStreaming && (messages.length === 0 || messages[messages.length - 1].role !== 'assistant') && (
+              <div className="flex items-start justify-start min-w-0 w-full animate-in fade-in duration-200 mt-4">
+                <div className="w-full py-2 text-sm text-cozy-text">
+                  <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Thinking and exploring codebase...
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div ref={listEndRef} />
+          </div>
+
+          {/* Attachment Preview Modals */}
+          <ImageLightboxModal
+            attachment={previewImage}
+            onClose={() => setPreviewImage(null)}
+          />
+
+          <FilePreviewModal
+            taskId={taskId || ''}
+            attachment={previewFile}
+            onClose={() => setPreviewFile(null)}
+          />
+        </div>
+
+        {/* Floating Scroll to Bottom Button */}
+        {showScrollBottomBtn && (
+          <button
+            type="button"
+            onClick={scrollToBottomInstant}
+            className="absolute bottom-4 right-4 sm:right-6 w-9 h-9 rounded-full bg-cozy-surface/95 hover:bg-cozy-surface border border-cozy-border shadow-soft-lg hover:shadow-soft-xl text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:border-teal-500/40 backdrop-blur-sm transition-all duration-150 animate-in fade-in zoom-in-95 cursor-pointer z-20 flex items-center justify-center group"
+            title="Scroll to bottom"
+            aria-label="Scroll to bottom"
+          >
+            <ArrowDown className="w-4 h-4 transition-transform group-hover:translate-y-0.5" />
+          </button>
+        )}
       </div>
+    );
+  })
+);
 
-      {/* Attachment Preview Modals */}
-      <ImageLightboxModal
-        attachment={previewImage}
-        onClose={() => setPreviewImage(null)}
-      />
-
-      <FilePreviewModal
-        taskId={taskId || ''}
-        attachment={previewFile}
-        onClose={() => setPreviewFile(null)}
-      />
-    </div>
-  );
-});
+ChatMessageList.displayName = 'ChatMessageList';
 
 const MessageItem: React.FC<{
   msg: ChatMessage;

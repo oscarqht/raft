@@ -51,6 +51,7 @@ export interface Task {
   base_branch: string;
   worktree_path: string;
   status: 'active' | 'completed' | 'archived';
+  is_pinned?: boolean | number;
   agent_status?: 'WIP' | 'idle';
   created_at: number;
   updated_at: number;

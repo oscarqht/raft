@@ -170,7 +170,7 @@ export const CodeBlockItem: React.FC<{
           )}
         </button>
       </div>
-      <div className="p-3 overflow-x-auto text-cozy-text leading-relaxed whitespace-pre font-mono select-text">
+      <div className="p-3 overflow-x-auto text-cozy-text leading-relaxed whitespace-pre font-mono select-text text-xs">
         {code}
       </div>
     </div>
@@ -433,7 +433,7 @@ const STATIC_MARKDOWN_COMPONENTS: Partial<Components> = {
   // Inline Code
   code: ({ children }) => {
     return (
-      <code className="px-1.5 py-0.5 rounded bg-cozy-subtle/80 text-teal-600 dark:text-teal-300 border border-teal-500/20 font-mono text-[12px] break-words [overflow-wrap:anywhere] mx-0.5">
+      <code className="px-1.5 py-0.5 rounded bg-cozy-subtle/80 text-teal-600 dark:text-teal-300 border border-teal-500/20 font-mono text-[13px] break-words [overflow-wrap:anywhere] mx-0.5">
         {children}
       </code>
     );

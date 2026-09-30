@@ -16,9 +16,10 @@ interface PreviewPaneProps {
   task: Task;
   ws: WebSocket | null;
   onAttachToChat?: (attachments: FileAttachment[], url?: string) => void;
+  onClose?: () => void;
 }
 
-export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToChat }) => {
+export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToChat, onClose }) => {
   const [devState, setDevState] = useState<DevServerState>({
     taskId: task.id,
     status: 'stopped',
@@ -28,6 +29,11 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   });
 
   const [pathInput, setPathInput] = useState('/');
+  const [isAddressFocused, setIsAddressFocused] = useState(false);
+  const isAddressFocusedRef = useRef(false);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const currentIframePathRef = useRef('/');
+  const [activeIframeUrl, setActiveIframeUrl] = useState<string>('');
   const [iframeKey, setIframeKey] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -39,6 +45,13 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const captureStreamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (isAddressFocused) {
+      addressInputRef.current?.focus();
+      addressInputRef.current?.select();
+    }
+  }, [isAddressFocused]);
 
   const [panelWidth, setPanelWidth] = useState<number>(() => {
     if (typeof window !== 'undefined') {
@@ -96,6 +109,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [isServerReady, setIsServerReady] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
   const [isTimedOut, setIsTimedOut] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
 
   // Script execution context tracking for dependency installation
   const scriptCtx = useOptionalScriptExecution();
@@ -142,7 +156,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setCanGoBack(false);
     setCanGoForward(false);
     setPathInput('/');
+    currentIframePathRef.current = '/';
+    setActiveIframeUrl('');
     stopCaptureStream();
+    setIsStopping(false);
   }, [task.id]);
 
   // Listen for URL changes and navigation history depth from injected preview tracker
@@ -153,7 +170,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         if (event.data.type === 'RAFT_PREVIEW_URL_CHANGED') {
           if (event.data.taskId && event.data.taskId !== task.id) return;
           if (typeof event.data.pathname === 'string') {
-            setPathInput(event.data.pathname);
+            currentIframePathRef.current = event.data.pathname;
+            if (!isAddressFocusedRef.current) {
+              setPathInput(event.data.pathname);
+            }
           }
           if (typeof event.data.canGoBack === 'boolean') {
             setCanGoBack(event.data.canGoBack);
@@ -191,6 +211,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         const msg = JSON.parse(event.data);
         if (msg.type === 'dev_server_state') {
           setDevState(msg.state);
+          if (msg.state?.status === 'stopped' || msg.state?.status === 'error') {
+            setIsStopping(false);
+          }
           if (msg.state?.logs && msg.state.logs.length > 0) {
             setLogs((prev) => (prev.length === 0 ? msg.state.logs : prev));
           }
@@ -229,11 +252,33 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
       setIsServerReady(false);
       setAttemptCount(0);
       setIsTimedOut(false);
+      setIsStopping(false);
     }
   }, [devState.status]);
 
+  // Active port and host resolution
+  const activeDevPort = devState.port || 5173;
+  const activeProxyPort = devState.proxyPort || activeDevPort;
+  const previewHostname = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? window.location.hostname
+    : 'localhost';
+
+  // Synchronize initial iframe URL when dev server starts or proxy port becomes available
+  useEffect(() => {
+    if (devState.status === 'running' || devState.status === 'starting') {
+      const targetPath = currentIframePathRef.current || '/';
+      const normalized = targetPath.startsWith('/') ? targetPath : '/' + targetPath;
+      const targetUrl = `http://${previewHostname}:${activeProxyPort}${normalized}`;
+      setActiveIframeUrl((prev) => {
+        if (!prev || !prev.startsWith(`http://${previewHostname}:${activeProxyPort}`)) {
+          return targetUrl;
+        }
+        return prev;
+      });
+    }
+  }, [devState.status, activeProxyPort, previewHostname]);
+
   // Polling readiness check effect
-  const activePort = devState.port || 5173;
   useEffect(() => {
     // Only poll when server is running or starting, and not yet marked ready or timed out
     if (devState.status !== 'running' && devState.status !== 'starting') return;
@@ -266,7 +311,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         try {
           const controller = new AbortController();
           const abortTimer = setTimeout(() => controller.abort(), 800);
-          await fetch(`http://localhost:${activePort}/`, {
+          await fetch(`http://localhost:${activeDevPort}/`, {
             mode: 'no-cors',
             cache: 'no-store',
             signal: controller.signal,
@@ -311,7 +356,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
       document.removeEventListener('visibilitychange', handleVisibility);
       if (timerId) clearTimeout(timerId);
     };
-  }, [devState.status, isServerReady, isTimedOut, task.id, activePort]);
+  }, [devState.status, isServerReady, isTimedOut, task.id, activeDevPort]);
 
   // Auto scroll console logs
   useEffect(() => {
@@ -330,12 +375,21 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleStop = async () => {
-    stopCaptureStream();
-    await stopDevServer(task.id);
-    setDevState((prev) => ({ ...prev, status: 'stopped' }));
-    setIsServerReady(false);
-    setIsTimedOut(false);
-    setAttemptCount(0);
+    if (isStopping) return;
+    setIsStopping(true);
+    try {
+      stopCaptureStream();
+      await stopDevServer(task.id);
+      setDevState((prev) => ({ ...prev, status: 'stopped' }));
+      setIsServerReady(false);
+      setIsTimedOut(false);
+      setAttemptCount(0);
+      onClose?.();
+    } catch (err) {
+      console.error('Failed to stop dev server:', err);
+    } finally {
+      setIsStopping(false);
+    }
   };
 
   const handleRestart = async () => {
@@ -345,17 +399,39 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setAttemptCount(0);
     const next = await restartDevServer(task.id);
     setDevState(next);
+    const restartPath = currentIframePathRef.current || '/';
+    const normalized = restartPath.startsWith('/') ? restartPath : '/' + restartPath;
+    const nextPort = next.proxyPort || next.port || 5173;
+    setActiveIframeUrl(`http://${previewHostname}:${nextPort}${normalized}`);
     setIframeKey((k) => k + 1);
   };
 
   const handleReloadIframe = () => {
-    setIframeKey((k) => k + 1);
+    let messageSent = false;
+    if (iframeRef.current?.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_RELOAD' }, '*');
+        messageSent = true;
+      } catch {}
+    }
+    if (!messageSent) {
+      setIframeKey((k) => k + 1);
+    }
   };
 
   const handleNavigateAddress = (targetPath?: string) => {
-    const raw = targetPath ?? pathInput;
+    let raw = (targetPath ?? pathInput).trim();
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      try {
+        const parsed = new URL(raw);
+        raw = parsed.pathname + parsed.search + parsed.hash;
+      } catch {}
+    }
     const normalized = raw.startsWith('/') ? raw : '/' + raw;
     setPathInput(normalized);
+    currentIframePathRef.current = normalized;
+
+    const targetUrl = `http://${previewHostname}:${activeProxyPort}${normalized}`;
 
     if (iframeRef.current?.contentWindow) {
       try {
@@ -367,10 +443,12 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
           '*'
         );
       } catch {
-        handleReloadIframe();
+        setActiveIframeUrl(targetUrl);
+        setIframeKey((k) => k + 1);
       }
     } else {
-      handleReloadIframe();
+      setActiveIframeUrl(targetUrl);
+      setIframeKey((k) => k + 1);
     }
   };
 
@@ -581,7 +659,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
+  const currentPath = currentIframePathRef.current || (pathInput.startsWith('/') ? pathInput : '/' + pathInput);
 
   const handleAttachToChat = (attachments: FileAttachment[]) => {
     const screenshotUrl = activeScreenshot?.url || currentPath;
@@ -600,12 +678,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const activeDevPort = devState.port || 5173;
-  const activeProxyPort = devState.proxyPort || activeDevPort;
-  const previewHostname = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? window.location.hostname
-    : 'localhost';
-  const iframeSrc = `http://${previewHostname}:${activeProxyPort}${currentPath}`;
+  const initialIframeSrc = activeIframeUrl || `http://${previewHostname}:${activeProxyPort}${currentPath}`;
   const externalUrl = `http://${previewHostname}:${activeDevPort}${currentPath}`;
 
   return (
@@ -629,16 +702,21 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       <div className="h-11 px-3 border-b border-cozy-border bg-cozy-surface flex items-center justify-between shrink-0 gap-2 select-none">
         {/* Server Start/Stop/Restart */}
         <div className="flex items-center space-x-1 shrink-0">
-          {devState.status === 'running' ? (
+          {devState.status === 'running' || devState.status === 'starting' || isStopping ? (
             <button
               onClick={handleStop}
+              disabled={isStopping}
               className={`flex items-center gap-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors ${
                 isCompact ? 'w-7 h-7 justify-center p-0' : 'h-7 px-2.5'
-              }`}
-              title="Stop dev server"
+              } ${isStopping ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'}`}
+              title={isStopping ? 'Stopping dev server...' : 'Stop dev server'}
             >
-              <Square className="w-3 h-3 fill-current" />
-              {!isCompact && <span>Stop</span>}
+              {isStopping ? (
+                <Loader2 className="w-3 h-3 animate-spin text-red-500" />
+              ) : (
+                <Square className="w-3 h-3 fill-current" />
+              )}
+              {!isCompact && <span>{isStopping ? 'Stopping...' : 'Stop'}</span>}
             </button>
           ) : (
             <button
@@ -670,7 +748,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
           <button
             onClick={handleRestart}
-            disabled={devState.status !== 'running'}
+            disabled={devState.status !== 'running' || isStopping}
             className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors"
             title="Restart dev server"
             aria-label="Restart dev server"
@@ -707,17 +785,61 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 
         {/* URL Address Bar */}
         {!isCompact && (
-          <div className="flex-1 max-w-sm h-7 flex items-center bg-cozy-subtle dark:bg-[#212121] border border-cozy-border rounded-lg px-2 text-xs min-w-0 transition-colors">
+          <div
+            onClick={() => {
+              if (!isAddressFocused) {
+                setIsAddressFocused(true);
+                isAddressFocusedRef.current = true;
+              }
+            }}
+            className="flex-1 max-w-sm h-7 flex items-center bg-cozy-subtle dark:bg-[#212121] border border-cozy-border rounded-lg px-2 text-xs min-w-0 overflow-hidden transition-colors cursor-text"
+          >
             <Globe className="w-3.5 h-3.5 text-cozy-muted mr-1.5 shrink-0" />
-            <span className="text-cozy-muted select-none font-mono hidden md:inline text-[11px]">http://localhost:{activeDevPort}</span>
-            <input
-              type="text"
-              value={pathInput}
-              onChange={(e) => setPathInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleNavigateAddress()}
-              placeholder="/"
-              className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-[30px]"
-            />
+            {isAddressFocused ? (
+              <div className="flex-1 min-w-0 flex items-center overflow-hidden">
+                <span className="text-cozy-muted select-none font-mono text-[11px] shrink-0 truncate max-w-[130px]">
+                  http://localhost:{activeDevPort}
+                </span>
+                <input
+                  ref={addressInputRef}
+                  type="text"
+                  value={pathInput}
+                  onFocus={() => {
+                    setIsAddressFocused(true);
+                    isAddressFocusedRef.current = true;
+                  }}
+                  onBlur={() => {
+                    setIsAddressFocused(false);
+                    isAddressFocusedRef.current = false;
+                    setPathInput(currentIframePathRef.current);
+                  }}
+                  onChange={(e) => setPathInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleNavigateAddress();
+                      (e.target as HTMLInputElement).blur();
+                    } else if (e.key === 'Escape') {
+                      setPathInput(currentIframePathRef.current);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  placeholder="/"
+                  className="flex-1 bg-transparent text-cozy-text focus:outline-none font-mono px-0.5 ml-0.5 min-w-0"
+                />
+              </div>
+            ) : (
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <span
+                  className="block truncate font-mono text-[11px] text-cozy-muted select-none"
+                  title={`http://localhost:${activeDevPort}${pathInput.startsWith('/') ? pathInput : '/' + pathInput}`}
+                >
+                  http://localhost:{activeDevPort}
+                  <span className="text-cozy-text font-medium">
+                    {pathInput.startsWith('/') ? pathInput : '/' + pathInput}
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -825,6 +947,18 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               </span>
             )}
           </div>
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors cursor-pointer shrink-0"
+              title="Close preview panel"
+              aria-label="Close preview panel"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -889,7 +1023,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               <iframe
                 ref={iframeRef}
                 key={iframeKey}
-                src={iframeSrc}
+                src={initialIframeSrc}
                 title="Task Dev Server Preview"
                 className="w-full h-full border-0"
                 sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"
@@ -935,10 +1069,18 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all cursor-pointer"
+                  disabled={isStopping}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all ${
+                    isStopping ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  title={isStopping ? 'Stopping dev server...' : 'Stop dev server'}
                 >
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                  <span>Stop Server</span>
+                  {isStopping ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  <span>{isStopping ? 'Stopping...' : 'Stop Server'}</span>
                 </button>
               </div>
             </div>
@@ -989,10 +1131,18 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all cursor-pointer"
+                  disabled={isStopping}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-red-500 hover:bg-red-500/10 border border-red-500/20 transition-all ${
+                    isStopping ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  title={isStopping ? 'Stopping dev server...' : 'Stop dev server'}
                 >
-                  <Square className="w-3.5 h-3.5 fill-current" />
-                  <span>Stop</span>
+                  {isStopping ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-red-500" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                  )}
+                  <span>{isStopping ? 'Stopping...' : 'Stop'}</span>
                 </button>
               </div>
             </div>

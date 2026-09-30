@@ -13,9 +13,11 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Pin,
+  Sliders,
 } from 'lucide-react';
 import { Task, Project, TaskGitStatus } from '../types';
-import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats } from '../api';
+import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats, updateTask } from '../api';
 import { formatRelativeTime } from '../utils/time';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -38,12 +40,14 @@ import {
   setCachedProjectTasksGitStatus,
   getCachedActiveDevServers,
   setCachedActiveDevServers,
+  isTaskPendingDelete,
 } from '../cache';
 
 interface ProjectsTasksSidebarProps {
   currentTaskId?: string;
   currentProjectId?: string;
   onSelectTask: (taskId: string, projectId?: string, task?: Task) => void;
+  onConfigureProject?: (projectId: string) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   ws: WebSocket | null;
@@ -61,6 +65,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   currentTaskId,
   currentProjectId,
   onSelectTask,
+  onConfigureProject,
   isCollapsed,
   onToggleCollapse,
   ws,
@@ -192,13 +197,14 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
           return [] as Project[];
         }),
       ]);
-      setTasks(tasksData);
+      const activeTasks = tasksData.filter((t) => !isTaskPendingDelete(t.id));
+      setTasks(activeTasks);
       setProjects(projectsData);
-      setCachedAllTasks(tasksData);
+      setCachedAllTasks(activeTasks);
       setCachedProjects(projectsData);
 
       const initialAgentStatus: Record<string, 'WIP' | 'idle'> = {};
-      tasksData.forEach((t) => {
+      activeTasks.forEach((t) => {
         setCachedTask(t);
         initialAgentStatus[t.id] = t.agent_status || 'idle';
       });
@@ -208,7 +214,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         return next;
       });
 
-      fetchGitStatuses(tasksData);
+      fetchGitStatuses(activeTasks);
     } catch (err) {
       console.error('Failed to load tasks and projects for sidebar:', err);
     } finally {
@@ -313,11 +319,31 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         fetchGitStatuses(tasks, true);
       }
     };
+    const handleTaskDeleted = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const targetId = detail?.taskId;
+      setTasks((prev) => prev.filter((t) => (targetId ? t.id !== targetId : true) && !isTaskPendingDelete(t.id)));
+    };
+    const handleTaskRestored = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.task) {
+        setTasks((prev) => {
+          if (prev.some((t) => t.id === detail.task.id)) return prev;
+          return [detail.task, ...prev];
+        });
+      } else {
+        fetchData();
+      }
+    };
     window.addEventListener('task-updated', handleUpdate);
+    window.addEventListener('task-deleted', handleTaskDeleted);
+    window.addEventListener('task-restored', handleTaskRestored);
     window.addEventListener('task-status-updated', handleStatusUpdate);
     window.addEventListener('projects-updated', handleUpdate);
     return () => {
       window.removeEventListener('task-updated', handleUpdate);
+      window.removeEventListener('task-deleted', handleTaskDeleted);
+      window.removeEventListener('task-restored', handleTaskRestored);
       window.removeEventListener('task-status-updated', handleStatusUpdate);
       window.removeEventListener('projects-updated', handleUpdate);
     };
@@ -406,7 +432,27 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     }
   }, [currentTaskId, tasks]);
 
-  // Group tasks by project and sort
+  // Pinned tasks list (matches search query if active, sorted by latest activity descending)
+  const pinnedTasks = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const pinned = tasks.filter((t) => Boolean(t.is_pinned));
+    const filtered = query
+      ? pinned.filter((task) => {
+          const pName = task.project?.name || (task.project_id ? 'Untitled Project' : 'Other Tasks');
+          return (
+            task.name.toLowerCase().includes(query) ||
+            (task.branch && task.branch.toLowerCase().includes(query)) ||
+            pName.toLowerCase().includes(query)
+          );
+        })
+      : pinned;
+
+    return filtered.sort(
+      (a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
+    );
+  }, [tasks, searchQuery]);
+
+  // Group unpinned tasks by project and sort
   const groupedProjects = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const map = new Map<
@@ -425,6 +471,11 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     }
 
     for (const task of tasks) {
+      // Exclude pinned tasks so they appear exclusively in the dedicated Pinned section
+      if (Boolean(task.is_pinned)) {
+        continue;
+      }
+
       const pId = task.project_id || 'unknown';
       const pName = task.project?.name || (task.project_id ? 'Untitled Project' : 'Other Tasks');
       const pIcon = task.project?.icon;
@@ -455,8 +506,15 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         (a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
       );
 
+      // Latest task activity across all tasks of this project (including pinned tasks)
+      const allProjTasks = tasks.filter((t) => (t.project_id || 'unknown') === projectId);
+      const latestTaskTime =
+        allProjTasks.length > 0
+          ? Math.max(...allProjTasks.map((t) => t.updated_at || t.created_at || 0))
+          : 0;
+
       const latestUpdatedAt = Math.max(
-        ...sortedTasks.map((t) => t.updated_at || t.created_at || 0),
+        latestTaskTime,
         data.projectUpdatedAt || 0
       );
 
@@ -469,17 +527,37 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
       });
     }
 
-    // Sort: current project at top, then by latest activity descending
-    groups.sort((a, b) => {
-      if (currentProjectId) {
-        if (a.projectId === currentProjectId) return -1;
-        if (b.projectId === currentProjectId) return 1;
-      }
-      return b.latestUpdatedAt - a.latestUpdatedAt;
-    });
+    // Sort strictly by latest activity descending
+    groups.sort((a, b) => b.latestUpdatedAt - a.latestUpdatedAt);
 
     return groups;
-  }, [projects, tasks, searchQuery, currentProjectId]);
+  }, [projects, tasks, searchQuery]);
+
+  const handleTogglePin = useCallback(async (e: React.MouseEvent, task: Task) => {
+    e.stopPropagation();
+    const nextPinned = !Boolean(task.is_pinned);
+    const updatedTask: Task = { ...task, is_pinned: nextPinned ? 1 : 0 };
+
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? updatedTask : t)));
+    setCachedTask(updatedTask);
+    const cachedAll = getCachedAllTasks();
+    if (cachedAll) {
+      setCachedAllTasks(cachedAll.map((t) => (t.id === task.id ? updatedTask : t)));
+    }
+    window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
+
+    try {
+      await updateTask(task.id, { is_pinned: nextPinned });
+    } catch (err) {
+      console.error('Failed to toggle pin for task:', err);
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? task : t)));
+      setCachedTask(task);
+      if (cachedAll) {
+        setCachedAllTasks(cachedAll);
+      }
+      window.dispatchEvent(new CustomEvent('task-updated', { detail: task }));
+    }
+  }, []);
 
   const toggleProjectExpand = (projectId: string) => {
     setExpandedProjectIds((prev) => {
@@ -592,10 +670,119 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   const handleCreateTaskInProject = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
     navigate(`/projects/${projectId}`);
-    // Small delay to allow navigation to project page before triggering new task modal
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('open-new-task'));
-    }, 120);
+  };
+
+  const renderTaskItem = (task: Task, isPinnedSection = false) => {
+    if (isTaskPendingDelete(task.id)) return null;
+    const isActive = task.id === currentTaskId;
+    const hasActiveDevServer = activeDevServerTaskIds.has(task.id);
+    const agentStatus = tasksAgentStatus[task.id] || task.agent_status || 'idle';
+    const isReplying = agentStatus === 'WIP';
+    const hasUnreadReply = !isReplying && unreadTaskIds.includes(task.id);
+    const gitStatus = tasksGitStatus[task.id];
+    const isPinned = Boolean(task.is_pinned);
+    const project = task.project || projects.find((p) => p.id === task.project_id);
+    const projectName = project?.name;
+    const projectIcon = project?.icon;
+
+    return (
+      <div
+        key={task.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelectTask(task.id, task.project_id, task)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelectTask(task.id, task.project_id, task);
+          }
+        }}
+        onMouseEnter={() => handleTaskMouseEnter(task.id)}
+        onMouseLeave={() => handleTaskMouseLeave(task.id)}
+        className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between gap-1.5 text-left transition-colors cursor-pointer group ${
+          isActive
+            ? 'bg-cozy-surface dark:bg-[#242424] text-cozy-text font-medium border border-cozy-border'
+            : 'hover:bg-cozy-subtle dark:hover:bg-[#212121] text-cozy-muted hover:text-cozy-text border border-transparent'
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-xs truncate font-medium ${
+                isActive
+                  ? 'text-cozy-text'
+                  : 'text-cozy-muted group-hover:text-cozy-text'
+              }`}
+            >
+              {task.name}
+            </span>
+
+            {isPinnedSection && projectName && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded bg-cozy-subtle text-cozy-muted text-[9px] font-medium border border-cozy-border/40 shrink-0 max-w-[100px] truncate"
+                title={`Project: ${projectName}`}
+              >
+                <ProjectIcon icon={projectIcon} className="w-2.5 h-2.5 shrink-0" />
+                <span className="truncate">{projectName}</span>
+              </span>
+            )}
+
+            {hasActiveDevServer && (
+              <span
+                className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
+                title="Dev server running in background"
+              />
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 text-[10px] text-cozy-muted/70 mt-0.5 overflow-hidden">
+            {task.branch && (
+              <span className="flex items-center gap-0.5 font-mono text-[10px] text-cozy-muted/80 max-w-[110px] truncate shrink-0">
+                <GitBranch className="w-2.5 h-2.5 text-teal-500/70 shrink-0" />
+                <span className="truncate">{task.branch}</span>
+              </span>
+            )}
+            {renderConciseTaskStatusBadge(task, gitStatus)}
+            {(task.updated_at || task.created_at) && (
+              <span className="text-cozy-muted/50 shrink-0 truncate">
+                • {formatRelativeTime(task.updated_at || task.created_at)}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="shrink-0 flex items-center gap-0.5 pl-1">
+          <button
+            type="button"
+            onClick={(e) => handleTogglePin(e, task)}
+            className={`p-1 rounded transition-all cursor-pointer ${
+              isPinned
+                ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle opacity-0 group-hover:opacity-100'
+            }`}
+            title={isPinned ? 'Unpin task' : 'Pin task'}
+            aria-label={isPinned ? 'Unpin task' : 'Pin task'}
+          >
+            <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} />
+          </button>
+
+          <div className="w-4 h-4 flex items-center justify-center">
+            {isReplying ? (
+              <span title="Agent is replying..." className="inline-flex items-center justify-center">
+                <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
+              </span>
+            ) : hasUnreadReply ? (
+              <span
+                className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
+                title="Agent finished replying"
+              />
+            ) : isActive ? (
+              <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -661,165 +848,156 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
               <Loader2 className="w-5 h-5 text-teal-500 animate-spin" />
               <span>Loading workspace tasks...</span>
             </div>
-          ) : groupedProjects.length === 0 ? (
+          ) : pinnedTasks.length === 0 && groupedProjects.length === 0 ? (
             <div className="py-12 px-3 text-center text-xs text-cozy-muted flex flex-col items-center justify-center gap-2">
               <ListTodo className="w-8 h-8 opacity-25" />
               <span>{searchQuery ? 'No matching tasks' : 'No projects or tasks yet'}</span>
             </div>
           ) : (
-            groupedProjects.map((group) => {
-              const isExpanded = expandedProjectIds.has(group.projectId);
-              const isSearching = searchQuery.trim().length > 0;
-              const visibleTasks = isSearching || isExpanded ? group.tasks : group.tasks.slice(0, 10);
-              const hasMoreTasks = !isSearching && group.tasks.length > 10;
-              const remainingCount = group.tasks.length - 10;
-
-              return (
-                <div key={group.projectId} className="flex flex-col space-y-1">
-                  {/* Project Section Header */}
-                  <div className="flex items-center justify-between px-2 py-1 rounded-lg group/project text-[11px] font-semibold text-cozy-muted">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/projects/${group.projectId}`)}
-                      className="flex items-center gap-1.5 min-w-0 flex-1 text-left hover:text-cozy-text transition-colors cursor-pointer"
-                      title={`Go to project: ${group.projectName}`}
-                    >
-                      <ProjectIcon icon={group.projectIcon} className="w-3.5 h-3.5 shrink-0" />
-                      <span className="truncate font-semibold text-cozy-text/90 group-hover/project:text-teal-600 dark:group-hover/project:text-teal-400">
-                        {group.projectName}
+            <>
+              {/* Dedicated Pinned Tasks Section (Hidden if 0 pinned tasks) */}
+              {pinnedTasks.length > 0 && (
+                <div className="flex flex-col space-y-1 pb-2 mb-1 border-b border-cozy-border/40">
+                  <div className="flex items-center justify-between px-2 py-1 rounded-lg text-[11px] font-semibold text-cozy-muted select-none">
+                    <div className="flex items-center gap-1.5 text-cozy-text/90">
+                      <Pin className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span className="font-semibold uppercase tracking-wider text-[10px] text-cozy-muted">
+                        Pinned
                       </span>
-                    </button>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <span className="text-[10px] font-normal text-cozy-muted px-1.5 py-0.2 rounded-full bg-cozy-subtle/80 border border-cozy-border/40">
-                        {group.tasks.length}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCreateTaskInProject(e, group.projectId)}
-                        className="w-5 h-5 rounded-md text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-500/10 flex items-center justify-center transition-all opacity-0 group-hover/project:opacity-100"
-                        title="New task in this project"
-                        aria-label="New task in this project"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
                     </div>
+                    <span className="text-[10px] font-normal text-cozy-muted px-1.5 py-0.2 rounded-full bg-cozy-subtle/80 border border-cozy-border/40">
+                      {pinnedTasks.length}
+                    </span>
                   </div>
 
-                  {/* Tasks List or Empty State */}
-                  {group.tasks.length === 0 ? (
-                    <div className="pl-2 pr-1 py-1">
+                  <div className="space-y-1 pl-1">
+                    {pinnedTasks.map((task) => renderTaskItem(task, true))}
+                  </div>
+                </div>
+              )}
+
+              {/* Grouped Projects */}
+              {groupedProjects.map((group) => {
+                const isExpanded = expandedProjectIds.has(group.projectId);
+                const isSearching = searchQuery.trim().length > 0;
+                const visibleTasks = isSearching || isExpanded ? group.tasks : group.tasks.slice(0, 10);
+                const hasMoreTasks = !isSearching && group.tasks.length > 10;
+                const remainingCount = group.tasks.length - 10;
+                const hasAnyProjectTasks = tasks.some(
+                  (t) => (t.project_id || 'unknown') === group.projectId
+                );
+
+                const isProjectSelected = !currentTaskId && group.projectId === currentProjectId;
+
+                return (
+                  <div key={group.projectId} className="flex flex-col space-y-1">
+                    {/* Project Section Header */}
+                    <div
+                      className={`flex items-center justify-between px-2 py-1 rounded-lg group/project text-[11px] font-semibold transition-all ${
+                        isProjectSelected
+                          ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/25 shadow-soft-xs'
+                          : 'text-cozy-muted hover:bg-cozy-subtle/60 border border-transparent'
+                      }`}
+                    >
                       <button
                         type="button"
-                        onClick={(e) => handleCreateTaskInProject(e, group.projectId)}
-                        className="w-full px-2 py-1.5 rounded-lg border border-dashed border-cozy-border/60 hover:border-teal-500/50 hover:bg-teal-500/5 text-left text-[11px] text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 flex items-center gap-1.5 transition-colors cursor-pointer group/empty"
+                        onClick={() => navigate(`/projects/${group.projectId}`)}
+                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left transition-colors cursor-pointer"
+                        title={`Select project: ${group.projectName}`}
                       >
-                        <Plus className="w-3 h-3 text-cozy-muted group-hover/empty:text-teal-500 transition-colors" />
-                        <span>Create first task</span>
+                        <ProjectIcon icon={group.projectIcon} className="w-3.5 h-3.5 shrink-0" />
+                        <span
+                          className={`truncate font-semibold ${
+                            isProjectSelected
+                              ? 'text-teal-600 dark:text-teal-400'
+                              : 'text-cozy-text/90 group-hover/project:text-teal-600 dark:group-hover/project:text-teal-400'
+                          }`}
+                        >
+                          {group.projectName}
+                        </span>
+                        {isProjectSelected && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-teal-500 shrink-0 animate-pulse ml-0.5" />
+                        )}
                       </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-1 pl-1">
-                      {visibleTasks.map((task) => {
-                        const isActive = task.id === currentTaskId;
-                        const hasActiveDevServer = activeDevServerTaskIds.has(task.id);
-                        const agentStatus = tasksAgentStatus[task.id] || task.agent_status || 'idle';
-                        const isReplying = agentStatus === 'WIP';
-                        const hasUnreadReply = !isReplying && unreadTaskIds.includes(task.id);
-                        const gitStatus = tasksGitStatus[task.id];
 
-                        return (
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] font-normal text-cozy-muted px-1.5 py-0.2 rounded-full bg-cozy-subtle/80 border border-cozy-border/40">
+                          {group.tasks.length}
+                        </span>
+                        {onConfigureProject && (
                           <button
-                            key={task.id}
                             type="button"
-                            onClick={() => onSelectTask(task.id, task.project_id, task)}
-                            onMouseEnter={() => handleTaskMouseEnter(task.id)}
-                            onMouseLeave={() => handleTaskMouseLeave(task.id)}
-                            className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between gap-2 text-left transition-colors cursor-pointer group ${
-                              isActive
-                                ? 'bg-cozy-surface dark:bg-[#242424] text-cozy-text font-medium border border-cozy-border'
-                                : 'hover:bg-cozy-subtle dark:hover:bg-[#212121] text-cozy-muted hover:text-cozy-text border border-transparent'
-                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onConfigureProject(group.projectId);
+                            }}
+                            className="w-5 h-5 rounded-md text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-500/10 flex items-center justify-center transition-all opacity-0 group-hover/project:opacity-100"
+                            title="Project settings"
+                            aria-label="Project settings"
                           >
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`text-xs truncate font-medium ${
-                                    isActive
-                                      ? 'text-cozy-text'
-                                      : 'text-cozy-muted group-hover:text-cozy-text'
-                                  }`}
-                                >
-                                  {task.name}
-                                </span>
-
-                                {hasActiveDevServer && (
-                                  <span
-                                    className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
-                                    title="Dev server running in background"
-                                  />
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1.5 text-[10px] text-cozy-muted/70 mt-0.5 overflow-hidden">
-                                {task.branch && (
-                                  <span className="flex items-center gap-0.5 font-mono text-[10px] text-cozy-muted/80 max-w-[85px] truncate shrink-0">
-                                    <GitBranch className="w-2.5 h-2.5 text-teal-500/70 shrink-0" />
-                                    <span className="truncate">{task.branch}</span>
-                                  </span>
-                                )}
-                                {renderConciseTaskStatusBadge(task, gitStatus)}
-                                {(task.updated_at || task.created_at) && (
-                                  <span className="text-cozy-muted/50 shrink-0 truncate">
-                                    • {formatRelativeTime(task.updated_at || task.created_at)}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="shrink-0 flex items-center justify-center pl-1">
-                              {isReplying ? (
-                                <span title="Agent is replying..." className="inline-flex items-center justify-center">
-                                  <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
-                                </span>
-                              ) : hasUnreadReply ? (
-                                <span
-                                  className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
-                                  title="Agent finished replying"
-                                />
-                              ) : isActive ? (
-                                <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-                              ) : null}
-                            </div>
+                            <Sliders className="w-3 h-3" />
                           </button>
-                        );
-                      })}
-
-                      {/* Expand / Collapse Button */}
-                      {hasMoreTasks && (
+                        )}
                         <button
                           type="button"
-                          onClick={() => toggleProjectExpand(group.projectId)}
-                          className="w-full mt-1 px-2 py-1.5 rounded-md text-[11px] text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle dark:hover:bg-[#212121] flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-medium"
+                          onClick={(e) => handleCreateTaskInProject(e, group.projectId)}
+                          className="w-5 h-5 rounded-md text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-500/10 flex items-center justify-center transition-all opacity-0 group-hover/project:opacity-100"
+                          title="New task in this project"
+                          aria-label="New task in this project"
                         >
-                          {isExpanded ? (
-                            <>
-                              <ChevronUp className="w-3 h-3 text-cozy-muted" />
-                              <span>Show less</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronDown className="w-3 h-3 text-cozy-muted" />
-                              <span>Show all ({remainingCount} more)</span>
-                            </>
-                          )}
+                          <Plus className="w-3 h-3" />
                         </button>
-                      )}
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })
+
+                    {/* Tasks List or Empty State */}
+                    {group.tasks.length === 0 ? (
+                      hasAnyProjectTasks ? (
+                        <div className="px-2 py-1 text-[10px] text-cozy-muted/60 italic">
+                          All tasks in this project are pinned
+                        </div>
+                      ) : (
+                        <div className="pl-2 pr-1 py-1">
+                          <button
+                            type="button"
+                            onClick={(e) => handleCreateTaskInProject(e, group.projectId)}
+                            className="w-full px-2 py-1.5 rounded-lg border border-dashed border-cozy-border/60 hover:border-teal-500/50 hover:bg-teal-500/5 text-left text-[11px] text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 flex items-center gap-1.5 transition-colors cursor-pointer group/empty"
+                          >
+                            <Plus className="w-3 h-3 text-cozy-muted group-hover/empty:text-teal-500 transition-colors" />
+                            <span>Create first task</span>
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      <div className="space-y-1 pl-1">
+                        {visibleTasks.map((task) => renderTaskItem(task, false))}
+
+                        {/* Expand / Collapse Button */}
+                        {hasMoreTasks && (
+                          <button
+                            type="button"
+                            onClick={() => toggleProjectExpand(group.projectId)}
+                            className="w-full mt-1 px-2 py-1.5 rounded-md text-[11px] text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle dark:hover:bg-[#212121] flex items-center justify-center gap-1.5 transition-colors cursor-pointer font-medium"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronUp className="w-3 h-3 text-cozy-muted" />
+                                <span>Show less</span>
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3 h-3 text-cozy-muted" />
+                                <span>Show all ({remainingCount} more)</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       </div>

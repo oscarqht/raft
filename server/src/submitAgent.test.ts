@@ -307,4 +307,171 @@ test('runSubmitAgent pushes to custom named remote (e.g. gitlab) when origin doe
   }
 });
 
+test('runSubmitAgent auto pulls latest base branch and rebases current branch onto base branch before push', async () => {
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote-rebase-'));
+  const tmpPeer = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-peer-'));
+  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-local-rebase-'));
+
+  try {
+    // 1. Bare remote
+    execSync('git init --bare', { cwd: tmpRemote });
+
+    // 2. Peer creates main branch with initial commit and pushes
+    GitService.initRepo(tmpPeer);
+    fs.writeFileSync(path.join(tmpPeer, 'README.md'), '# Base\n');
+    execSync('git add -A', { cwd: tmpPeer });
+    execSync('git commit -m "init"', { cwd: tmpPeer });
+    execSync(`git remote add origin "${tmpRemote.replace(/\\/g, '/')}"`, { cwd: tmpPeer });
+    execSync('git branch -M main', { cwd: tmpPeer });
+    execSync('git push -u origin main', { cwd: tmpPeer });
+
+    // 3. Local clones and creates feature branch
+    execSync(`git clone "${tmpRemote.replace(/\\/g, '/')}" "${tmpLocal.replace(/\\/g, '/')}"`);
+    execSync('git checkout -b feature-auto-rebase', { cwd: tmpLocal });
+    fs.writeFileSync(path.join(tmpLocal, 'feature.txt'), 'feature code\n');
+
+    // 4. Peer pushes a new commit to main in remote
+    fs.writeFileSync(path.join(tmpPeer, 'upstream_change.txt'), 'upstream content\n');
+    execSync('git add -A', { cwd: tmpPeer });
+    execSync('git commit -m "feat(upstream): update main"', { cwd: tmpPeer });
+    execSync('git push origin main', { cwd: tmpPeer });
+
+    // 5. Local runs runSubmitAgent
+    await new Promise<void>((resolve, reject) => {
+      runSubmitAgent(
+        tmpLocal,
+        'feature-auto-rebase',
+        'feat: my local feature',
+        'agy',
+        undefined,
+        undefined,
+        (ev) => {
+          if (ev.type === 'done') resolve();
+          if (ev.type === 'error') reject(new Error(ev.content));
+        },
+        'main'
+      );
+    });
+
+    // 6. Verify feature-auto-rebase branch now includes upstream_change.txt from rebased main!
+    assert.ok(fs.existsSync(path.join(tmpLocal, 'upstream_change.txt')), 'Feature branch should have upstream file after rebase');
+    const log = execSync('git log --oneline', { cwd: tmpLocal, encoding: 'utf-8' });
+    assert.ok(log.includes('feat(upstream): update main'), 'Git log should include upstream commit');
+    assert.ok(log.includes('feat: my local feature'), 'Git log should include local feature commit');
+  } finally {
+    try {
+      fs.rmSync(tmpRemote, { recursive: true, force: true });
+      fs.rmSync(tmpPeer, { recursive: true, force: true });
+      fs.rmSync(tmpLocal, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test('runSubmitAgent pulls and integrates remote changes of current branch before push', async () => {
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote-curr-'));
+  const tmpPeer = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-peer-curr-'));
+  const tmpLocal = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-local-curr-'));
+
+  try {
+    execSync('git init --bare', { cwd: tmpRemote });
+
+    // Peer sets up main and feature-shared branch
+    GitService.initRepo(tmpPeer);
+    fs.writeFileSync(path.join(tmpPeer, 'README.md'), '# Initial\n');
+    execSync('git add -A && git commit -m "init"', { cwd: tmpPeer });
+    execSync(`git remote add origin "${tmpRemote.replace(/\\/g, '/')}"`, { cwd: tmpPeer });
+    execSync('git branch -M main && git push -u origin main', { cwd: tmpPeer });
+    execSync('git checkout -b feature-shared && git push -u origin feature-shared', { cwd: tmpPeer });
+
+    // Local clones repo and checks out feature-shared
+    execSync(`git clone "${tmpRemote.replace(/\\/g, '/')}" "${tmpLocal.replace(/\\/g, '/')}"`);
+    execSync('git checkout feature-shared', { cwd: tmpLocal });
+
+    // Peer pushes a commit to feature-shared
+    fs.writeFileSync(path.join(tmpPeer, 'peer_change.txt'), 'peer content\n');
+    execSync('git add -A && git commit -m "feat: peer commit" && git push origin feature-shared', { cwd: tmpPeer });
+
+    // Local makes a local change without pulling first
+    fs.writeFileSync(path.join(tmpLocal, 'local_change.txt'), 'local content\n');
+
+    // Run runSubmitAgent
+    await new Promise<void>((resolve, reject) => {
+      runSubmitAgent(
+        tmpLocal,
+        'feature-shared',
+        'feat: local commit',
+        'agy',
+        undefined,
+        undefined,
+        (ev) => {
+          if (ev.type === 'done') resolve();
+          if (ev.type === 'error') reject(new Error(ev.content));
+        },
+        'main'
+      );
+    });
+
+    // Both peer and local files should be in local branch and in remote
+    assert.ok(fs.existsSync(path.join(tmpLocal, 'peer_change.txt')), 'Local repo should have integrated peer change');
+    assert.ok(fs.existsSync(path.join(tmpLocal, 'local_change.txt')), 'Local repo should have local change');
+
+    // Verify remote received the update
+    const remoteLog = execSync(`git log --oneline feature-shared`, { cwd: tmpPeer, encoding: 'utf-8' });
+    execSync('git pull origin feature-shared', { cwd: tmpPeer });
+    assert.ok(fs.existsSync(path.join(tmpPeer, 'local_change.txt')), 'Remote branch should have received local changes');
+  } finally {
+    try {
+      fs.rmSync(tmpRemote, { recursive: true, force: true });
+      fs.rmSync(tmpPeer, { recursive: true, force: true });
+      fs.rmSync(tmpLocal, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test('GitService.createWorktree auto pulls base branch and integrates existing remote branch', () => {
+  const tmpRemote = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-remote-wt-'));
+  const tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-repo-wt-'));
+  const tmpPeer = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-peer-wt-'));
+
+  try {
+    execSync('git init --bare', { cwd: tmpRemote });
+
+    // Peer creates main
+    GitService.initRepo(tmpPeer);
+    fs.writeFileSync(path.join(tmpPeer, 'README.md'), '# Initial\n');
+    execSync('git add -A && git commit -m "init"', { cwd: tmpPeer });
+    execSync(`git remote add origin "${tmpRemote.replace(/\\/g, '/')}"`, { cwd: tmpPeer });
+    execSync('git branch -M main && git push -u origin main', { cwd: tmpPeer });
+
+    // Peer creates remote branch task-feature-1
+    execSync('git checkout -b task-feature-1', { cwd: tmpPeer });
+    fs.writeFileSync(path.join(tmpPeer, 'task1.txt'), 'task 1\n');
+    execSync('git add -A && git commit -m "feat: task 1" && git push -u origin task-feature-1', { cwd: tmpPeer });
+
+    // Peer updates main
+    execSync('git checkout main', { cwd: tmpPeer });
+    fs.writeFileSync(path.join(tmpPeer, 'main_update.txt'), 'main update\n');
+    execSync('git add -A && git commit -m "feat: main update" && git push origin main', { cwd: tmpPeer });
+
+    // Main repo clones
+    execSync(`git clone "${tmpRemote.replace(/\\/g, '/')}" "${tmpRepo.replace(/\\/g, '/')}"`);
+
+    // Create worktree for task-feature-1
+    const { worktreePath, branch, hasConflicts } = GitService.createWorktree(tmpRepo, 'task-feature-1', 'main');
+    assert.equal(branch, 'task-feature-1');
+    assert.equal(hasConflicts, false);
+
+    // Verify worktree has both task1.txt and main_update.txt (rebased onto latest main!)
+    assert.ok(fs.existsSync(path.join(worktreePath, 'task1.txt')));
+    assert.ok(fs.existsSync(path.join(worktreePath, 'main_update.txt')));
+  } finally {
+    try {
+      fs.rmSync(tmpRemote, { recursive: true, force: true });
+      fs.rmSync(tmpRepo, { recursive: true, force: true });
+      fs.rmSync(tmpPeer, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+
 

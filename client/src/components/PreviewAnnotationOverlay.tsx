@@ -7,6 +7,7 @@ import {
   TLShapeId,
   Box,
 } from '@tldraw/tldraw';
+import { react as trackReact } from '@tldraw/state';
 import '@tldraw/tldraw/tldraw.css';
 import {
   Crop,
@@ -22,6 +23,79 @@ import {
 } from 'lucide-react';
 import { FileAttachment } from '../types';
 import { uploadTaskAttachments } from '../api';
+
+const SCREENSHOT_EDITOR_CONFIGS_KEY = 'raft:screenshot-editor-configs';
+
+interface ScreenshotEditorSavedConfigs {
+  stylesForNextShape?: Record<string, unknown>;
+  opacityForNextShape?: number;
+  isToolLocked?: boolean;
+  toolId?: string;
+}
+
+const VALID_RESTORABLE_TOOLS = new Set([
+  'select',
+  'hand',
+  'draw',
+  'arrow',
+  'line',
+  'geo',
+  'text',
+  'note',
+  'highlight',
+  'eraser',
+]);
+
+function loadSavedScreenshotConfigs(): ScreenshotEditorSavedConfigs | null {
+  try {
+    const raw = localStorage.getItem(SCREENSHOT_EDITOR_CONFIGS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+
+    const result: ScreenshotEditorSavedConfigs = {};
+
+    if (parsed.stylesForNextShape && typeof parsed.stylesForNextShape === 'object') {
+      const sanitizedStyles: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(parsed.stylesForNextShape)) {
+        if (
+          typeof key === 'string' &&
+          (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean')
+        ) {
+          sanitizedStyles[key] = val;
+        }
+      }
+      if (Object.keys(sanitizedStyles).length > 0) {
+        result.stylesForNextShape = sanitizedStyles;
+      }
+    }
+
+    if (typeof parsed.opacityForNextShape === 'number' && !isNaN(parsed.opacityForNextShape)) {
+      result.opacityForNextShape = parsed.opacityForNextShape;
+    }
+
+    if (typeof parsed.isToolLocked === 'boolean') {
+      result.isToolLocked = parsed.isToolLocked;
+    }
+
+    if (typeof parsed.toolId === 'string' && VALID_RESTORABLE_TOOLS.has(parsed.toolId)) {
+      result.toolId = parsed.toolId;
+    }
+
+    return result;
+  } catch (e) {
+    console.error('Failed to load saved screenshot editor configs:', e);
+    return null;
+  }
+}
+
+function saveScreenshotConfigs(configs: ScreenshotEditorSavedConfigs): void {
+  try {
+    localStorage.setItem(SCREENSHOT_EDITOR_CONFIGS_KEY, JSON.stringify(configs));
+  } catch (e) {
+    console.error('Failed to save screenshot editor configs:', e);
+  }
+}
 
 export interface PreviewAnnotationOverlayProps {
   screenshotDataUrl: string;
@@ -340,9 +414,73 @@ export const PreviewAnnotationOverlay: React.FC<PreviewAnnotationOverlayProps> =
       }
     };
 
-    const disposeStore = editor.store.listen(updateHistoryState);
+    // Restore last configs (color, size, dash, fill, opacity, tool lock, tool, etc.)
+    let isInitialized = false;
+    const savedConfigs = loadSavedScreenshotConfigs();
+    if (savedConfigs) {
+      editor.run(
+        () => {
+          const currentInstance = editor.getInstanceState();
+          const update: Record<string, unknown> = {};
+
+          if (savedConfigs.stylesForNextShape && Object.keys(savedConfigs.stylesForNextShape).length > 0) {
+            update.stylesForNextShape = {
+              ...currentInstance.stylesForNextShape,
+              ...savedConfigs.stylesForNextShape,
+            };
+          }
+
+          if (typeof savedConfigs.opacityForNextShape === 'number') {
+            update.opacityForNextShape = savedConfigs.opacityForNextShape;
+          }
+
+          if (typeof savedConfigs.isToolLocked === 'boolean') {
+            update.isToolLocked = savedConfigs.isToolLocked;
+          }
+
+          if (Object.keys(update).length > 0) {
+            editor.updateInstanceState(update);
+          }
+
+          if (savedConfigs.toolId && VALID_RESTORABLE_TOOLS.has(savedConfigs.toolId)) {
+            editor.setCurrentTool(savedConfigs.toolId);
+          }
+        },
+        { history: 'ignore' }
+      );
+    }
+    isInitialized = true;
+
+    const persistCurrentConfigs = () => {
+      if (!isInitialized) return;
+      const instance = editor.getInstanceState();
+      if (!instance) return;
+
+      const currentToolId = editor.getCurrentToolId();
+      const toolId = VALID_RESTORABLE_TOOLS.has(currentToolId) ? currentToolId : undefined;
+
+      saveScreenshotConfigs({
+        stylesForNextShape: instance.stylesForNextShape ? { ...instance.stylesForNextShape } : {},
+        opacityForNextShape: instance.opacityForNextShape,
+        isToolLocked: instance.isToolLocked,
+        toolId,
+      });
+    };
+
+    // Reactive listener for tool changes & computed updates
+    const disposeReactor = trackReact('persist-screenshot-editor-configs', () => {
+      persistCurrentConfigs();
+    });
+
+    // Store listener for record changes (stylesForNextShape, opacity, toolLock, shapes, undo/redo)
+    const disposeStore = editor.store.listen(() => {
+      updateHistoryState();
+      persistCurrentConfigs();
+    });
 
     return () => {
+      persistCurrentConfigs();
+      disposeReactor?.();
       disposeStore?.();
     };
   }, [screenshotDataUrl, screenshotWidth, screenshotHeight, fitScreenshotToViewport]);

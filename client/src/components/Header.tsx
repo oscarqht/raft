@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2 } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2, Pin, Sliders } from 'lucide-react';
 import { Settings, TaskGitStatus } from '../types';
-import { getTaskGitStatus, updateTask } from '../api';
+import { getTaskGitStatus } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
 import { ProjectIcon } from './ProjectIcon';
@@ -15,13 +15,17 @@ interface HeaderProps {
     projectIcon?: string;
     taskId?: string;
     taskName?: string;
+    isPinned?: boolean;
   };
   onNavigate?: (page: 'home' | 'project' | 'task' | 'settings', params?: any) => void;
   settings: Settings | null;
   onEditTask?: () => void;
+  onTogglePinTask?: () => void;
+  isTaskPinned?: boolean;
   onDeleteTask?: () => void;
   isDeletingTask?: boolean;
   onNewTask?: () => void;
+  onConfigureProject?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,9 +33,12 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   settings,
   onEditTask,
+  onTogglePinTask,
+  isTaskPinned,
   onDeleteTask,
   isDeletingTask,
   onNewTask,
+  onConfigureProject,
 }) => {
   const navigate = useNavigate();
 
@@ -122,16 +129,7 @@ export const Header: React.FC<HeaderProps> = ({
     };
   }, [fetchTaskStatus, currentPath?.taskId]);
 
-  const handleCompleteTask = async () => {
-    if (!currentPath?.taskId) return;
-    try {
-      await updateTask(currentPath.taskId, { status: 'completed' });
-      fetchTaskStatus(true);
-      if (currentPath.projectId) {
-        navigate(`/projects/${currentPath.projectId}`);
-      }
-    } catch {}
-  };
+
 
   return (
     <header className="relative z-40 h-12 border-b border-cozy-border bg-cozy-surface px-3 sm:px-4 flex items-center justify-between shrink-0 select-none gap-3">
@@ -152,13 +150,26 @@ export const Header: React.FC<HeaderProps> = ({
         {currentPath?.projectName && currentPath?.projectId && (
           <div className="hidden min-[1200px]:flex items-center space-x-1.5 text-cozy-muted min-w-0">
             <span className="text-cozy-border select-none">/</span>
-            <Link
-              to={`/projects/${currentPath.projectId}`}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-cozy-subtle text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-colors max-w-[140px] sm:max-w-[200px] truncate text-xs font-medium"
-            >
-              <ProjectIcon icon={currentPath.projectIcon} className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{currentPath.projectName}</span>
-            </Link>
+            <div className="flex items-center gap-1 min-w-0">
+              <Link
+                to={`/projects/${currentPath.projectId}`}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-md hover:bg-cozy-subtle text-cozy-text hover:text-teal-600 dark:hover:text-teal-400 transition-colors max-w-[140px] sm:max-w-[200px] truncate text-xs font-medium"
+              >
+                <ProjectIcon icon={currentPath.projectIcon} className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{currentPath.projectName}</span>
+              </Link>
+              {onConfigureProject && (
+                <button
+                  type="button"
+                  onClick={onConfigureProject}
+                  className="w-5 h-5 rounded-md hover:bg-cozy-subtle flex items-center justify-center text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 transition-colors cursor-pointer shrink-0"
+                  title="Configure project settings"
+                  aria-label="Configure project settings"
+                >
+                  <Sliders className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -183,14 +194,28 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </button>
 
+              {onTogglePinTask && (
+                <button
+                  type="button"
+                  onClick={onTogglePinTask}
+                  className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                    isTaskPinned
+                      ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                      : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle'
+                  }`}
+                  title={isTaskPinned ? 'Unpin task' : 'Pin task'}
+                  aria-label={isTaskPinned ? 'Unpin task' : 'Pin task'}
+                >
+                  <Pin className={`w-3.5 h-3.5 ${isTaskPinned ? 'fill-current' : ''}`} />
+                </button>
+              )}
+
               <TaskStatusBadges
                 status={taskStatus}
                 loading={loadingStatus}
                 compact={false}
-                onOpenRebase={() => window.dispatchEvent(new CustomEvent('open-rebase-drawer'))}
                 onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
                 onRefresh={() => fetchTaskStatus(true)}
-                onCompleteTask={handleCompleteTask}
                 className="flex-nowrap shrink-0"
               />
 
@@ -217,12 +242,11 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Task Switcher, Agent Status & Controls */}
       <div className="flex items-center space-x-2 shrink-0">
         {currentPath?.taskId && taskStatus && (
-          <div className="min-[1200px]:hidden flex items-center shrink-0">
+          <div className="hidden sm:flex min-[1200px]:hidden items-center shrink-0">
             <TaskStatusBadges
               status={taskStatus}
               loading={loadingStatus}
               compact={true}
-              onOpenRebase={() => window.dispatchEvent(new CustomEvent('open-rebase-drawer'))}
               onOpenSubmit={() => window.dispatchEvent(new CustomEvent('open-submit-modal'))}
               className="flex-nowrap shrink-0"
             />
@@ -242,12 +266,28 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
+        {currentPath?.taskId && onTogglePinTask && (
+          <button
+            type="button"
+            onClick={onTogglePinTask}
+            className={`hidden sm:flex min-[1200px]:hidden w-7 h-7 rounded-md items-center justify-center transition-colors cursor-pointer shrink-0 ${
+              isTaskPinned
+                ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 bg-amber-500/10'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle'
+            }`}
+            title={isTaskPinned ? 'Unpin task' : 'Pin task'}
+            aria-label={isTaskPinned ? 'Unpin task' : 'Pin task'}
+          >
+            <Pin className={`w-3.5 h-3.5 ${isTaskPinned ? 'fill-current' : ''}`} />
+          </button>
+        )}
+
         {currentPath?.taskId && onDeleteTask && (
           <button
             type="button"
             onClick={onDeleteTask}
             disabled={isDeletingTask}
-            className="min-[1200px]:hidden w-7 h-7 rounded-md hover:bg-red-500/10 flex items-center justify-center text-cozy-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+            className="hidden sm:flex min-[1200px]:hidden w-7 h-7 rounded-md hover:bg-red-500/10 items-center justify-center text-cozy-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait"
             title="Delete task and clean up git worktree"
           >
             {isDeletingTask ? (
@@ -275,7 +315,9 @@ export const Header: React.FC<HeaderProps> = ({
           </Link>
         )}
 
-        <HeaderUpdater />
+        <div className="hidden sm:inline-flex items-center">
+          <HeaderUpdater />
+        </div>
 
         <Link
           to="/settings"

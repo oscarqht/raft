@@ -585,7 +585,7 @@ export class GitService {
     }
   }
 
-  static createWorktree(repoRoot: string, taskSlug: string, baseBranch: string): { worktreePath: string; branch: string } {
+  static createWorktree(repoRoot: string, taskSlug: string, baseBranch: string): { worktreePath: string; branch: string; hasConflicts?: boolean } {
     // Always sync base branch with its remote (fast-forward or rebase) if behind or diverged
     if (baseBranch) {
       this.syncBaseBranchWithRemote(repoRoot, baseBranch);
@@ -611,27 +611,105 @@ export class GitService {
     const worktreePath = path.resolve(worktreesDir, branch);
     const gitPath = worktreePath.replace(/\\/g, '/');
 
-    // Create worktree branching from baseBranch
+    // Check if remote tracking branch already exists for this branch
+    const targetRemote = this.getRemoteForBranch(repoRoot, baseBranch) || 'origin';
+    let remoteBranchExists = false;
     try {
-      execSync(`git worktree add -b "${branch}" "${gitPath}" "${baseBranch}"`, {
+      execSync(`git fetch ${targetRemote} ${branch}`, {
+        cwd: repoRoot,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      execSync(`git rev-parse --verify refs/remotes/${targetRemote}/${branch}`, {
+        cwd: repoRoot,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      remoteBranchExists = true;
+    } catch {}
+
+    let localBranchExists = false;
+    try {
+      execSync(`git rev-parse --verify refs/heads/${branch}`, {
+        cwd: repoRoot,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      localBranchExists = true;
+    } catch {}
+
+    // Create worktree branching from baseBranch or existing branch
+    if (localBranchExists) {
+      execSync(`git worktree add "${gitPath}" "${branch}"`, {
         cwd: repoRoot,
         encoding: 'utf-8',
         stdio: 'pipe',
       });
-    } catch (err: any) {
-      // If branch already exists, try to checkout existing branch
-      if (err.message.includes('already exists')) {
-        execSync(`git worktree add "${gitPath}" "${branch}"`, {
+    } else if (remoteBranchExists) {
+      execSync(`git worktree add -b "${branch}" "${gitPath}" "${targetRemote}/${branch}"`, {
+        cwd: repoRoot,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      });
+    } else {
+      try {
+        execSync(`git worktree add -b "${branch}" "${gitPath}" "${baseBranch}"`, {
           cwd: repoRoot,
           encoding: 'utf-8',
           stdio: 'pipe',
         });
-      } else {
-        throw err;
+      } catch (err: any) {
+        if (err.message.includes('already exists')) {
+          execSync(`git worktree add "${gitPath}" "${branch}"`, {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            stdio: 'pipe',
+          });
+          localBranchExists = true;
+        } else {
+          throw err;
+        }
       }
     }
 
-    return { worktreePath, branch };
+    let hasConflicts = false;
+
+    // If branch already existed (locally or on remote), integrate remote changes and rebase onto baseBranch
+    if (localBranchExists || remoteBranchExists) {
+      if (remoteBranchExists) {
+        try {
+          execSync(`git fetch ${targetRemote} ${branch}`, { cwd: worktreePath, stdio: 'ignore' });
+          execSync(`git merge --ff-only ${targetRemote}/${branch}`, { cwd: worktreePath, stdio: 'ignore' });
+        } catch {}
+      }
+
+      if (branch !== baseBranch) {
+        let isAncestor = false;
+        try {
+          execSync(`git merge-base --is-ancestor "${baseBranch}" HEAD`, { cwd: worktreePath, stdio: 'ignore' });
+          isAncestor = true;
+        } catch {
+          isAncestor = false;
+        }
+
+        if (!isAncestor) {
+          try {
+            execSync(`git rebase --autostash "${baseBranch}"`, { cwd: worktreePath, stdio: 'ignore' });
+          } catch {
+            let status = '';
+            try {
+              status = execSync('git status', { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+            } catch {}
+            if (status.includes('rebase in progress') || status.includes('You are currently rebasing') || status.includes('both modified:')) {
+              hasConflicts = true;
+            } else {
+              try {
+                execSync('git rebase --abort', { cwd: worktreePath, stdio: 'ignore' });
+              } catch {}
+            }
+          }
+        }
+      }
+    }
+
+    return { worktreePath, branch, hasConflicts };
   }
 
   static removeWorktree(repoRoot: string, worktreePath: string, branch?: string): void {

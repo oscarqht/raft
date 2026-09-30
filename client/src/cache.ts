@@ -28,6 +28,51 @@ const memoryProjectTasksGitStatus = new Map<string, Record<string, TaskGitStatus
 const memoryAllTasksGitStatus = new Map<string, TaskGitStatus>();
 let memoryActiveDevServers: string[] | null = null;
 
+// Track tasks currently being deleted in the background to prevent resurrection on background fetches
+const PENDING_DELETIONS_KEY = `${PREFIX}pending_deletions`;
+
+function loadPendingDeletions(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(PENDING_DELETIONS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+const pendingDeletingTaskIds = loadPendingDeletions();
+
+function savePendingDeletions() {
+  try {
+    sessionStorage.setItem(PENDING_DELETIONS_KEY, JSON.stringify(Array.from(pendingDeletingTaskIds)));
+  } catch {}
+}
+
+export function addPendingDeletingTaskId(taskId: string): void {
+  if (taskId) {
+    pendingDeletingTaskIds.add(taskId);
+    savePendingDeletions();
+  }
+}
+
+export function removePendingDeletingTaskId(taskId: string): void {
+  if (taskId) {
+    pendingDeletingTaskIds.delete(taskId);
+    savePendingDeletions();
+  }
+}
+
+export function isTaskPendingDelete(taskId: string): boolean {
+  if (!taskId) return false;
+  return pendingDeletingTaskIds.has(taskId);
+}
+
+export function getPendingDeletingTaskIds(): Set<string> {
+  return new Set(pendingDeletingTaskIds);
+}
+
 // LRU tracking index
 interface CacheIndex {
   taskIds: string[];
@@ -147,7 +192,7 @@ export function getCachedProjectTasks(projectId: string): Task[] | null {
     const raw = localStorage.getItem(`${PREFIX}tasks:${projectId}`) || localStorage.getItem(`${LEGACY_PREFIX}tasks:${projectId}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return parsed.filter((t) => !pendingDeletingTaskIds.has(t.id));
     }
   } catch {}
   return null;
@@ -155,8 +200,9 @@ export function getCachedProjectTasks(projectId: string): Task[] | null {
 
 export function setCachedProjectTasks(projectId: string, tasks: Task[]): void {
   if (!projectId || !Array.isArray(tasks)) return;
+  const filtered = tasks.filter((t) => !pendingDeletingTaskIds.has(t.id));
   try {
-    localStorage.setItem(`${PREFIX}tasks:${projectId}`, JSON.stringify(tasks));
+    localStorage.setItem(`${PREFIX}tasks:${projectId}`, JSON.stringify(filtered));
   } catch {
     cleanOldCache();
   }
@@ -298,7 +344,7 @@ export function getCachedAllTasks(): Task[] | null {
     const raw = localStorage.getItem(`${PREFIX}all_tasks`) || localStorage.getItem(`${LEGACY_PREFIX}all_tasks`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) return parsed.filter((t) => !pendingDeletingTaskIds.has(t.id));
     }
   } catch {}
   return null;
@@ -306,8 +352,9 @@ export function getCachedAllTasks(): Task[] | null {
 
 export function setCachedAllTasks(tasks: Task[]): void {
   if (!Array.isArray(tasks)) return;
+  const filtered = tasks.filter((t) => !pendingDeletingTaskIds.has(t.id));
   try {
-    localStorage.setItem(`${PREFIX}all_tasks`, JSON.stringify(tasks));
+    localStorage.setItem(`${PREFIX}all_tasks`, JSON.stringify(filtered));
   } catch {
     cleanOldCache();
   }
@@ -315,7 +362,7 @@ export function setCachedAllTasks(tasks: Task[]): void {
 
 // Task Cache
 export function getCachedTask(taskId: string): Task | null {
-  if (!taskId) return null;
+  if (!taskId || pendingDeletingTaskIds.has(taskId)) return null;
   if (memoryTasks.has(taskId)) {
     return memoryTasks.get(taskId)!;
   }
@@ -495,6 +542,29 @@ export function deleteCachedTask(taskId: string, projectId?: string): void {
     const allTasks = getCachedAllTasks();
     if (allTasks) {
       setCachedAllTasks(allTasks.filter((t) => t.id !== taskId));
+    }
+  } catch {}
+}
+
+// Restore cached task (for rollback if background deletion fails)
+export function restoreCachedTask(task: Task, projectId?: string): void {
+  if (!task?.id) return;
+  setCachedTask(task);
+  try {
+    const targetProjectId = projectId || task.project_id;
+    if (targetProjectId) {
+      const cached = getCachedProjectTasks(targetProjectId);
+      if (cached) {
+        if (!cached.some((t) => t.id === task.id)) {
+          setCachedProjectTasks(targetProjectId, [task, ...cached]);
+        }
+      }
+    }
+    const allTasks = getCachedAllTasks();
+    if (allTasks) {
+      if (!allTasks.some((t) => t.id === task.id)) {
+        setCachedAllTasks([task, ...allTasks]);
+      }
     }
   } catch {}
 }

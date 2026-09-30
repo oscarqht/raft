@@ -1423,7 +1423,7 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   try {
-    const { worktreePath, branch } = GitService.createWorktree(project.path, name, baseBranch || project.branch_convention || 'main');
+    const { worktreePath, branch, hasConflicts } = GitService.createWorktree(project.path, name, baseBranch || project.branch_convention || 'main');
     const id = uuidv4();
     const now = Date.now();
 
@@ -1481,6 +1481,29 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
         });
       } catch (err: any) {
         console.warn(`Failed to auto-start dependency install for task ${id}:`, err);
+      }
+    }
+
+    // If existing branch had merge conflicts against base branch upon worktree creation,
+    // launch AI rebase agent in background to resolve them
+    if (hasConflicts) {
+      try {
+        runRebaseAgent(
+          worktreePath,
+          baseBranch || project.branch_convention || 'main',
+          defaultCli,
+          defaultModel,
+          defaultEffort,
+          (ev) => {
+            if (ev.type === 'done') {
+              GitService.invalidateTaskStatus(worktreePath);
+            }
+          },
+          project.path,
+          branch
+        );
+      } catch (agentErr) {
+        console.warn(`Failed to spawn background rebase agent for conflicted task ${id}:`, agentErr);
       }
     }
 
@@ -1552,8 +1575,9 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  const { status, name, base_branch, baseBranch } = req.body;
+  const { status, name, base_branch, baseBranch, is_pinned } = req.body;
   const targetBaseBranch = base_branch !== undefined ? base_branch : baseBranch;
+  const targetIsPinned = is_pinned !== undefined ? (is_pinned ? 1 : 0) : null;
 
   if (name !== undefined && typeof name === 'string' && !name.trim()) {
     return res.status(400).json({ error: 'Task name cannot be empty' });
@@ -1566,12 +1590,13 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
       status = coalesce(?, status),
       name = coalesce(?, name),
       base_branch = coalesce(?, base_branch),
+      is_pinned = coalesce(?, is_pinned),
       updated_at = ?
     WHERE id = ?
-  `).run(status ?? null, trimmedName, targetBaseBranch ?? null, now, req.params.id);
+  `).run(status ?? null, trimmedName, targetBaseBranch ?? null, targetIsPinned, now, req.params.id);
   const updated = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
   const project = updated ? db.prepare('SELECT * FROM projects WHERE id = ?').get(updated.project_id) : undefined;
-  res.json({ ...updated, project });
+  res.json({ ...updated, project: formatProject(project) });
 });
 
 // Git status & diff for task

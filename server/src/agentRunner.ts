@@ -1907,6 +1907,388 @@ Important instructions:
   };
 }
 
+// Helper to resolve merge conflicts using the AI agent
+async function resolveConflictsWithAgent(
+  cliName: string,
+  model: string | undefined,
+  thinkingEffort: string | undefined,
+  worktreePath: string,
+  currentBranch: string,
+  targetBranch: string,
+  emit: (ev: StreamEvent) => void,
+  setActiveChild: (proc: any) => void
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    emit({ type: 'status', content: `Merge conflicts detected. Launching AI agent to resolve conflicts...` });
+    emit({ type: 'chunk', content: `⚠️ Merge conflicts encountered during rebase of "${currentBranch}" onto "${targetBranch}". Launching AI agent to resolve conflicts...\n` });
+
+    const conflictPrompt = `The git rebase of branch "${currentBranch}" onto "${targetBranch}" encountered merge conflicts and is currently in progress.
+Resolve all merge conflicts cleanly:
+1. Run "git status" to list unmerged / conflicted files.
+2. For each conflicted file, inspect the conflict markers (<<<<<<<, =======, >>>>>>>) and diffs, and edit the file to cleanly resolve the conflicts preserving intended functionality from both branches.
+3. Stage each resolved file using "git add <file>".
+4. Continue the rebase with "git -c core.editor=true rebase --continue" or "git rebase --continue --no-edit".
+5. If subsequent commits also have conflicts, repeat steps 1-4 until the rebase completes successfully.
+6. If an autostash causes conflicts upon popping, resolve those conflicts and unstage/clean up as needed.
+Do NOT run git checkout, git pull, git fetch, git fsck, test suites, or reflog. Focus strictly on resolving the merge conflicts and running git rebase --continue.
+Output a clear summary of which conflicts were resolved and confirm the rebase is cleanly completed.`;
+
+    const args: string[] = [];
+    if (cliName === 'agy') {
+      args.push('-p', conflictPrompt);
+      if (model) args.push('--model', model);
+      const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+      args.push('--effort', effort);
+      args.push('--output-format', 'stream-json');
+      args.push('--dangerously-skip-permissions');
+    } else if (cliName === 'claude') {
+      args.push('-p', conflictPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+      args.push('--dangerously-skip-permissions');
+    } else {
+      args.push('exec', conflictPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') {
+        args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+      }
+      args.push('-c', 'service_tier="fast"');
+    }
+
+    let hasError = false;
+    let proc: any = null;
+    proc = spawnAgentCli(cliName, args, worktreePath, (ev) => {
+      if (ev.type === 'error') {
+        hasError = true;
+      }
+      if (ev.type === 'done') {
+        try {
+          const status = execSync('git status', { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+          const stillRebasing =
+            status.includes('rebase in progress') ||
+            status.includes('You are currently rebasing') ||
+            status.includes('both modified:');
+          if (stillRebasing) {
+            reject(new Error('AI conflict resolution agent finished, but git rebase is still in progress or has unresolved conflicts.'));
+            return;
+          }
+        } catch {}
+
+        if (hasError) {
+          reject(new Error('AI conflict resolution agent encountered an error during execution.'));
+        } else {
+          resolve();
+        }
+        return;
+      }
+      emit(ev);
+    });
+    setActiveChild(proc);
+  });
+}
+
+// Rebase helper with automatic fallback to AI conflict resolution agent
+async function rebaseAndResolve(
+  worktreePath: string,
+  ontoRef: string,
+  currentBranch: string,
+  cliName: string,
+  model: string | undefined,
+  thinkingEffort: string | undefined,
+  emit: (event: StreamEvent) => void,
+  setActiveChild: (child: any) => void,
+  isCancelled: () => boolean
+): Promise<void> {
+  let inRebase = false;
+  try {
+    const status = execSync('git status', { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+    inRebase =
+      status.includes('rebase in progress') ||
+      status.includes('You are currently rebasing') ||
+      status.includes('both modified:');
+  } catch {}
+
+  let rebaseSuccess = false;
+  let rebaseOutput = '';
+
+  if (!inRebase) {
+    try {
+      rebaseOutput = execSync(`git rebase --autostash ${ontoRef}`, {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      rebaseSuccess = true;
+    } catch (err: any) {
+      rebaseSuccess = false;
+      rebaseOutput = (err.stdout?.toString() || '') + '\n' + (err.stderr?.toString() || '');
+    }
+
+    if (rebaseSuccess) {
+      if (rebaseOutput.trim()) {
+        emit({ type: 'chunk', content: rebaseOutput.trim() + '\n' });
+      }
+      emit({ type: 'chunk', content: `✓ Successfully rebased "${currentBranch}" onto "${ontoRef}" with zero conflicts!\n` });
+      return;
+    }
+  }
+
+  if (isCancelled()) return;
+
+  let hasConflicts = false;
+  try {
+    const status = execSync('git status', {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    hasConflicts =
+      status.includes('rebase in progress') ||
+      status.includes('You are currently rebasing') ||
+      status.includes('both modified:');
+  } catch {}
+
+  if (!hasConflicts) {
+    throw new Error(`Git rebase failed:\n${rebaseOutput.trim() || 'Unknown git error'}`);
+  }
+
+  await resolveConflictsWithAgent(
+    cliName,
+    model,
+    thinkingEffort,
+    worktreePath,
+    currentBranch,
+    ontoRef,
+    emit,
+    setActiveChild
+  );
+}
+
+// Auto pulls latest base branch and rebases current branch onto base branch,
+// and pulls and integrates remote changes of current branch into local
+export async function executeAutoSyncAndRebase(
+  worktreePath: string,
+  baseBranch: string,
+  branchName: string,
+  cliName: string,
+  model?: string,
+  thinkingEffort?: string,
+  emit: (event: StreamEvent) => void = () => {},
+  setActiveChild: (child: any) => void = () => {},
+  repoRoot?: string,
+  isCancelled: () => boolean = () => false
+): Promise<void> {
+  emit({ type: 'status', content: `Syncing remote changes and rebasing onto ${baseBranch}...` });
+
+  // 1. Resolve current branch
+  let currentBranch = branchName || '';
+  if (!currentBranch) {
+    try {
+      currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+    } catch {
+      currentBranch = 'HEAD';
+    }
+  }
+
+  // 2. Resolve main repo root
+  let mainRepo = repoRoot;
+  if (!mainRepo || !fs.existsSync(mainRepo)) {
+    try {
+      const commonDir = execSync('git rev-parse --git-common-dir', {
+        cwd: worktreePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      const resolvedCommon = path.isAbsolute(commonDir) ? commonDir : path.resolve(worktreePath, commonDir);
+      mainRepo = path.dirname(resolvedCommon);
+    } catch {
+      mainRepo = worktreePath;
+    }
+  }
+
+  if (isCancelled()) return;
+
+  // 3. Resolve remote
+  const targetRemote = GitService.getRemoteForBranch(worktreePath, currentBranch || baseBranch) || 'origin';
+  let hasRemote = false;
+  try {
+    const remotes = execSync('git remote', {
+      cwd: worktreePath,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
+    hasRemote = remotes.includes(targetRemote);
+  } catch {}
+
+  // 4. If remote exists:
+  if (hasRemote) {
+    // 4a. Pull & integrate remote changes of current branch into local
+    if (currentBranch && currentBranch !== 'HEAD') {
+      try {
+        execSync(`git fetch ${targetRemote} ${currentBranch}`, {
+          cwd: worktreePath,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+      } catch {}
+
+      let remoteBranchExists = false;
+      try {
+        execSync(`git rev-parse --verify refs/remotes/${targetRemote}/${currentBranch}`, {
+          cwd: worktreePath,
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+        remoteBranchExists = true;
+      } catch {}
+
+      if (remoteBranchExists) {
+        let ahead = 0;
+        let behind = 0;
+        try {
+          const counts = execSync(`git rev-list --left-right --count HEAD...${targetRemote}/${currentBranch}`, {
+            cwd: worktreePath,
+            encoding: 'utf-8',
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }).trim().split(/\s+/);
+          ahead = parseInt(counts[0], 10) || 0;
+          behind = parseInt(counts[1], 10) || 0;
+        } catch {}
+
+        if (behind > 0) {
+          emit({ type: 'status', content: `Integrating ${behind} remote commit${behind === 1 ? '' : 's'} into ${currentBranch}...` });
+          emit({ type: 'chunk', content: `→ Integrating ${behind} remote commit${behind === 1 ? '' : 's'} from ${targetRemote}/${currentBranch} into "${currentBranch}"\n` });
+
+          if (ahead === 0) {
+            try {
+              const ffOut = execSync(`git merge --ff-only ${targetRemote}/${currentBranch}`, {
+                cwd: worktreePath,
+                encoding: 'utf-8',
+                stdio: ['pipe', 'pipe', 'pipe'],
+              }).trim();
+              emit({ type: 'chunk', content: `✓ Fast-forwarded "${currentBranch}" with latest remote changes (${ffOut || 'up to date'})\n` });
+            } catch {
+              await rebaseAndResolve(worktreePath, `${targetRemote}/${currentBranch}`, currentBranch, cliName, model, thinkingEffort, emit, setActiveChild, isCancelled);
+            }
+          } else {
+            await rebaseAndResolve(worktreePath, `${targetRemote}/${currentBranch}`, currentBranch, cliName, model, thinkingEffort, emit, setActiveChild, isCancelled);
+          }
+        } else {
+          emit({ type: 'chunk', content: `✓ Local branch "${currentBranch}" is up to date with remote\n` });
+        }
+      }
+    }
+
+    if (isCancelled()) return;
+
+    // If currentBranch is the same as baseBranch, no rebase onto baseBranch is required
+    if (currentBranch === baseBranch) {
+      return;
+    }
+
+    // 4b. Fetch latest base branch and fast-forward local base branch ref
+    emit({ type: 'status', content: `Fetching ${targetRemote}/${baseBranch}...` });
+    emit({ type: 'chunk', content: `→ git fetch ${targetRemote} ${baseBranch}\n` });
+
+    try {
+      execSync(`git fetch ${targetRemote} ${baseBranch}`, {
+        cwd: worktreePath,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      emit({ type: 'chunk', content: `✓ Fetched latest ${targetRemote}/${baseBranch}\n` });
+    } catch (fetchErr: any) {
+      emit({ type: 'chunk', content: `→ Notice: Could not fetch ${targetRemote}/${baseBranch}: ${fetchErr.message?.split('\n')[0]}\n` });
+    }
+
+    if (isCancelled()) return;
+
+    let rootCurrentBranch = '';
+    try {
+      rootCurrentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
+        cwd: mainRepo,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+    } catch {}
+
+    if (rootCurrentBranch === baseBranch) {
+      try {
+        const ffOut = execSync(`git merge --ff-only ${targetRemote}/${baseBranch}`, {
+          cwd: mainRepo,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+        if (ffOut && !ffOut.includes('Already up to date')) {
+          emit({ type: 'chunk', content: `✓ Fast-forwarded local base branch "${baseBranch}" in primary repository (${ffOut})\n` });
+        } else {
+          emit({ type: 'chunk', content: `✓ Local base branch "${baseBranch}" is up to date with ${targetRemote}\n` });
+        }
+      } catch {
+        emit({ type: 'chunk', content: `→ Local base branch "${baseBranch}" has unpushed commits or working changes; rebasing will incorporate local "${baseBranch}"\n` });
+      }
+    } else {
+      try {
+        execSync(`git fetch ${targetRemote} ${baseBranch}:${baseBranch}`, {
+          cwd: worktreePath,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        emit({ type: 'chunk', content: `✓ Updated local ref "${baseBranch}" to ${targetRemote}/${baseBranch}\n` });
+      } catch {}
+    }
+  }
+
+  if (isCancelled()) return;
+
+  // 5. Ensure local base branch exists
+  try {
+    execSync(`git rev-parse --verify ${baseBranch}`, {
+      cwd: worktreePath,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+  } catch {
+    if (hasRemote) {
+      try {
+        execSync(`git branch --track ${baseBranch} ${targetRemote}/${baseBranch}`, {
+          cwd: worktreePath,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        emit({ type: 'chunk', content: `✓ Created local branch "${baseBranch}" tracking "${targetRemote}/${baseBranch}"\n` });
+      } catch {
+        throw new Error(`Base branch "${baseBranch}" could not be found locally or on ${targetRemote}.`);
+      }
+    } else {
+      throw new Error(`Base branch "${baseBranch}" does not exist.`);
+    }
+  }
+
+  // 6. Check if current branch is already up to date with base branch
+  let isAlreadyUpToDate = false;
+  try {
+    execSync(`git merge-base --is-ancestor ${baseBranch} HEAD`, {
+      cwd: worktreePath,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    isAlreadyUpToDate = true;
+  } catch {
+    isAlreadyUpToDate = false;
+  }
+
+  if (isAlreadyUpToDate) {
+    emit({ type: 'chunk', content: `✓ Branch "${currentBranch}" is already up to date with base branch "${baseBranch}".\n` });
+    return;
+  }
+
+  if (isCancelled()) return;
+
+  // 7. Rebase currentBranch onto baseBranch
+  emit({ type: 'status', content: `Rebasing ${currentBranch} onto ${baseBranch}...` });
+  emit({ type: 'chunk', content: `→ git rebase --autostash ${baseBranch}\n` });
+
+  await rebaseAndResolve(worktreePath, baseBranch, currentBranch, cliName, model, thinkingEffort, emit, setActiveChild, isCancelled);
+}
+
 // Rebase Agent: pulls base branch from remote, syncs local base branch, and rebases current branch cleanly
 export function runRebaseAgent(
   worktreePath: string,
@@ -1943,248 +2325,28 @@ export function runRebaseAgent(
     } catch {}
   };
 
-  // Run rebase asynchronously so callers can attach listeners / cancel immediately
   (async () => {
     try {
-      emit({ type: 'status', content: `Syncing ${baseBranch} and rebasing...` });
-
-      // 1. Resolve current branch
-      let currentBranch = branchName || '';
-      if (!currentBranch) {
-        try {
-          currentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-            cwd: worktreePath,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim();
-        } catch {
-          currentBranch = 'HEAD';
-        }
-      }
-
-      // 2. Resolve main repo root
-      let mainRepo = repoRoot;
-      if (!mainRepo || !fs.existsSync(mainRepo)) {
-        try {
-          const commonDir = execSync('git rev-parse --git-common-dir', {
-            cwd: worktreePath,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim();
-          const resolvedCommon = path.isAbsolute(commonDir) ? commonDir : path.resolve(worktreePath, commonDir);
-          mainRepo = path.dirname(resolvedCommon);
-        } catch {
-          mainRepo = worktreePath;
-        }
-      }
-
-      if (isCancelled) return;
-
-      // 3. Check for remote
-      const targetRemote = GitService.getRemoteForBranch(worktreePath, baseBranch);
-      let hasRemote = false;
-      try {
-        const remotes = execSync('git remote', {
-          cwd: worktreePath,
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'ignore'],
-        }).trim().split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-        hasRemote = remotes.includes(targetRemote);
-      } catch {}
-
-      // 4. Fetch remote and update local base branch
-      if (hasRemote) {
-        emit({ type: 'status', content: `Fetching ${targetRemote}/${baseBranch}...` });
-        emit({ type: 'chunk', content: `→ git fetch ${targetRemote} ${baseBranch}` });
-
-        try {
-          execSync(`git fetch ${targetRemote} ${baseBranch}`, {
-            cwd: worktreePath,
-            stdio: ['pipe', 'pipe', 'pipe'],
-          });
-          emit({ type: 'chunk', content: `✓ Fetched latest ${targetRemote}/${baseBranch}` });
-        } catch (fetchErr: any) {
-          emit({ type: 'chunk', content: `→ Notice: Could not fetch ${targetRemote}/${baseBranch}: ${fetchErr.message?.split('\n')[0]}` });
-        }
-
-        if (isCancelled) return;
-
-        // Try fast-forwarding the local baseBranch
-        let rootCurrentBranch = '';
-        try {
-          rootCurrentBranch = execSync('git rev-parse --abbrev-ref HEAD', {
-            cwd: mainRepo,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim();
-        } catch {}
-
-        if (rootCurrentBranch === baseBranch) {
-          try {
-            const ffOut = execSync(`git merge --ff-only ${targetRemote}/${baseBranch}`, {
-              cwd: mainRepo,
-              encoding: 'utf-8',
-              stdio: ['pipe', 'pipe', 'pipe'],
-            }).trim();
-            if (ffOut && !ffOut.includes('Already up to date')) {
-              emit({ type: 'chunk', content: `✓ Fast-forwarded local base branch "${baseBranch}" in primary repository (${ffOut})` });
-            } else {
-              emit({ type: 'chunk', content: `✓ Local base branch "${baseBranch}" is up to date with ${targetRemote}` });
-            }
-          } catch {
-            emit({ type: 'chunk', content: `→ Local base branch "${baseBranch}" has unpushed commits or working changes; rebasing will cleanly incorporate local "${baseBranch}"` });
-          }
-        } else {
-          try {
-            execSync(`git fetch ${targetRemote} ${baseBranch}:${baseBranch}`, {
-              cwd: worktreePath,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-            emit({ type: 'chunk', content: `✓ Updated local ref "${baseBranch}" to ${targetRemote}/${baseBranch}` });
-          } catch {
-            // Local base branch may have diverged or be ahead
-          }
-        }
-      }
-
-      if (isCancelled) return;
-
-      // 5. Ensure local base branch exists
-      try {
-        execSync(`git rev-parse --verify ${baseBranch}`, {
-          cwd: worktreePath,
-          stdio: ['pipe', 'pipe', 'ignore'],
-        });
-      } catch {
-        if (hasRemote) {
-          try {
-            execSync(`git branch --track ${baseBranch} ${targetRemote}/${baseBranch}`, {
-              cwd: worktreePath,
-              stdio: ['pipe', 'pipe', 'pipe'],
-            });
-            emit({ type: 'chunk', content: `✓ Created local branch "${baseBranch}" tracking "${targetRemote}/${baseBranch}"` });
-          } catch {
-            emit({ type: 'error', content: `Base branch "${baseBranch}" could not be found locally or on ${targetRemote}.` });
-            return;
-          }
-        } else {
-          emit({ type: 'error', content: `Base branch "${baseBranch}" does not exist.` });
-          return;
-        }
-      }
-
-      // 6. Check if current branch is already up to date with base branch
-      let isAlreadyUpToDate = false;
-      try {
-        execSync(`git merge-base --is-ancestor ${baseBranch} HEAD`, {
-          cwd: worktreePath,
-          stdio: ['pipe', 'pipe', 'ignore'],
-        });
-        isAlreadyUpToDate = true;
-      } catch {
-        isAlreadyUpToDate = false;
-      }
-
-      if (isAlreadyUpToDate) {
-        emit({ type: 'chunk', content: `✓ Branch "${currentBranch}" is already up to date with base branch "${baseBranch}".` });
-        emit({ type: 'status', content: `Already up to date with ${baseBranch}.` });
-        emit({ type: 'done', content: `Rebase complete: "${currentBranch}" is already up to date with "${baseBranch}".` });
-        return;
-      }
-
-      if (isCancelled) return;
-
-      // 7. Deterministic rebase onto local baseBranch (incorporating local commits like ea6caf1)
-      emit({ type: 'status', content: `Rebasing ${currentBranch} onto ${baseBranch}...` });
-      emit({ type: 'chunk', content: `→ git rebase --autostash ${baseBranch}` });
-
-      let rebaseSuccess = false;
-      let rebaseOutput = '';
-
-      try {
-        const out = execSync(`git rebase --autostash ${baseBranch}`, {
-          cwd: worktreePath,
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-        });
-        rebaseSuccess = true;
-        rebaseOutput = out;
-      } catch (err: any) {
-        rebaseSuccess = false;
-        rebaseOutput = (err.stdout?.toString() || '') + '\n' + (err.stderr?.toString() || '');
-      }
-
-      if (isCancelled) return;
-
-      if (rebaseSuccess) {
-        if (rebaseOutput.trim()) {
-          emit({ type: 'chunk', content: rebaseOutput.trim() });
-        }
-        emit({ type: 'chunk', content: `✓ Successfully rebased "${currentBranch}" onto "${baseBranch}" with zero conflicts!` });
+      await executeAutoSyncAndRebase(
+        worktreePath,
+        baseBranch,
+        branchName || '',
+        cliName,
+        model,
+        thinkingEffort,
+        emit,
+        (child) => { activeChild = child; },
+        repoRoot,
+        () => isCancelled
+      );
+      if (!isCancelled) {
         emit({ type: 'status', content: `Rebase complete!` });
-        emit({ type: 'done', content: `Rebase complete: "${currentBranch}" was cleanly rebased onto "${baseBranch}".` });
-        return;
+        emit({ type: 'done', content: `Rebase complete: branch was cleanly rebased onto "${baseBranch}".` });
       }
-
-      // 8. Rebase failed - check if it stopped due to merge conflicts
-      let hasConflicts = false;
-      try {
-        const status = execSync('git status', {
-          cwd: worktreePath,
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'ignore'],
-        });
-        hasConflicts =
-          status.includes('rebase in progress') ||
-          status.includes('You are currently rebasing') ||
-          status.includes('both modified:');
-      } catch {}
-
-      if (!hasConflicts) {
-        emit({ type: 'error', content: `Git rebase failed:\n${rebaseOutput.trim() || 'Unknown git error'}` });
-        return;
-      }
-
-      // 9. Merge conflicts detected! Launch AI Agent with focused prompt
-      emit({ type: 'status', content: `Merge conflicts detected. Launching AI agent to resolve conflicts...` });
-      emit({ type: 'chunk', content: `⚠️ Merge conflicts encountered during rebase of "${currentBranch}" onto "${baseBranch}". Launching AI agent to resolve conflicts...` });
-
-      const conflictPrompt = `The git rebase of branch "${currentBranch}" onto "${baseBranch}" encountered merge conflicts and is currently in progress.
-Resolve all merge conflicts cleanly:
-1. Run "git status" to list unmerged / conflicted files.
-2. For each conflicted file, inspect the conflict markers (<<<<<<<, =======, >>>>>>>) and diffs, and edit the file to cleanly resolve the conflicts preserving intended functionality from both branches.
-3. Stage each resolved file using "git add <file>".
-4. Continue the rebase with "git -c core.editor=true rebase --continue" or "git rebase --continue --no-edit".
-5. If subsequent commits also have conflicts, repeat steps 1-4 until the rebase completes successfully.
-6. If an autostash causes conflicts upon popping, resolve those conflicts and unstage/clean up as needed.
-Do NOT run git checkout, git pull, git fetch, git fsck, test suites, or reflog. Focus strictly on resolving the merge conflicts and running git rebase --continue.
-Output a clear summary of which conflicts were resolved and confirm the rebase is cleanly completed.`;
-
-      const args: string[] = [];
-      if (cliName === 'agy') {
-        args.push('-p', conflictPrompt);
-        if (model) args.push('--model', model);
-        const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
-        args.push('--effort', effort);
-        args.push('--output-format', 'stream-json');
-        args.push('--dangerously-skip-permissions');
-      } else if (cliName === 'claude') {
-        args.push('-p', conflictPrompt);
-        if (model) args.push('--model', model);
-        if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
-        args.push('--dangerously-skip-permissions');
-      } else {
-        args.push('exec', conflictPrompt);
-        if (model) args.push('--model', model);
-        if (thinkingEffort && thinkingEffort !== 'none') {
-          args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
-        }
-        args.push('-c', 'service_tier="fast"');
-      }
-
-      activeChild = spawnAgentCli(cliName, args, worktreePath, emit);
     } catch (topErr: any) {
-      emit({ type: 'error', content: `Unexpected error during rebase: ${topErr.message}` });
+      if (!isCancelled) {
+        emit({ type: 'error', content: `Unexpected error during rebase: ${topErr.message}` });
+      }
     }
   })();
 
@@ -2227,6 +2389,8 @@ export function runSubmitAgent(
 ): { kill: (signal?: any) => void } {
   let emit: (event: StreamEvent) => void;
   let resolvedBaseBranch = baseBranch;
+  let thinkingEffort: string | undefined;
+
   if (typeof thinkingEffortOrOnEvent === 'function') {
     emit = thinkingEffortOrOnEvent;
     if (typeof onEventOrBaseBranch === 'string') {
@@ -2234,8 +2398,13 @@ export function runSubmitAgent(
     }
   } else if (typeof onEventOrBaseBranch === 'function') {
     emit = onEventOrBaseBranch;
+    thinkingEffort = thinkingEffortOrOnEvent;
   } else {
     emit = () => {};
+    thinkingEffort = typeof thinkingEffortOrOnEvent === 'string' ? thinkingEffortOrOnEvent : undefined;
+    if (typeof onEventOrBaseBranch === 'string') {
+      resolvedBaseBranch = onEventOrBaseBranch;
+    }
   }
   emit({ type: 'status', content: `Submitting changes...` });
 
@@ -2307,8 +2476,31 @@ export function runSubmitAgent(
 
       if (isKilled) return;
 
-      // 3. Push branch to remote
-      const targetRemote = GitService.getRemoteForBranch(worktreePath, resolvedBaseBranch || branchName);
+      // 3. Auto pull latest base branch and rebase current branch onto base branch,
+      // and pull and integrate remote changes of current branch into local before pushing
+      let targetBase: string = resolvedBaseBranch || 'main';
+      const cliToUse = _cliName || getSetting<string>('default_cli', 'claude');
+      const modelToUse = _model || getSetting<string>('default_model', '');
+      const effortToUse = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : getSetting<string>('thinking_effort', 'medium');
+
+      emit({ type: 'thought', content: `→ Syncing remote branch changes and rebasing onto "${targetBase}"...\n` });
+      await executeAutoSyncAndRebase(
+        worktreePath,
+        targetBase,
+        branchName,
+        cliToUse,
+        modelToUse,
+        effortToUse,
+        emit,
+        (child) => { currentChild = child; },
+        undefined,
+        () => isKilled
+      );
+
+      if (isKilled) return;
+
+      // 4. Push branch to remote
+      const targetRemote = GitService.getRemoteForBranch(worktreePath, targetBase || branchName);
       let remotes: string[] = [];
       try {
         remotes = execSync('git remote', {
@@ -2366,29 +2558,50 @@ export function runSubmitAgent(
         return text.replaceAll(tokenToMask, '***');
       };
 
-      await new Promise<void>((resolve, reject) => {
-        const proc = spawn('git', pushArgs, {
-          cwd: worktreePath,
-          env: {
-            ...getCrossPlatformEnv(),
-            GIT_TERMINAL_PROMPT: '0',
-          },
-          shell: false,
+      let pushErrOutput = '';
+      const executePush = (args: string[]) => {
+        return new Promise<void>((resolve, reject) => {
+          pushErrOutput = '';
+          const proc = spawn('git', args, {
+            cwd: worktreePath,
+            env: {
+              ...getCrossPlatformEnv(),
+              GIT_TERMINAL_PROMPT: '0',
+            },
+            shell: false,
+          });
+          currentChild = proc;
+          proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
+          proc.stderr?.on('data', (d) => {
+            const str = d.toString('utf-8');
+            pushErrOutput += str;
+            emit({ type: 'chunk', content: sanitize(str) });
+          });
+          proc.on('close', (code) => {
+            if (code === 0) resolve();
+            else reject(new Error(`git push failed with exit code ${code}:\n${pushErrOutput}`));
+          });
+          proc.on('error', reject);
         });
-        currentChild = proc;
-        proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
-        proc.stderr?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
-        proc.on('close', (code) => {
-          if (code === 0) resolve();
-          else reject(new Error(`git push failed with exit code ${code}`));
-        });
-        proc.on('error', reject);
-      });
+      };
+
+      try {
+        await executePush(pushArgs);
+      } catch (pushErr: any) {
+        const errMsg = pushErr?.message || pushErrOutput || '';
+        if (errMsg.includes('non-fast-forward') || errMsg.includes('fetch first') || errMsg.includes('[rejected]')) {
+          emit({ type: 'thought', content: `→ Retrying push with --force-with-lease following rebase...\n` });
+          const forcePushArgs = [...pushArgs, '--force-with-lease'];
+          await executePush(forcePushArgs);
+        } else {
+          throw pushErr;
+        }
+      }
 
       if (isKilled) return;
 
       emit({ type: 'status', content: `\n✓ Successfully pushed branch "${branchName}" to ${remoteToUse}!\n` });
-      emit({ type: 'done', content: `\nSubmission completed successfully.\n` });
+      emit({ type: 'done', content: `Submit completed: changes committed and branch pushed to ${remoteToUse}.` });
     } catch (err: any) {
       let errorMsg = err?.message || String(err);
       if (

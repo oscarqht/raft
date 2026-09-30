@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
-import { getSettings, getClis, getProject, getTask, deleteTask } from './api';
+import { getSettings, getClis, getProject, getTask, deleteTask, updateTask } from './api';
 import {
   getCachedTask,
   setCachedTask,
   deleteCachedTask,
+  restoreCachedTask,
+  addPendingDeletingTaskId,
+  removePendingDeletingTaskId,
   getCachedSettings,
   setCachedSettings,
   getCachedClis,
@@ -16,11 +19,10 @@ import {
 import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
-import { ProjectPage } from './pages/ProjectPage';
 import { TaskPage } from './pages/TaskPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Loader2, Square, X } from 'lucide-react';
+import { Loader2, Square, X, AlertCircle, RotateCw } from 'lucide-react';
 
 export default function App() {
   const location = useLocation();
@@ -46,7 +48,12 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(() => getCachedSettings());
   const [clis, setClis] = useState<CliInfo[]>(() => getCachedClis() || []);
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [toastMessage, setToastMessage] = useState<{ id: number; text: string } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{
+    id: number;
+    text: string;
+    type?: 'info' | 'error';
+    onRetry?: () => void;
+  } | null>(null);
 
   useEffect(() => {
     const handleToast = (e: Event) => {
@@ -54,7 +61,7 @@ export default function App() {
       const taskName = customEvent.detail?.taskName || 'Task';
       const text = `Dev server stopped for ${taskName}`;
       const toastId = Date.now();
-      setToastMessage({ id: toastId, text });
+      setToastMessage({ id: toastId, text, type: 'info' });
       setTimeout(() => {
         setToastMessage((cur) => (cur?.id === toastId ? null : cur));
       }, 3500);
@@ -176,6 +183,17 @@ export default function App() {
     }
   }, [currentTaskId]);
 
+  useEffect(() => {
+    const handleTaskUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<Task>;
+      if (customEvent.detail && customEvent.detail.id === currentTaskId) {
+        setActiveTask(customEvent.detail);
+      }
+    };
+    window.addEventListener('task-updated', handleTaskUpdated);
+    return () => window.removeEventListener('task-updated', handleTaskUpdated);
+  }, [currentTaskId]);
+
   const handleNavigate = (page: 'home' | 'project' | 'task' | 'settings', params?: any) => {
     if (page === 'home') {
       navigate('/');
@@ -198,26 +216,75 @@ export default function App() {
     window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
   };
 
+  const handleTogglePinActiveTask = async () => {
+    if (!activeTask) return;
+    const nextPinned = !Boolean(activeTask.is_pinned);
+    const updated = { ...activeTask, is_pinned: nextPinned ? 1 : 0 };
+    handleActiveTaskUpdated(updated);
+    try {
+      await updateTask(activeTask.id, { is_pinned: nextPinned });
+    } catch (err) {
+      console.error('Failed to toggle pin on active task:', err);
+      handleActiveTaskUpdated(activeTask);
+    }
+  };
+
+  const performDeleteTask = async (taskToDelete: Task, targetProjectId?: string) => {
+    addPendingDeletingTaskId(taskToDelete.id);
+    try {
+      await deleteTask(taskToDelete.id);
+      removePendingDeletingTaskId(taskToDelete.id);
+    } catch (err: any) {
+      removePendingDeletingTaskId(taskToDelete.id);
+      console.error('Failed to delete task in background:', err);
+      restoreCachedTask(taskToDelete, targetProjectId);
+      window.dispatchEvent(
+        new CustomEvent('task-restored', { detail: { task: taskToDelete, projectId: targetProjectId } })
+      );
+
+      const errorMsg = err?.message || 'Failed to delete task';
+      setToastMessage({
+        id: Date.now(),
+        type: 'error',
+        text: `Failed to delete task "${taskToDelete.name}": ${errorMsg}`,
+        onRetry: () => {
+          setToastMessage(null);
+          addPendingDeletingTaskId(taskToDelete.id);
+          deleteCachedTask(taskToDelete.id, targetProjectId);
+          window.dispatchEvent(
+            new CustomEvent('task-deleted', { detail: { taskId: taskToDelete.id, projectId: targetProjectId } })
+          );
+          performDeleteTask(taskToDelete, targetProjectId);
+        },
+      });
+    }
+  };
+
   const handleDeleteActiveTask = async () => {
-    if (!activeTask || isDeletingTask) return;
+    if (!activeTask) return;
     if (!confirm('Delete this task and clean up its git worktree?')) return;
 
-    setIsDeletingTask(true);
-    try {
-      await deleteTask(activeTask.id);
-      deleteCachedTask(activeTask.id);
-      const targetProjectId = activeTask.project_id || currentProjectId;
-      setActiveTask(null);
-      if (targetProjectId) {
-        navigate(`/projects/${targetProjectId}`);
-      } else {
-        navigate('/');
-      }
-    } catch (err: any) {
-      alert(err?.message || 'Failed to delete task');
-    } finally {
-      setIsDeletingTask(false);
+    const taskToDelete = activeTask;
+    const targetProjectId = taskToDelete.project_id || currentProjectId || undefined;
+
+    // Immediately mark as pending delete so any background fetches won't resurrect it
+    addPendingDeletingTaskId(taskToDelete.id);
+
+    // Optimistically update cache and UI immediately
+    deleteCachedTask(taskToDelete.id, targetProjectId);
+    window.dispatchEvent(
+      new CustomEvent('task-deleted', { detail: { taskId: taskToDelete.id, projectId: targetProjectId } })
+    );
+    setActiveTask(null);
+
+    if (targetProjectId) {
+      navigate(`/projects/${targetProjectId}`);
+    } else {
+      navigate('/');
     }
+
+    // Run deletion in background
+    performDeleteTask(taskToDelete, targetProjectId);
   };
 
   const isProjectPage = Boolean(projectMatch && !projectTaskMatch);
@@ -231,13 +298,33 @@ export default function App() {
           projectIcon: activeProject?.icon || activeTask?.project?.icon,
           taskId: currentTaskId || undefined,
           taskName: activeTask?.name,
+          isPinned: Boolean(activeTask?.is_pinned),
         }}
         onNavigate={handleNavigate}
         settings={settings}
         onEditTask={currentTaskId && activeTask ? () => setIsEditTaskOpen(true) : undefined}
+        onTogglePinTask={currentTaskId && activeTask ? handleTogglePinActiveTask : undefined}
+        isTaskPinned={Boolean(activeTask?.is_pinned)}
         onDeleteTask={currentTaskId && activeTask ? handleDeleteActiveTask : undefined}
         isDeletingTask={isDeletingTask}
-        onNewTask={isProjectPage ? () => window.dispatchEvent(new CustomEvent('open-new-task')) : undefined}
+        onNewTask={
+          currentProjectId
+            ? () => {
+                if (currentTaskId) {
+                  navigate(`/projects/${currentProjectId}`);
+                } else {
+                  window.dispatchEvent(new CustomEvent('reset-new-task-form'));
+                }
+              }
+            : undefined
+        }
+        onConfigureProject={
+          currentProjectId
+            ? () => {
+                window.dispatchEvent(new CustomEvent('open-project-config'));
+              }
+            : undefined
+        }
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
@@ -270,15 +357,12 @@ export default function App() {
             <Route
               path="/projects/:projectId"
               element={
-                <ProjectPage
-                  onBack={() => navigate('/')}
-                  onSelectTask={(taskId, task) => {
-                    if (currentProjectId) {
-                      navigate(`/projects/${currentProjectId}/tasks/${taskId}`, { state: { task } });
-                    }
-                  }}
+                <TaskPage
                   settings={settings}
+                  clis={clis}
                   ws={ws}
+                  onDeleteTask={handleDeleteActiveTask}
+                  isDeletingTask={isDeletingTask}
                 />
               }
             />
@@ -325,32 +409,45 @@ export default function App() {
         />
       )}
 
-      {/* Deleting Task Overlay */}
-      {isDeletingTask && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 select-none">
-          <div className="bg-cozy-surface border border-cozy-border/80 shadow-soft-2xl rounded-2.5xl p-6 flex flex-col items-center text-center max-w-sm mx-4 animate-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-3 text-red-500 shadow-soft-sm">
-              <Loader2 className="w-6 h-6 animate-spin" />
-            </div>
-            <h3 className="text-sm font-semibold text-cozy-text mb-1">Deleting Task</h3>
-            <p className="text-xs text-cozy-muted leading-relaxed">
-              Cleaning up git worktree and removing task data... Please wait.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Bottom Dev Server Stopped Toast */}
+      {/* Floating Bottom Toast */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-cozy-surface/95 dark:bg-zinc-900/95 border border-cozy-border/80 shadow-soft-xl text-xs text-cozy-text backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200 select-none">
-          <div className="w-5 h-5 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-            <Square className="w-3 h-3 fill-current" />
+        <div
+          className={`fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-950/95 dark:bg-rose-950/95 border-rose-500/40 text-rose-100 shadow-rose-950/30'
+              : 'bg-cozy-surface/95 dark:bg-zinc-900/95 border-cozy-border/80 text-cozy-text shadow-soft-xl'
+          } border text-xs backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200 select-none max-w-md`}
+        >
+          <div
+            className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${
+              toastMessage.type === 'error'
+                ? 'bg-rose-500/20 text-rose-400'
+                : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+            }`}
+          >
+            {toastMessage.type === 'error' ? (
+              <AlertCircle className="w-3.5 h-3.5" />
+            ) : (
+              <Square className="w-3 h-3 fill-current" />
+            )}
           </div>
-          <span className="font-medium text-cozy-text">{toastMessage.text}</span>
+          <span className="font-medium flex-1 truncate" title={toastMessage.text}>
+            {toastMessage.text}
+          </span>
+          {toastMessage.onRetry && (
+            <button
+              type="button"
+              onClick={toastMessage.onRetry}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors shrink-0 cursor-pointer shadow-xs"
+            >
+              <RotateCw className="w-3 h-3" />
+              <span>Retry</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setToastMessage(null)}
-            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40 transition-colors ml-1"
+            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40 transition-colors ml-1 shrink-0 cursor-pointer"
             title="Dismiss"
           >
             <X className="w-3.5 h-3.5" />

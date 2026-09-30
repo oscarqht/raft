@@ -93,6 +93,8 @@ export function getInjectedTrackerScript(taskId: string): string {
       var currentFullPath = window.location.pathname + window.location.search + window.location.hash;
       if (currentFullPath !== ev.data.path) {
         window.location.href = ev.data.path;
+      } else {
+        window.location.reload();
       }
     } else if (ev.data.type === 'RAFT_PREVIEW_NAVIGATE_BACK') {
       window.history.back();

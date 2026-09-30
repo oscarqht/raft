@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Task, Settings, CliInfo, ProjectCustomScript } from '../types';
-import { getTask, getDevServerState } from '../api';
-import { getCachedTask, setCachedTask } from '../cache';
+import { Task, Project, Settings, CliInfo, ProjectCustomScript } from '../types';
+import { getTask, getProject, createTask, validateProjectPath, getDevServerState } from '../api';
+import { getCachedTask, setCachedTask, getCachedProject, setCachedProject } from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
 import { PreviewPane } from '../components/PreviewPane';
@@ -14,6 +14,8 @@ import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
 import { RunScriptModal } from '../components/RunScriptModal';
 import { ManageScriptsModal } from '../components/ManageScriptsModal';
 import { ProjectsTasksSidebar } from '../components/ProjectsTasksSidebar';
+import { NewTaskPane } from '../components/NewTaskPane';
+import { ProjectConfigModal } from '../components/ProjectConfigModal';
 import { ArrowLeft, MessageSquare, Globe, PanelLeftOpen, Loader2 } from 'lucide-react';
 
 interface TaskPageProps {
@@ -42,13 +44,14 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   // Initialize immediately from router state or localStorage cache
   const [task, setTask] = useState<Task | null>(() => {
+    if (!taskId) return null;
     const navTask = (location.state as any)?.task as Task | undefined;
     if (navTask && navTask.id === taskId) {
       return navTask;
     }
     return getCachedTask(taskId);
   });
-  const [loading, setLoading] = useState(!task);
+  const [loading, setLoading] = useState(Boolean(taskId && !task));
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
@@ -66,6 +69,17 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     }
   });
 
+  // Project state for "New Task" mode (when on /projects/:projectId with no taskId)
+  const [project, setProject] = useState<Project | null>(() =>
+    routeProjectId ? getCachedProject(routeProjectId) : null
+  );
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [availableBranches, setAvailableBranches] = useState<string[]>(['main']);
+  const [baseBranch, setBaseBranch] = useState<string>('main');
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [newTaskError, setNewTaskError] = useState<string | null>(null);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+
   useEffect(() => {
     try {
       localStorage.setItem('raft:task-sidebar-collapsed', String(isSidebarCollapsed));
@@ -79,6 +93,14 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const isDeletingTaskRef = useRef(isDeletingTask);
   isDeletingTaskRef.current = isDeletingTask;
 
+  // Listen for open-project-config global event (e.g. from Header)
+  useEffect(() => {
+    const handleOpenProjectConfig = () => setIsConfigModalOpen(true);
+    window.addEventListener('open-project-config', handleOpenProjectConfig);
+    return () => window.removeEventListener('open-project-config', handleOpenProjectConfig);
+  }, []);
+
+  // Fetch Dev Server state when on an active task
   useEffect(() => {
     if (!taskId) return;
 
@@ -97,9 +119,13 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'dev_server_state' && msg.state) {
+          const wasActive = isDevRunningRef.current;
           const active = msg.state.status === 'running' || msg.state.status === 'starting';
           setIsDevRunning(active);
           isDevRunningRef.current = active;
+          if (wasActive && msg.state.status === 'stopped') {
+            setIsPreviewOpen(false);
+          }
         }
       } catch {}
     };
@@ -113,8 +139,65 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     }
   }, [task?.project?.custom_scripts]);
 
+  // Load project details and available branches in "New Task" mode
+  useEffect(() => {
+    if (taskId || !routeProjectId) return;
+
+    let isCurrent = true;
+    const cached = getCachedProject(routeProjectId);
+    if (cached) {
+      setProject(cached);
+      setBaseBranch(cached.branch_convention || 'main');
+    } else {
+      setProjectLoading(true);
+    }
+    setNewTaskError(null);
+
+    getProject(routeProjectId)
+      .then(async (p) => {
+        if (!isCurrent) return;
+        setProject(p);
+        setCachedProject(p);
+        setBaseBranch(p.branch_convention || 'main');
+
+        try {
+          const validation = await validateProjectPath(p.path);
+          if (!isCurrent) return;
+          if (validation.branches && validation.branches.length > 0) {
+            setAvailableBranches(validation.branches);
+          } else {
+            setAvailableBranches([p.branch_convention || 'main']);
+          }
+        } catch {
+          if (!isCurrent) return;
+          setAvailableBranches([p.branch_convention || 'main']);
+        }
+      })
+      .catch((err) => {
+        if (!isCurrent) return;
+        if (!project && !cached) {
+          setNewTaskError(err?.message || 'Failed to load project');
+        }
+      })
+      .finally(() => {
+        if (!isCurrent) return;
+        setProjectLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [taskId, routeProjectId]);
+
+  // Load task details in Task mode
   useEffect(() => {
     if (!taskId) {
+      if (routeProjectId) {
+        // In "New Task" mode for this project
+        setError(null);
+        setLoading(false);
+        return;
+      }
       setError('Task ID is missing');
       setLoading(false);
       return;
@@ -160,6 +243,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   }, [taskId, routeProjectId, navigate]);
 
   useEffect(() => {
+    if (!taskId) return;
     const handleTaskUpdated = (e: Event) => {
       const customEvent = e as CustomEvent<Task>;
       if (customEvent.detail && customEvent.detail.id === taskId) {
@@ -171,24 +255,130 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   }, [taskId]);
 
   useEffect(() => {
-    setIsSubmitOpen(false);
     setIsRebaseOpen(false);
+    setIsSubmitOpen(false);
     setIsRunScriptOpen(false);
     setIsManageScriptsOpen(false);
   }, [taskId]);
 
   useEffect(() => {
-    const handleOpenRebase = () => setIsRebaseOpen(true);
     const handleOpenSubmit = () => setIsSubmitOpen(true);
-
-    window.addEventListener('open-rebase-drawer', handleOpenRebase);
     window.addEventListener('open-submit-modal', handleOpenSubmit);
-
     return () => {
-      window.removeEventListener('open-rebase-drawer', handleOpenRebase);
       window.removeEventListener('open-submit-modal', handleOpenSubmit);
     };
   }, []);
+
+  const handleCreateTask = async (taskName: string, selectedBaseBranch: string, initialPrompt: string) => {
+    if (!routeProjectId) return;
+    setIsCreatingTask(true);
+    setNewTaskError(null);
+    try {
+      const newTask = await createTask(routeProjectId, taskName, selectedBaseBranch);
+      setCachedTask(newTask);
+      window.dispatchEvent(new CustomEvent('task-updated', { detail: newTask }));
+      window.dispatchEvent(new CustomEvent('projects-updated'));
+      navigate(`/projects/${routeProjectId}/tasks/${newTask.id}`, {
+        state: { task: newTask, initialPrompt: initialPrompt.trim() },
+      });
+    } catch (err: any) {
+      setNewTaskError(err?.message || 'Failed to create task');
+      throw err;
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
+
+  // Render "New Task" Mode
+  if (!taskId && routeProjectId) {
+    return (
+      <div className="flex-1 flex flex-row h-[calc(100vh-3rem)] overflow-hidden relative p-0 bg-cozy-bg">
+        {/* Left Projects & Tasks Sidebar (Desktop) */}
+        <div className="hidden min-[1200px]:flex h-full shrink-0">
+          <ProjectsTasksSidebar
+            currentTaskId={undefined}
+            currentProjectId={routeProjectId}
+            onSelectTask={(selectedTaskId, selectedProjectId, selectedTask) => {
+              if (selectedTask) {
+                setTask(selectedTask);
+                setCachedTask(selectedTask);
+              }
+              const route = selectedProjectId
+                ? `/projects/${selectedProjectId}/tasks/${selectedTaskId}`
+                : `/tasks/${selectedTaskId}`;
+              navigate(route, { state: { task: selectedTask } });
+            }}
+            onConfigureProject={() => setIsConfigModalOpen(true)}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+            ws={ws}
+          />
+        </div>
+
+        {/* Main Workspace Area: NewTaskPane */}
+        <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
+          {/* Collapsed sidebar toggle button (desktop) */}
+          {isSidebarCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(false)}
+              className="hidden min-[1200px]:flex absolute top-2 left-2 z-30 w-7 h-7 rounded-md bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text items-center justify-center transition-colors cursor-pointer"
+              title="Expand projects & tasks sidebar"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            </button>
+          )}
+
+          {projectLoading && !project ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-cozy-muted select-none">
+              <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+              <span className="text-xs">Loading project...</span>
+            </div>
+          ) : project ? (
+            <NewTaskPane
+              project={project}
+              availableBranches={availableBranches}
+              baseBranch={baseBranch}
+              onBaseBranchChange={setBaseBranch}
+              onOpenProjectConfig={() => setIsConfigModalOpen(true)}
+              onCreateTask={handleCreateTask}
+              isCreating={isCreatingTask}
+              error={newTaskError}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none">
+              <p className="text-red-500 text-sm mb-4">Project not found</p>
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Return Home</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Project Configuration Modal */}
+        {isConfigModalOpen && project && (
+          <ProjectConfigModal
+            project={project}
+            isOpen={isConfigModalOpen}
+            onClose={() => setIsConfigModalOpen(false)}
+            onSuccess={(updated) => {
+              setProject(updated);
+              setCachedProject(updated);
+              setIsConfigModalOpen(false);
+            }}
+            settings={settings}
+            ws={ws}
+            availableBranches={availableBranches}
+          />
+        )}
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -200,7 +390,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             if (target) navigate(`/projects/${target}`);
             else navigate('/');
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium bg-teal-600 hover:bg-teal-500 text-white transition-all shadow-sm cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Return to Project</span>
@@ -240,6 +430,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 : `/tasks/${selectedTaskId}`;
               navigate(route, { state: { task: selectedTask } });
             }}
+            onConfigureProject={() => setIsConfigModalOpen(true)}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
             ws={ws}
@@ -314,21 +505,24 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 onDeleteTask={onDeleteTask}
                 isDeletingTask={isDeletingTask}
                 isPreviewOpen={isPreviewOpen}
-                  onTogglePreview={() => {
-                    if (window.innerWidth < 1200) {
-                      setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
-                    } else {
-                      setIsPreviewOpen((prev) => !prev);
-                    }
-                  }}
-                  isDevRunning={isDevRunning}
-                />
+                onTogglePreview={() => {
+                  if (window.innerWidth < 1200) {
+                    setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
+                  } else {
+                    setIsPreviewOpen((prev) => !prev);
+                  }
+                }}
+                isDevRunning={isDevRunning}
+              />
             }
             right={
               <PreviewPane
                 key={task.id}
                 task={task}
                 ws={ws}
+                onClose={() => {
+                  setIsPreviewOpen(false);
+                }}
                 onAttachToChat={(attachments, url) => {
                   window.dispatchEvent(
                     new CustomEvent('add-pending-attachments', {
@@ -385,6 +579,23 @@ export const TaskPage: React.FC<TaskPageProps> = ({
           onClose={() => setIsSubmitOpen(false)}
           ws={ws}
         />
+
+        {/* Project Configuration Modal in Task Mode */}
+        {isConfigModalOpen && (task.project || project) && (
+          <ProjectConfigModal
+            project={(task.project || project)!}
+            isOpen={isConfigModalOpen}
+            onClose={() => setIsConfigModalOpen(false)}
+            onSuccess={(updated) => {
+              setTask((prev) => (prev ? { ...prev, project: updated } : prev));
+              setProject(updated);
+              setCachedProject(updated);
+              setIsConfigModalOpen(false);
+            }}
+            settings={settings}
+            ws={ws}
+          />
+        )}
       </div>
     </ScriptExecutionProvider>
   );

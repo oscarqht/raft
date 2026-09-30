@@ -6,7 +6,6 @@ import {
   FileEdit,
   ExternalLink,
   RefreshCw,
-  Check,
 } from 'lucide-react';
 import { TaskGitStatus } from '../types';
 
@@ -15,10 +14,8 @@ export interface TaskStatusBadgesProps {
   agentStatus?: 'WIP' | 'idle';
   loading?: boolean;
   compact?: boolean;
-  onOpenRebase?: () => void;
   onOpenSubmit?: () => void;
   onRefresh?: () => void;
-  onCompleteTask?: () => void;
   className?: string;
 }
 
@@ -29,7 +26,6 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
   compact = false,
   onOpenSubmit,
   onRefresh,
-  onCompleteTask,
   className = '',
 }) => {
   const effectiveAgentStatus: 'WIP' | 'idle' =
@@ -255,23 +251,7 @@ export const TaskStatusBadges: React.FC<TaskStatusBadgesProps> = ({
       {/* 2. Simplified Primary Status Badge */}
       {renderStatusBadge()}
 
-      {/* 3. Direct Action: Complete Task when Merged */}
-      {isMerged && onCompleteTask && !compact && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCompleteTask();
-          }}
-          className="inline-flex items-center gap-1 px-1.5 min-[1400px]:px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-purple-500 hover:bg-purple-600 text-white transition-all shadow-soft-sm active:scale-95 cursor-pointer ml-0.5 shrink-0"
-          title="Mark this task as completed now that the branch is merged"
-        >
-          <Check className="w-3 h-3 shrink-0" />
-          <span className="hidden min-[1400px]:inline">Complete Task</span>
-        </button>
-      )}
-
-      {/* 4. Refresh Button (Detailed Header Mode) */}
+      {/* 3. Refresh Button (Detailed Header Mode) */}
       {!compact && onRefresh && (
         <button
           type="button"

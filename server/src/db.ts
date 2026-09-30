@@ -72,6 +72,7 @@ db.exec(`
     base_branch TEXT NOT NULL,
     worktree_path TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
+    is_pinned INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -184,6 +185,11 @@ try {
 }
 try {
   db.exec('ALTER TABLE chat_sessions ADD COLUMN cli_session_agent TEXT');
+} catch {
+  // column already exists
+}
+try {
+  db.exec('ALTER TABLE tasks ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0');
 } catch {
   // column already exists
 }

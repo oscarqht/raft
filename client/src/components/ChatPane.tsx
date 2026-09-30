@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Plus, X, Send, Square, GitMerge, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
+  Plus, X, Send, Square, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
   Paperclip, Loader2, AlertCircle, Trash2, ArrowUp
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage } from '../types';
-import { ChatMessageList } from './ChatMessageList';
+import { ChatMessageList, ChatMessageListHandle } from './ChatMessageList';
 import { ChatQueueDrawer } from './ChatQueueDrawer';
 import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, deleteChatMessage, getModels, getSkills, uploadTaskAttachments } from '../api';
 import {
@@ -40,9 +40,9 @@ interface ChatPaneProps {
   settings: Settings | null;
   clis: CliInfo[];
   ws: WebSocket | null;
-  onOpenRebase: () => void;
   onOpenSubmit: () => void;
   onOpenScripts?: () => void;
+  onOpenRebase?: () => void;
   onDeleteTask?: () => void;
   isDeletingTask?: boolean;
   isPreviewOpen?: boolean;
@@ -55,9 +55,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   settings,
   clis,
   ws,
-  onOpenRebase,
   onOpenSubmit,
   onOpenScripts,
+  onOpenRebase,
   onDeleteTask,
   isDeletingTask,
   isPreviewOpen = false,
@@ -65,6 +65,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   isDevRunning = false,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const initialPromptProcessedRef = useRef(false);
   // Synchronous cache initialization for 0ms instantaneous load
   const [chats, setChats] = useState<ChatSession[]>(() => getCachedChats(task.id) || []);
   const [activeChatId, setActiveChatId] = useState<string | null>(() => {
@@ -107,17 +109,26 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const activeChatIdRef = useRef<string | null>(activeChatId);
   activeChatIdRef.current = activeChatId;
 
+  const isStreamingRef = useRef(isStreaming);
+  isStreamingRef.current = isStreaming;
+
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
+
   const isSteeringRef = useRef(false);
+  const chatListRef = useRef<ChatMessageListHandle>(null);
   const dispatchMessageRef = useRef<
     | ((
         promptText: string,
         msgAttachments?: FileAttachment[],
         cliOverride?: string,
         modelOverride?: string,
-        effortOverride?: string
+        effortOverride?: string,
+        sessionIdOverride?: string
       ) => void)
     | null
   >(null);
+  const dispatchNextQueuedMessageRef = useRef<((explicitSessionId?: string) => void) | null>(null);
 
   // Tab overrides
   const [tabCli, setTabCli] = useState<string>(() => {
@@ -419,7 +430,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   useEffect(() => {
     if (!activeChatId) return;
     setCachedActiveChatId(task.id, activeChatId);
-    setQueuedMessages(getCachedQueuedMessages(activeChatId));
+    const cachedQueue = getCachedQueuedMessages(activeChatId);
+    setQueuedMessages(cachedQueue);
+    queuedMessagesRef.current = cachedQueue;
 
     // If cached messages exist for this chat, display immediately
     const cached = getCachedMessages(activeChatId);
@@ -629,6 +642,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       try {
         const msg = JSON.parse(event.data);
         const eventSessionId = msg.sessionId || msg.message?.session_id;
+
+        if (msg.type === 'task_agent_status' && msg.sessionId) {
+          const isIdle = msg.agentStatus === 'idle';
+          setChats((prev) =>
+            prev.map((c) => (c.id === msg.sessionId ? { ...c, status: isIdle ? 'idle' : 'running' } : c))
+          );
+          if (msg.sessionId === activeChatIdRef.current && isIdle) {
+            setIsStreaming(false);
+            isStreamingRef.current = false;
+            setTimeout(() => {
+              dispatchNextQueuedMessageRef.current?.(msg.sessionId);
+            }, 60);
+          }
+        }
+
         if (eventSessionId && eventSessionId === activeChatId) {
           if (msg.type === 'message_saved') {
             setMessages((prev) => {
@@ -641,6 +669,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             });
           } else if (msg.type === 'chat_stream') {
             setIsStreaming(true);
+            isStreamingRef.current = true;
             const fullContent = msg.fullContent;
             const deltaContent = msg.event?.content || '';
 
@@ -710,12 +739,24 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             }
           } else if (msg.type === 'chat_turn_complete') {
             setIsStreaming(false);
+            isStreamingRef.current = false;
             setStreamingChunk('');
+            const targetSessionId = msg.sessionId || eventSessionId;
             setActiveHitl((prev) => {
               const copy = { ...prev };
-              delete copy[msg.sessionId || eventSessionId];
+              delete copy[targetSessionId];
               return copy;
             });
+            setChats((prev) =>
+              prev.map((c) => (c.id === targetSessionId ? { ...c, status: 'idle' } : c))
+            );
+            const cachedChats = getCachedChats(taskRef.current.id);
+            if (cachedChats) {
+              setCachedChats(
+                taskRef.current.id,
+                cachedChats.map((c) => (c.id === targetSessionId ? { ...c, status: 'idle' } : c))
+              );
+            }
             setMessages((prev) => {
               let existingIdx = prev.findIndex((m) => m.id === msg.message.id);
               if (existingIdx === -1 && prev.length > 0 && prev[prev.length - 1].role === 'assistant') {
@@ -744,32 +785,24 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             });
 
             // Automatically check and dispatch next message in queue
-            const targetSessionId = msg.sessionId || eventSessionId;
-            const currentQueue = queuedMessagesRef.current;
-            if (currentQueue && currentQueue.length > 0 && targetSessionId === activeChatIdRef.current) {
-              const [nextItem, ...remaining] = currentQueue;
-              setQueuedMessages(remaining);
-              setCachedQueuedMessages(targetSessionId, remaining);
-              setTimeout(() => {
-                dispatchMessageRef.current?.(
-                  nextItem.prompt,
-                  nextItem.attachments,
-                  nextItem.agentCli,
-                  nextItem.model,
-                  nextItem.thinkingEffort
-                );
-              }, 60);
-            }
+            setTimeout(() => {
+              dispatchNextQueuedMessageRef.current?.(targetSessionId);
+            }, 60);
           } else if (msg.type === 'aborted') {
             if (isSteeringRef.current) {
               isSteeringRef.current = false;
               return;
             }
             setIsStreaming(false);
+            isStreamingRef.current = false;
             setStreamingChunk('');
+            const targetSessionId = msg.sessionId || eventSessionId;
+            setChats((prev) =>
+              prev.map((c) => (c.id === targetSessionId ? { ...c, status: 'idle' } : c))
+            );
             setActiveHitl((prev) => {
               const copy = { ...prev };
-              delete copy[msg.sessionId || eventSessionId];
+              delete copy[targetSessionId];
               return copy;
             });
             if (activeChatId) {
@@ -1027,10 +1060,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       msgAttachments?: FileAttachment[],
       cliOverride?: string,
       modelOverride?: string,
-      effortOverride?: string
+      effortOverride?: string,
+      sessionIdOverride?: string
     ) => {
-      const targetSessionId = activeChatIdRef.current;
-      if (!targetSessionId || !ws) return;
+      const targetSessionId = sessionIdOverride || activeChatIdRef.current;
+      if (!targetSessionId || !ws || ws.readyState !== WebSocket.OPEN) return;
 
       const newMsgId =
         typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1075,14 +1109,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         timestamp: now + 1,
       };
 
-      setMessages((prev) => {
-        const next = [...prev, optimisticUserMessage, optimisticAssistantMessage];
-        setCachedMessages(targetSessionId, next);
-        return next;
-      });
+      if (targetSessionId === activeChatIdRef.current) {
+        setMessages((prev) => {
+          const next = [...prev, optimisticUserMessage, optimisticAssistantMessage];
+          setCachedMessages(targetSessionId, next);
+          return next;
+        });
 
-      setIsStreaming(true);
-      setStreamingChunk('');
+        setIsStreaming(true);
+        isStreamingRef.current = true;
+        setStreamingChunk('');
+        chatListRef.current?.scrollToBottom();
+      } else {
+        const cached = getCachedMessages(targetSessionId) || [];
+        setCachedMessages(targetSessionId, [...cached, optimisticUserMessage, optimisticAssistantMessage]);
+      }
 
       const effectiveCli = cliOverride || tabCli;
       let modelToSend = modelOverride || tabModel;
@@ -1097,22 +1138,138 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         }
       }
 
-      ws.send(
-        JSON.stringify({
-          type: 'send_chat_message',
-          sessionId: targetSessionId,
-          messageId: newMsgId,
-          prompt: promptText,
-          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
-          agentCli: effectiveCli,
-          model: modelToSend,
-          thinkingEffort: effortToSend,
-        })
-      );
+      try {
+        ws.send(
+          JSON.stringify({
+            type: 'send_chat_message',
+            sessionId: targetSessionId,
+            messageId: newMsgId,
+            prompt: promptText,
+            attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+            agentCli: effectiveCli,
+            model: modelToSend,
+            thinkingEffort: effortToSend,
+          })
+        );
+      } catch (err) {
+        console.error('Failed to send chat message:', err);
+        if (targetSessionId === activeChatIdRef.current) {
+          setIsStreaming(false);
+          isStreamingRef.current = false;
+        }
+      }
     },
     [skills, tabCli, tabModel, tabEffort, availableModels, ws]
   );
   dispatchMessageRef.current = dispatchMessage;
+
+  const isDispatchingQueuedRef = useRef(false);
+
+  const dispatchNextQueuedMessage = useCallback(
+    (explicitSessionId?: string) => {
+      const targetSessionId = explicitSessionId || activeChatIdRef.current;
+      if (!targetSessionId || !ws || ws.readyState !== WebSocket.OPEN) return;
+      if (isDispatchingQueuedRef.current) return;
+
+      // Don't auto-dispatch if active chat is currently streaming or running
+      if (
+        targetSessionId === activeChatIdRef.current &&
+        (isStreamingRef.current || chatsRef.current.find((c) => c.id === targetSessionId)?.status === 'running')
+      ) {
+        return;
+      }
+
+      // Get current queue from ref or cache
+      let queue =
+        targetSessionId === activeChatIdRef.current
+          ? queuedMessagesRef.current
+          : getCachedQueuedMessages(targetSessionId);
+
+      if (!queue || queue.length === 0) {
+        queue = getCachedQueuedMessages(targetSessionId);
+      }
+      if (!queue || queue.length === 0) return;
+
+      const [nextItem, ...remaining] = queue;
+      if (!nextItem) return;
+
+      isDispatchingQueuedRef.current = true;
+
+      // Update refs, state, and cache immediately
+      queuedMessagesRef.current = remaining;
+      if (targetSessionId === activeChatIdRef.current) {
+        setQueuedMessages(remaining);
+      }
+      setCachedQueuedMessages(targetSessionId, remaining);
+      setCachedTaskQueuedCount(taskRef.current.id, remaining.length);
+
+      try {
+        dispatchMessage(
+          nextItem.prompt,
+          nextItem.attachments,
+          nextItem.agentCli,
+          nextItem.model,
+          nextItem.thinkingEffort,
+          targetSessionId
+        );
+      } finally {
+        setTimeout(() => {
+          isDispatchingQueuedRef.current = false;
+        }, 150);
+      }
+    },
+    [ws, dispatchMessage]
+  );
+  dispatchNextQueuedMessageRef.current = dispatchNextQueuedMessage;
+
+  // Auto-dispatch next queued message whenever the active chat is idle and has queued messages
+  useEffect(() => {
+    if (!isStreaming && activeChatId && queuedMessages.length > 0 && ws?.readyState === WebSocket.OPEN) {
+      const timer = setTimeout(() => {
+        dispatchNextQueuedMessage(activeChatId);
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, activeChatId, queuedMessages.length, ws?.readyState, dispatchNextQueuedMessage]);
+
+  // When WebSocket becomes open, trigger queued message check if idle
+  useEffect(() => {
+    if (!ws) return;
+    const handleOpen = () => {
+      if (!isStreamingRef.current && activeChatIdRef.current) {
+        dispatchNextQueuedMessage(activeChatIdRef.current);
+      }
+    };
+    if (ws.readyState === WebSocket.OPEN) {
+      handleOpen();
+    } else {
+      ws.addEventListener('open', handleOpen);
+      return () => ws.removeEventListener('open', handleOpen);
+    }
+  }, [ws, dispatchNextQueuedMessage]);
+
+  // Auto-dispatch initial prompt if passed via router navigation state on task creation
+  useEffect(() => {
+    const initPrompt = (location.state as any)?.initialPrompt;
+    if (
+      initPrompt &&
+      typeof initPrompt === 'string' &&
+      initPrompt.trim() &&
+      activeChatId &&
+      ws &&
+      ws.readyState === WebSocket.OPEN &&
+      !initialPromptProcessedRef.current
+    ) {
+      initialPromptProcessedRef.current = true;
+      const promptToSend = initPrompt.trim();
+      navigate(location.pathname, { replace: true, state: { ...location.state, initialPrompt: undefined } });
+      const timer = setTimeout(() => {
+        dispatchMessage(promptToSend, [], tabCli, tabModel, tabEffort, activeChatId);
+        chatListRef.current?.scrollToBottom();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state, activeChatId, ws, tabCli, tabModel, tabEffort, dispatchMessage, navigate, location.pathname]);
 
   const handleSendMessage = () => {
     const hasText = Boolean(inputPrompt.trim());
@@ -1120,7 +1277,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     if ((!hasText && !hasAttachments) || !activeChatId || !ws || isUploading) return;
     const prompt = inputPrompt.trim() || 'Please inspect the attached file(s).';
 
-    if (isStreaming) {
+    const isBusy =
+      isStreamingRef.current ||
+      chatsRef.current.find((c) => c.id === activeChatId)?.status === 'running';
+
+    if (isBusy) {
       // Put message in a queue, send immediately after agent finish replying
       const queuedId =
         typeof crypto !== 'undefined' && crypto.randomUUID
@@ -1138,11 +1299,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         createdAt: Date.now(),
       };
 
-      setQueuedMessages((prev) => {
-        const updated = [...prev, newQueuedItem];
-        setCachedQueuedMessages(activeChatId, updated);
-        return updated;
-      });
+      const updated = [...queuedMessagesRef.current, newQueuedItem];
+      queuedMessagesRef.current = updated;
+      setQueuedMessages(updated);
+      setCachedQueuedMessages(activeChatId, updated);
+      setCachedTaskQueuedCount(task.id, updated.length);
 
       setInputPrompt('');
       setPendingAttachments([]);
@@ -1156,6 +1317,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setUploadError(null);
 
     dispatchMessage(prompt, currentAttachments, tabCli, tabModel, tabEffort);
+    chatListRef.current?.scrollToBottom();
   };
 
   const handleSteer = useCallback(
@@ -1163,41 +1325,41 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       if (!activeChatId || !ws) return;
 
       // 1. Remove this item from the queue
-      setQueuedMessages((prev) => {
-        const remaining = prev.filter((m) => m.id !== item.id);
-        setCachedQueuedMessages(activeChatId, remaining);
-        return remaining;
-      });
+      const remaining = queuedMessagesRef.current.filter((m) => m.id !== item.id);
+      queuedMessagesRef.current = remaining;
+      setQueuedMessages(remaining);
+      setCachedQueuedMessages(activeChatId, remaining);
+      setCachedTaskQueuedCount(task.id, remaining.length);
 
       // 2. Set isSteering flag so the incoming 'aborted' broadcast from the cancelled turn is ignored
       isSteeringRef.current = true;
 
       // 3. Dispatch this message immediately
-      dispatchMessage(item.prompt, item.attachments, item.agentCli, item.model, item.thinkingEffort);
+      dispatchMessage(item.prompt, item.attachments, item.agentCli, item.model, item.thinkingEffort, activeChatId);
+      chatListRef.current?.scrollToBottom();
     },
-    [activeChatId, ws, dispatchMessage]
+    [activeChatId, ws, dispatchMessage, task.id]
   );
 
   const handleDeleteQueuedMessage = useCallback(
     (id: string) => {
       if (!activeChatId) return;
-      setQueuedMessages((prev) => {
-        const updated = prev.filter((item) => item.id !== id);
-        setCachedQueuedMessages(activeChatId, updated);
-        return updated;
-      });
+      const remaining = queuedMessagesRef.current.filter((item) => item.id !== id);
+      queuedMessagesRef.current = remaining;
+      setQueuedMessages(remaining);
+      setCachedQueuedMessages(activeChatId, remaining);
+      setCachedTaskQueuedCount(task.id, remaining.length);
     },
-    [activeChatId]
+    [activeChatId, task.id]
   );
 
   const handleUpdateQueuedPrompt = useCallback(
     (id: string, newPrompt: string) => {
       if (!activeChatId) return;
-      setQueuedMessages((prev) => {
-        const updated = prev.map((item) => (item.id === id ? { ...item, prompt: newPrompt } : item));
-        setCachedQueuedMessages(activeChatId, updated);
-        return updated;
-      });
+      const updated = queuedMessagesRef.current.map((item) => (item.id === id ? { ...item, prompt: newPrompt } : item));
+      queuedMessagesRef.current = updated;
+      setQueuedMessages(updated);
+      setCachedQueuedMessages(activeChatId, updated);
     },
     [activeChatId]
   );
@@ -1267,6 +1429,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     setCachedMessages(activeChatId, nextMessages);
     setIsStreaming(true);
     setStreamingChunk('');
+    chatListRef.current?.scrollToBottom();
 
     ws.send(
       JSON.stringify({
@@ -1321,6 +1484,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       setCachedMessages(activeChatId, nextMessages);
       setIsStreaming(true);
       setStreamingChunk('');
+      chatListRef.current?.scrollToBottom();
 
       ws.send(
         JSON.stringify({
@@ -1460,7 +1624,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           </button>
         </div>
 
-        {/* Desktop Action Buttons: Scripts, Sync/Rebase & Submit */}
+        {/* Desktop Action Buttons: Scripts & Submit */}
         <div className="hidden sm:flex items-center space-x-1.5 shrink-0">
           {onOpenScripts && (
             <button
@@ -1472,15 +1636,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               <span>Scripts</span>
             </button>
           )}
-
-          <button
-            onClick={onOpenRebase}
-            className="h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500/20 transition-colors"
-            title="Rebase branch and resolve conflicts"
-          >
-            <GitMerge className="w-3.5 h-3.5 text-amber-500" />
-            <span>Rebase</span>
-          </button>
 
           <button
             onClick={onOpenSubmit}
@@ -1495,7 +1650,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             <button
               type="button"
               onClick={onTogglePreview}
-              className={`h-7 flex items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+              className={`hidden min-[1200px]:flex h-7 items-center gap-1.5 px-2.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
                 isPreviewOpen
                   ? 'bg-teal-500/10 border-teal-500/30 text-teal-600 dark:text-teal-400 font-medium'
                   : 'bg-cozy-subtle hover:bg-cozy-subtle/80 border-cozy-border text-cozy-muted hover:text-cozy-text'
@@ -1529,26 +1684,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
           {showMobileActionsMenu && (
             <div className="absolute right-0 top-full mt-1.5 w-48 rounded-2xl popup-surface bg-white dark:bg-[#1a1d2e] py-1.5 z-30 flex flex-col text-xs overflow-hidden">
-              {onTogglePreview && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMobileActionsMenu(false);
-                    onTogglePreview();
-                  }}
-                  className="flex items-center justify-between px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Globe className="w-3.5 h-3.5 text-teal-500" />
-                    <span>{isPreviewOpen ? 'Hide Preview' : 'Show Preview'}</span>
-                  </div>
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      isDevRunning ? 'bg-emerald-400 shadow-glow-mint' : 'bg-zinc-400/40'
-                    }`}
-                  />
-                </button>
-              )}
               {onOpenScripts && (
                 <button
                   type="button"
@@ -1562,17 +1697,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   <span>Scripts</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMobileActionsMenu(false);
-                  onOpenRebase();
-                }}
-                className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-cozy-text transition-colors"
-              >
-                <GitMerge className="w-3.5 h-3.5 text-amber-400" />
-                <span>Rebase Branch</span>
-              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -1636,6 +1760,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </div>
       ) : (
         <ChatMessageList
+          ref={chatListRef}
           messages={messages}
           liveStreamingChunk={streamingChunk}
           isStreaming={isStreaming}
