@@ -406,12 +406,13 @@ export async function getTaskChats(taskId: string, options?: GetTaskChatsOptions
   return res.json();
 }
 
-export async function createChatSession(taskId: string, title?: string, agent_cli?: string, model?: string, thinking_effort?: string): Promise<ChatSession> {
+export async function createChatSession(taskId: string, title?: string, agent_cli?: string, model?: string, thinking_effort?: string, id?: string): Promise<ChatSession> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/chats`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, agent_cli, model, thinking_effort }),
+    body: JSON.stringify({ id, title, agent_cli, model, thinking_effort }),
   });
+  if (!res.ok) throw new Error(`Failed to create chat (${res.status})`);
   return res.json();
 }
 
