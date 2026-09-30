@@ -412,7 +412,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({
                       setSelectedAccountId(e.target.value);
                       if (!e.target.value) setCloneMode('url');
                     }}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-cozy-subtle border border-cozy-border text-cozy-text focus:outline-none focus:border-teal-400 cursor-pointer"
+                    className="pl-3 pr-8 py-1.5 text-xs font-semibold rounded-xl bg-cozy-subtle border border-cozy-border text-cozy-text focus:outline-none focus:border-teal-400 cursor-pointer"
                   >
                     <option value="">No linked account (Public Git)</option>
                     {gitAccounts.map((acc) => (

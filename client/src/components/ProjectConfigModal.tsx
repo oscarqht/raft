@@ -731,7 +731,7 @@ export const ProjectConfigModal: React.FC<ProjectConfigModalProps> = ({
                           setBranchConvention(e.target.value);
                         }
                       }}
-                      className="flex-1 bg-cozy-bg border border-cozy-border focus:border-sky-500 rounded-xl px-3.5 py-2 text-xs font-mono text-cozy-text focus:outline-none transition-colors"
+                      className="flex-1 bg-cozy-bg border border-cozy-border focus:border-sky-500 rounded-xl pl-3.5 pr-9 py-2 text-xs font-mono text-cozy-text focus:outline-none transition-colors cursor-pointer"
                     >
                       {branches.map((b) => (
                         <option key={b} value={b}>

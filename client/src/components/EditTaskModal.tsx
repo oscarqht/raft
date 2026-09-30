@@ -155,7 +155,7 @@ export const EditTaskModal: React.FC<EditTaskModalProps> = ({
             <select
               value={baseBranch}
               onChange={(e) => setBaseBranch(e.target.value)}
-              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm"
+              className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl pl-3.5 pr-9 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 shadow-soft-sm cursor-pointer"
             >
               {branches.map((b) => (
                 <option key={b} value={b}>

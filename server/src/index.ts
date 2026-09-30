@@ -1433,8 +1433,8 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
 
     // Create default initial chat session tab
     const chatSessionId = uuidv4();
-    const defaultCli = getEffectiveAgentCli();
-    let defaultModel = getSetting('default_model', '');
+    const defaultCli = project.default_agent_cli || getEffectiveAgentCli();
+    let defaultModel = project.default_model || getSetting('default_model', '');
     let defaultEffort = getSetting('thinking_effort', 'medium');
 
     try {
@@ -1461,6 +1461,10 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
     `).run(chatSessionId, id, 'Chat 1', defaultCli, defaultModel, defaultEffort, 'idle', now, now);
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+    const initialChat = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatSessionId);
+    if (task && initialChat) {
+      task.initialChat = initialChat;
+    }
 
     // Auto-install project dependencies in the new worktree
     const installCmd = (project.install_cmd && project.install_cmd.trim()) || detectInstallCommand(worktreePath);
