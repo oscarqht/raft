@@ -29,6 +29,8 @@ import {
   setCachedProjectTasks,
   getCachedProjectTasksGitStatus,
   setCachedProjectTasksGitStatus,
+  setCachedChats,
+  setCachedActiveChatId,
 } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
@@ -268,7 +270,12 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     if (!taskName.trim() || isCreating) return;
     setIsCreating(true);
     try {
-      const newTask = await createTask(projectId, taskName.trim(), baseBranch || project?.branch_convention || 'main');
+      const newTaskRes = await createTask(projectId, taskName.trim(), baseBranch || project?.branch_convention || 'main');
+      const { initialChat, ...newTask } = newTaskRes as any;
+      if (initialChat) {
+        setCachedChats(newTask.id, [initialChat]);
+        setCachedActiveChatId(newTask.id, initialChat.id);
+      }
       setCachedTask(newTask);
       setTasks((prev) => {
         const next = [newTask, ...prev.filter((t) => t.id !== newTask.id)];
@@ -533,7 +540,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
                   <select
                     value={baseBranch}
                     onChange={(e) => setBaseBranch(e.target.value)}
-                    className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl px-3.5 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400"
+                    className="w-full bg-cozy-surface/90 border border-cozy-border/80 rounded-2xl pl-3.5 pr-9 py-2.5 text-xs font-mono text-cozy-text focus:outline-none focus:border-teal-400 cursor-pointer"
                   >
                     {availableBranches.map((b) => (
                       <option key={b} value={b}>

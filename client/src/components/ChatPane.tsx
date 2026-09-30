@@ -118,9 +118,30 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   >(null);
 
   // Tab overrides
-  const [tabCli, setTabCli] = useState<string>('');
-  const [tabModel, setTabModel] = useState<string>('');
-  const [tabEffort, setTabEffort] = useState<string>('');
+  const [tabCli, setTabCli] = useState<string>(() => {
+    const cachedChats = getCachedChats(task.id) || [];
+    const cachedActive = getCachedActiveChatId(task.id);
+    const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
+    return active?.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+  });
+  const [tabModel, setTabModel] = useState<string>(() => {
+    const cachedChats = getCachedChats(task.id) || [];
+    const cachedActive = getCachedActiveChatId(task.id);
+    const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
+    return active?.model || task.project?.default_model || settings?.default_model || '';
+  });
+  const [tabEffort, setTabEffort] = useState<string>(() => {
+    const cachedChats = getCachedChats(task.id) || [];
+    const cachedActive = getCachedActiveChatId(task.id);
+    const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
+    return active?.thinking_effort || settings?.thinking_effort || 'medium';
+  });
+
+  // Track user manual selection so asynchronous loading/sync never reverts user choices
+  const userSelectedCliRef = useRef<string | null>(null);
+  const userSelectedModelRef = useRef<string | null>(null);
+  const userSelectedEffortRef = useRef<string | null>(null);
+  const lastSyncedChatIdRef = useRef<string | null>(null);
 
   // Tab rename state
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
@@ -258,12 +279,39 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const loadChats = async () => {
     try {
       const data = await getTaskChats(task.id);
-      setChats(data);
-      setCachedChats(task.id, data);
       if (data.length > 0) {
+        let nextChats = data;
         const nextActive = (activeChatId && data.some((c) => c.id === activeChatId))
           ? activeChatId
           : data[0].id;
+
+        // If the user made a manual selection (e.g. right after task creation while chats were loading),
+        // apply it to the active chat session instead of falling back to the server's default!
+        if (userSelectedCliRef.current || userSelectedModelRef.current || userSelectedEffortRef.current) {
+          const cliToApply = userSelectedCliRef.current || tabCli;
+          const modelToApply = userSelectedModelRef.current || tabModel;
+          const effortToApply = userSelectedEffortRef.current || tabEffort;
+
+          nextChats = data.map((c) =>
+            c.id === nextActive
+              ? {
+                  ...c,
+                  agent_cli: cliToApply || c.agent_cli,
+                  model: modelToApply || c.model,
+                  thinking_effort: effortToApply || c.thinking_effort,
+                }
+              : c
+          );
+
+          updateChatSession(nextActive, {
+            agent_cli: cliToApply,
+            model: modelToApply,
+            thinking_effort: effortToApply,
+          }).catch(() => {});
+        }
+
+        setChats(nextChats);
+        setCachedChats(task.id, nextChats);
         setActiveChatId(nextActive);
         setCachedActiveChatId(task.id, nextActive);
 
@@ -272,6 +320,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           setMessages(fresh);
           setCachedMessages(nextActive, fresh);
         } catch {}
+      } else {
+        setChats(data);
+        setCachedChats(task.id, data);
       }
     } catch {
     } finally {
@@ -283,12 +334,28 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     loadChats();
   }, [task.id]);
 
-  // Sync tab overrides when active chat or chats change
+  // Sync tab overrides when active chat changes
   useEffect(() => {
     if (!activeChatId) return;
     const currentChat = chats.find((c) => c.id === activeChatId);
-    if (currentChat) {
-      const cli = currentChat.agent_cli || settings?.agent_cli || 'agy';
+    if (!currentChat) return;
+
+    if (currentChat.status === 'running') {
+      setIsStreaming(true);
+    } else {
+      setIsStreaming(false);
+    }
+
+    // Only sync provider/model from currentChat when switching to a different chat tab
+    if (lastSyncedChatIdRef.current !== activeChatId) {
+      lastSyncedChatIdRef.current = activeChatId;
+
+      // If user had pending manual selection for this newly active chat, keep it!
+      if (userSelectedCliRef.current || userSelectedModelRef.current) {
+        return;
+      }
+
+      const cli = currentChat.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
       setTabCli(cli);
 
       // Instantly load cached models for this CLI if available
@@ -304,17 +371,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setTabModel(resolved.modelId);
         setTabEffort(resolved.effort);
       } else {
-        setTabModel(currentChat.model || settings?.default_model || '');
+        setTabModel(currentChat.model || task.project?.default_model || settings?.default_model || '');
         setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
       }
-
-      if (currentChat.status === 'running') {
-        setIsStreaming(true);
-      } else {
-        setIsStreaming(false);
-      }
     }
-  }, [activeChatId, chats, settings]);
+  }, [activeChatId, chats]);
 
   // Load messages and queued messages when active chat changes (instant cached + revalidate in background)
   useEffect(() => {
@@ -336,7 +397,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   // Load models when tab CLI changes
   useEffect(() => {
-    const cli = tabCli || settings?.agent_cli || 'agy';
+    const cli = tabCli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
     let isCurrent = true;
 
     // Immediately show cached models for this CLI if available
@@ -353,10 +414,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
         // Reconcile tabModel and tabEffort
         setTabModel((currModel) => {
-          const currentChat = chats.find((c) => c.id === activeChatId);
+          // If the user's current selection is already valid in data, PRESERVE IT!
           const isCurrValid = currModel && data.some((m) => m.id === currModel);
-          const isChatModelValid = currentChat?.model && data.some((m) => m.id === currentChat.model);
-          const candidateModel = isCurrValid ? currModel : isChatModelValid ? currentChat?.model : undefined;
+          const candidateModel = isCurrValid ? currModel : undefined;
 
           const resolved = resolveModelAndEffort(cli, data, candidateModel, tabEffort);
 
@@ -365,18 +425,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             setCachedProviderPreference(cli, resolved.modelId, resolved.effort);
           }
 
-          if (
-            activeChatId &&
-            currentChat &&
-            (currentChat.model !== resolved.modelId || currentChat.thinking_effort !== resolved.effort)
-          ) {
-            const nextChats = chats.map((c) =>
-              c.id === activeChatId
-                ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
-                : c
-            );
-            setChats(nextChats);
-            setCachedChats(task.id, nextChats);
+          if (activeChatId) {
+            setChats((prevChats) => {
+              const currentChat = prevChats.find((c) => c.id === activeChatId);
+              if (!currentChat) return prevChats;
+              if (currentChat.model === resolved.modelId && currentChat.thinking_effort === resolved.effort) {
+                return prevChats;
+              }
+              const nextChats = prevChats.map((c) =>
+                c.id === activeChatId
+                  ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
+                  : c
+              );
+              setCachedChats(task.id, nextChats);
+              return nextChats;
+            });
             updateChatSession(activeChatId, {
               model: resolved.modelId,
               thinking_effort: resolved.effort,
@@ -391,7 +454,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     return () => {
       isCurrent = false;
     };
-  }, [tabCli, settings?.agent_cli, activeChatId]);
+  }, [tabCli, activeChatId]);
 
   // Load custom skills
   useEffect(() => {
@@ -677,6 +740,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       modelId,
       effort
     );
+    userSelectedCliRef.current = null;
+    userSelectedModelRef.current = null;
+    userSelectedEffortRef.current = null;
+    lastSyncedChatIdRef.current = newChat.id;
+
     const nextChats = [...chats, newChat];
     setChats(nextChats);
     setActiveChatId(newChat.id);
@@ -736,6 +804,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   };
 
   const handleCliChange = (newCli: string) => {
+    userSelectedCliRef.current = newCli;
     setTabCli(newCli);
 
     // 1. Immediately load cached models for new CLI if available
@@ -752,6 +821,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       tabEffort
     );
 
+    userSelectedModelRef.current = nextModel;
+    userSelectedEffortRef.current = nextEffort;
     setTabModel(nextModel);
     setTabEffort(nextEffort);
     if (nextModel) {
@@ -760,52 +831,25 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
     // 3. Update the active chat in DB and state with new CLI and resolved model/effort
     if (activeChatId) {
-      const nextChats = chats.map((c) =>
-        c.id === activeChatId
-          ? { ...c, agent_cli: newCli, model: nextModel, thinking_effort: nextEffort }
-          : c
-      );
-      setChats(nextChats);
-      setCachedChats(task.id, nextChats);
+      setChats((prevChats) => {
+        const nextChats = prevChats.map((c) =>
+          c.id === activeChatId
+            ? { ...c, agent_cli: newCli, model: nextModel, thinking_effort: nextEffort }
+            : c
+        );
+        setCachedChats(task.id, nextChats);
+        return nextChats;
+      });
       updateChatSession(activeChatId, {
         agent_cli: newCli,
         model: nextModel,
         thinking_effort: nextEffort,
       }).catch(() => {});
     }
-
-    // 4. Fetch fresh models for new CLI from API
-    getModels(newCli)
-      .then((fresh) => {
-        if (Array.isArray(fresh) && fresh.length > 0) {
-          setAvailableModels(fresh);
-          setCachedModels(newCli, fresh);
-          const resolved = resolveModelAndEffort(newCli, fresh, nextModel, nextEffort);
-          setTabModel(resolved.modelId);
-          setTabEffort(resolved.effort);
-          if (resolved.modelId) {
-            setCachedProviderPreference(newCli, resolved.modelId, resolved.effort);
-          }
-
-          if (activeChatId && (resolved.modelId !== nextModel || resolved.effort !== nextEffort)) {
-            const updatedChats = chats.map((c) =>
-              c.id === activeChatId
-                ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
-                : c
-            );
-            setChats(updatedChats);
-            setCachedChats(task.id, updatedChats);
-            updateChatSession(activeChatId, {
-              model: resolved.modelId,
-              thinking_effort: resolved.effort,
-            }).catch(() => {});
-          }
-        }
-      })
-      .catch(() => {});
   };
 
   const handleModelChange = (newModel: string) => {
+    userSelectedModelRef.current = newModel;
     setTabModel(newModel);
     const found = availableModels.find((m) => m.id === newModel);
     let nextEffort = tabEffort;
@@ -815,28 +859,34 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setTabEffort(nextEffort);
       }
     }
+    userSelectedEffortRef.current = nextEffort;
     setCachedProviderPreference(tabCli, newModel, nextEffort);
     if (activeChatId) {
-      const nextChats = chats.map((c) =>
-        c.id === activeChatId ? { ...c, model: newModel, thinking_effort: nextEffort } : c
-      );
-      setChats(nextChats);
-      setCachedChats(task.id, nextChats);
+      setChats((prevChats) => {
+        const nextChats = prevChats.map((c) =>
+          c.id === activeChatId ? { ...c, model: newModel, thinking_effort: nextEffort } : c
+        );
+        setCachedChats(task.id, nextChats);
+        return nextChats;
+      });
       updateChatSession(activeChatId, { model: newModel, thinking_effort: nextEffort }).catch(() => {});
     }
   };
 
   const handleEffortChange = (newEffort: string) => {
+    userSelectedEffortRef.current = newEffort;
     setTabEffort(newEffort);
     if (tabModel) {
       setCachedProviderPreference(tabCli, tabModel, newEffort);
     }
     if (activeChatId) {
-      const nextChats = chats.map((c) =>
-        c.id === activeChatId ? { ...c, thinking_effort: newEffort } : c
-      );
-      setChats(nextChats);
-      setCachedChats(task.id, nextChats);
+      setChats((prevChats) => {
+        const nextChats = prevChats.map((c) =>
+          c.id === activeChatId ? { ...c, thinking_effort: newEffort } : c
+        );
+        setCachedChats(task.id, nextChats);
+        return nextChats;
+      });
       updateChatSession(activeChatId, { thinking_effort: newEffort }).catch(() => {});
     }
   };
@@ -1778,7 +1828,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       <select
                         value={tabCli}
                         onChange={(e) => handleCliChange(e.target.value)}
-                        className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400"
+                        className="bg-cozy-surface border border-cozy-border/80 rounded-full pl-3 pr-8 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 cursor-pointer"
                       >
                         {clis.map((c) => (
                           <option key={c.name} value={c.name}>
@@ -1800,7 +1850,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                             value={tabModel}
                             onChange={(e) => handleModelChange(e.target.value)}
                             disabled={availableModels.length === 0}
-                            className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate disabled:opacity-60"
+                            className="w-full bg-cozy-surface border border-cozy-border/80 rounded-full pl-3 pr-8 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 truncate disabled:opacity-60 cursor-pointer"
                           >
                             {availableModels.length === 0 ? (
                               <option value={tabModel || ''}>
@@ -1821,7 +1871,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                           <select
                             value={tabEffort}
                             onChange={(e) => handleEffortChange(e.target.value)}
-                            className="bg-cozy-surface border border-cozy-border/80 rounded-full px-3 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize"
+                            className="bg-cozy-surface border border-cozy-border/80 rounded-full pl-3 pr-8 py-1 text-cozy-text text-xs focus:outline-none focus:border-teal-400 capitalize cursor-pointer"
                           >
                             {(() => {
                               const current = availableModels.find((m) => m.id === tabModel);
