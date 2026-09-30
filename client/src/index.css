@@ -146,3 +146,14 @@ body.crop-dragging-active * {
   box-shadow: 0 6px 28px -2px rgba(0, 0, 0, 0.65), 0 0 0 1.5px rgba(148, 163, 184, 0.45) !important;
 }
 
+/* Modern offscreen rendering optimization (skips rendering & layout until near viewport) */
+.cv-auto-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
+}
+
+.cv-auto-code {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 60px;
+}
+
