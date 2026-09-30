@@ -14,7 +14,7 @@ import { ScriptTerminalModal } from '../components/ScriptTerminalModal';
 import { RunScriptModal } from '../components/RunScriptModal';
 import { ManageScriptsModal } from '../components/ManageScriptsModal';
 import { ProjectsTasksSidebar } from '../components/ProjectsTasksSidebar';
-import { ArrowLeft, MessageSquare, Globe, PanelLeftOpen } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Globe, PanelLeftOpen, Loader2 } from 'lucide-react';
 
 interface TaskPageProps {
   taskId?: string;
@@ -49,6 +49,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     return getCachedTask(taskId);
   });
   const [loading, setLoading] = useState(!task);
+  const [isSwitchingTask, setIsSwitchingTask] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
@@ -117,32 +118,42 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     if (!taskId) {
       setError('Task ID is missing');
       setLoading(false);
+      setIsSwitchingTask(false);
       return;
     }
 
-    // Only display full-page loading placeholder if we do not already have cached task
-    if (!task) {
-      setLoading(true);
+    let isCurrent = true;
+    if (!task || task.id !== taskId) {
+      setIsSwitchingTask(true);
     }
     setError(null);
 
     getTask(taskId)
       .then((t) => {
+        if (!isCurrent) return;
         setTask(t);
         setCachedTask(t);
+        setIsSwitchingTask(false);
         // Canonicalize URL to /projects/:projectId/tasks/:taskId if reached via /tasks/:taskId
         if (!routeProjectId && t.project_id) {
           navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true, state: { task: t } });
         }
       })
       .catch((err) => {
+        if (!isCurrent) return;
         if (!task) {
           setError(err?.message || 'Task not found');
         }
+        setIsSwitchingTask(false);
       })
       .finally(() => {
+        if (!isCurrent) return;
         setLoading(false);
       });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [taskId, routeProjectId, navigate]);
 
   useEffect(() => {
@@ -195,13 +206,19 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     );
   }
 
-  if (loading || !task) {
+  if (loading && !task) {
     return (
-      <div className="flex-1 flex items-center justify-center text-cozy-muted text-sm">
-        Loading task workspace...
+      <div className="flex-1 flex flex-col items-center justify-center h-screen bg-cozy-bg text-cozy-muted gap-3 select-none">
+        <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
       </div>
     );
   }
+
+  if (!task) {
+    return null;
+  }
+
+  const isChatLoading = isSwitchingTask || task.id !== taskId;
 
   return (
     <ScriptExecutionProvider taskId={task.id} projectId={task.project_id} ws={ws}>
@@ -209,10 +226,11 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         {/* Left Projects & Tasks Sidebar (Desktop) */}
         <div className="hidden min-[1200px]:flex h-full shrink-0">
           <ProjectsTasksSidebar
-            currentTaskId={task.id}
-            currentProjectId={task.project_id}
+            currentTaskId={taskId}
+            currentProjectId={task.project_id || routeProjectId}
             onSelectTask={(selectedTaskId, selectedProjectId) => {
-              if (selectedTaskId === task.id) return;
+              if (selectedTaskId === taskId) return;
+              setIsSwitchingTask(true);
               if (selectedProjectId) {
                 navigate(`/projects/${selectedProjectId}/tasks/${selectedTaskId}`);
               } else {
@@ -281,29 +299,37 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             mobileActivePane={mobileTab === 'chat' ? 'left' : 'right'}
             rightCollapsed={!isPreviewOpen}
             left={
-              <ChatPane
-                task={task}
-                settings={settings}
-                clis={clis}
-                ws={ws}
-                onOpenRebase={() => setIsRebaseOpen(true)}
-                onOpenSubmit={() => setIsSubmitOpen(true)}
-                onOpenScripts={() => setIsRunScriptOpen(true)}
-                onDeleteTask={onDeleteTask}
-                isDeletingTask={isDeletingTask}
-                isPreviewOpen={isPreviewOpen}
-                onTogglePreview={() => {
-                  if (window.innerWidth < 1200) {
-                    setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
-                  } else {
-                    setIsPreviewOpen((prev) => !prev);
-                  }
-                }}
-                isDevRunning={isDevRunning}
-              />
+              isChatLoading ? (
+                <div className="flex-1 flex flex-col items-center justify-center h-full bg-cozy-bg text-cozy-muted gap-3 select-none">
+                  <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+                </div>
+              ) : (
+                <ChatPane
+                  key={task.id}
+                  task={task}
+                  settings={settings}
+                  clis={clis}
+                  ws={ws}
+                  onOpenRebase={() => setIsRebaseOpen(true)}
+                  onOpenSubmit={() => setIsSubmitOpen(true)}
+                  onOpenScripts={() => setIsRunScriptOpen(true)}
+                  onDeleteTask={onDeleteTask}
+                  isDeletingTask={isDeletingTask}
+                  isPreviewOpen={isPreviewOpen}
+                  onTogglePreview={() => {
+                    if (window.innerWidth < 1200) {
+                      setMobileTab((prev) => (prev === 'chat' ? 'preview' : 'chat'));
+                    } else {
+                      setIsPreviewOpen((prev) => !prev);
+                    }
+                  }}
+                  isDevRunning={isDevRunning}
+                />
+              )
             }
             right={
               <PreviewPane
+                key={task.id}
                 task={task}
                 ws={ws}
                 onAttachToChat={(attachments, url) => {

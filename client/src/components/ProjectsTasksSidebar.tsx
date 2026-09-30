@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FolderGit2,
@@ -14,10 +14,17 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { Task, Project } from '../types';
-import { getTasks, getActiveDevServers, getProjects } from '../api';
+import { Task, Project, TaskGitStatus } from '../types';
+import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus } from '../api';
 import { formatRelativeTime } from '../utils/time';
 import { ProjectIcon } from './ProjectIcon';
+import {
+  getCachedUnreadReplyTaskIds,
+  addUnreadReplyTaskId,
+  removeUnreadReplyTaskId,
+  getCachedTaskQueuedCount,
+  getCachedQueuedMessages,
+} from '../cache';
 
 interface ProjectsTasksSidebarProps {
   currentTaskId?: string;
@@ -52,6 +59,76 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   const [activeDevServerTaskIds, setActiveDevServerTaskIds] = useState<Set<string>>(new Set());
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
 
+  // Task Git status and agent status for concise badges and indicator
+  const [tasksGitStatus, setTasksGitStatus] = useState<Record<string, TaskGitStatus>>({});
+  const [tasksAgentStatus, setTasksAgentStatus] = useState<Record<string, 'WIP' | 'idle'>>({});
+  const [unreadTaskIds, setUnreadTaskIds] = useState<string[]>(() => getCachedUnreadReplyTaskIds());
+
+  const tasksAgentStatusRef = useRef<Record<string, 'WIP' | 'idle'>>({});
+  tasksAgentStatusRef.current = tasksAgentStatus;
+
+  const currentTaskIdRef = useRef(currentTaskId);
+  currentTaskIdRef.current = currentTaskId;
+
+  const fetchGitStatuses = useCallback(async (taskList: Task[], force = false) => {
+    const projectIds = Array.from(new Set(taskList.map((t) => t.project_id).filter(Boolean)));
+    if (projectIds.length === 0) return;
+
+    try {
+      const results = await Promise.allSettled(
+        projectIds.map((pId) => getProjectTasksGitStatus(pId, force))
+      );
+      const combined: Record<string, TaskGitStatus> = {};
+      results.forEach((res) => {
+        if (res.status === 'fulfilled' && res.value) {
+          Object.assign(combined, res.value);
+        }
+      });
+      setTasksGitStatus((prev) => ({ ...prev, ...combined }));
+    } catch (err) {
+      console.error('Failed to load git statuses for sidebar:', err);
+    }
+  }, []);
+
+  // Handle agent replying status updates & unread completed reply notifications
+  const handleTaskAgentStatus = useCallback(
+    (data: { taskId?: string; sessionId?: string; agentStatus?: 'WIP' | 'idle' }) => {
+      const { taskId, sessionId, agentStatus } = data;
+      if (!taskId || !agentStatus) return;
+
+      const prevStatus = tasksAgentStatusRef.current[taskId] || 'idle';
+      setTasksAgentStatus((prev) => {
+        const next = { ...prev, [taskId]: agentStatus };
+        tasksAgentStatusRef.current = next;
+        return next;
+      });
+
+      if (agentStatus === 'WIP') {
+        removeUnreadReplyTaskId(taskId);
+        setUnreadTaskIds((prev) => prev.filter((id) => id !== taskId));
+      } else if (agentStatus === 'idle') {
+        const wasReplying = prevStatus === 'WIP';
+        const taskQueueCount = getCachedTaskQueuedCount(taskId);
+        const sessionQueue = sessionId ? getCachedQueuedMessages(sessionId) : [];
+        const hasQueue = taskQueueCount > 0 || sessionQueue.length > 0;
+
+        if (wasReplying && !hasQueue) {
+          const isCurrentActive = taskId === currentTaskIdRef.current;
+          const isFocused = typeof document !== 'undefined' && document.hasFocus();
+
+          if (isCurrentActive && isFocused) {
+            removeUnreadReplyTaskId(taskId);
+            setUnreadTaskIds((prev) => prev.filter((id) => id !== taskId));
+          } else {
+            addUnreadReplyTaskId(taskId);
+            setUnreadTaskIds((prev) => (prev.includes(taskId) ? prev : [...prev, taskId]));
+          }
+        }
+      }
+    },
+    []
+  );
+
   // Load all tasks and projects
   const fetchData = async () => {
     try {
@@ -67,6 +144,18 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
       ]);
       setTasks(tasksData);
       setProjects(projectsData);
+
+      const initialAgentStatus: Record<string, 'WIP' | 'idle'> = {};
+      tasksData.forEach((t) => {
+        initialAgentStatus[t.id] = t.agent_status || 'idle';
+      });
+      setTasksAgentStatus((prev) => {
+        const next = { ...initialAgentStatus, ...prev };
+        tasksAgentStatusRef.current = next;
+        return next;
+      });
+
+      fetchGitStatuses(tasksData);
     } catch (err) {
       console.error('Failed to load tasks and projects for sidebar:', err);
     } finally {
@@ -89,22 +178,72 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     fetchActiveDevServers();
   }, []);
 
+  // Clear unread indicator when current task changes
+  useEffect(() => {
+    if (currentTaskId) {
+      removeUnreadReplyTaskId(currentTaskId);
+      setUnreadTaskIds((prev) => prev.filter((id) => id !== currentTaskId));
+    }
+  }, [currentTaskId]);
+
+  // Window focus listener to refresh statuses and clear active task unread notification
+  useEffect(() => {
+    const handleFocus = () => {
+      if (currentTaskIdRef.current) {
+        removeUnreadReplyTaskId(currentTaskIdRef.current);
+        setUnreadTaskIds((prev) => prev.filter((id) => id !== currentTaskIdRef.current));
+      }
+      if (tasks.length > 0) {
+        fetchGitStatuses(tasks, false);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [tasks, fetchGitStatuses]);
+
   // Listen for task and project update events
   useEffect(() => {
     const handleUpdate = () => {
       fetchData();
     };
+    const handleStatusUpdate = () => {
+      fetchData();
+      if (tasks.length > 0) {
+        fetchGitStatuses(tasks, true);
+      }
+    };
     window.addEventListener('task-updated', handleUpdate);
-    window.addEventListener('task-status-updated', handleUpdate);
+    window.addEventListener('task-status-updated', handleStatusUpdate);
     window.addEventListener('projects-updated', handleUpdate);
     return () => {
       window.removeEventListener('task-updated', handleUpdate);
-      window.removeEventListener('task-status-updated', handleUpdate);
+      window.removeEventListener('task-status-updated', handleStatusUpdate);
       window.removeEventListener('projects-updated', handleUpdate);
     };
-  }, []);
+  }, [tasks, fetchGitStatuses]);
 
-  // Listen for dev server state updates over WebSocket
+  // Listen for task agent status updates (custom event & unread notifications)
+  useEffect(() => {
+    const handleAgentStatusUpdate = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail) {
+        handleTaskAgentStatus(detail);
+      }
+    };
+    const handleUnreadUpdate = () => {
+      setUnreadTaskIds(getCachedUnreadReplyTaskIds());
+    };
+
+    window.addEventListener('task-agent-status-updated', handleAgentStatusUpdate);
+    window.addEventListener('unread-task-replies-updated', handleUnreadUpdate);
+
+    return () => {
+      window.removeEventListener('task-agent-status-updated', handleAgentStatusUpdate);
+      window.removeEventListener('unread-task-replies-updated', handleUnreadUpdate);
+    };
+  }, [handleTaskAgentStatus]);
+
+  // Listen for dev server state and agent status updates over WebSocket
   useEffect(() => {
     if (!ws) return;
 
@@ -133,13 +272,15 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
             }
             return next;
           });
+        } else if (msg.type === 'task_agent_status') {
+          handleTaskAgentStatus(msg);
         }
       } catch {}
     };
 
     ws.addEventListener('message', handleWs);
     return () => ws.removeEventListener('message', handleWs);
-  }, [ws]);
+  }, [ws, handleTaskAgentStatus]);
 
   // Ensure project containing the active task is expanded if active task is beyond top 10
   useEffect(() => {
@@ -249,6 +390,102 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
       }
       return next;
     });
+  };
+
+  const renderConciseTaskStatusBadge = (t: Task, s?: TaskGitStatus) => {
+    const isCompleted = t.status === 'completed';
+
+    let gitBadge: React.ReactNode = null;
+    if (s) {
+      const totalChanges =
+        (s.staged?.length || 0) +
+        (s.unstaged?.length || 0) +
+        (s.untracked?.length || 0);
+      const hasLocal = Boolean(s.hasLocalChanges) || totalChanges > 0;
+      const unpushed = s.unpushedCount || 0;
+      const isMerged = Boolean(s.isMerged);
+      const pr = s.pr;
+      const isPrOpen = pr && pr.state === 'open';
+      const canCreatePr =
+        Boolean(s.createPrUrl) &&
+        !isMerged &&
+        !isPrOpen &&
+        !hasLocal &&
+        unpushed === 0 &&
+        (s.aheadCount || 0) > 0;
+
+      if (hasLocal) {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/25 shrink-0"
+            title={`${totalChanges} uncommitted local change${totalChanges === 1 ? '' : 's'}`}
+          >
+            +{totalChanges}
+          </span>
+        );
+      } else if (unpushed > 0) {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25 shrink-0"
+            title={`${unpushed} unpushed commit${unpushed === 1 ? '' : 's'}`}
+          >
+            ↑{unpushed}
+          </span>
+        );
+      } else if (isMerged) {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/25 shrink-0"
+            title="Merged into base branch"
+          >
+            merged
+          </span>
+        );
+      } else if (isPrOpen) {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 shrink-0"
+            title={`PR #${pr?.number || ''} open`}
+          >
+            PR{pr?.number ? ` #${pr.number}` : ''}
+          </span>
+        );
+      } else if (canCreatePr) {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25 shrink-0"
+            title="All changes pushed, ready to open PR"
+          >
+            ready
+          </span>
+        );
+      } else {
+        gitBadge = (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-medium bg-cozy-subtle/80 text-cozy-muted/80 border border-cozy-border/40 shrink-0"
+            title="Working tree clean"
+          >
+            clean
+          </span>
+        );
+      }
+    }
+
+    if (!isCompleted && !gitBadge) return null;
+
+    return (
+      <div className="flex items-center gap-1 shrink-0">
+        {isCompleted && (
+          <span
+            className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shrink-0"
+            title="Task completed"
+          >
+            Done
+          </span>
+        )}
+        {gitBadge}
+      </div>
+    );
   };
 
   const handleCreateTaskInProject = (e: React.MouseEvent, projectId: string) => {
@@ -385,6 +622,10 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                       {visibleTasks.map((task) => {
                         const isActive = task.id === currentTaskId;
                         const hasActiveDevServer = activeDevServerTaskIds.has(task.id);
+                        const agentStatus = tasksAgentStatus[task.id] || task.agent_status || 'idle';
+                        const isReplying = agentStatus === 'WIP';
+                        const hasUnreadReply = !isReplying && unreadTaskIds.includes(task.id);
+                        const gitStatus = tasksGitStatus[task.id];
 
                         return (
                           <button
@@ -417,24 +658,36 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                                 )}
                               </div>
 
-                              <div className="flex items-center gap-2 text-[10px] text-cozy-muted/70 mt-0.5">
+                              <div className="flex items-center gap-1.5 text-[10px] text-cozy-muted/70 mt-0.5 overflow-hidden">
                                 {task.branch && (
-                                  <span className="flex items-center gap-1 font-mono text-[10px] text-cozy-muted/80 max-w-[110px] truncate">
+                                  <span className="flex items-center gap-0.5 font-mono text-[10px] text-cozy-muted/80 max-w-[85px] truncate shrink-0">
                                     <GitBranch className="w-2.5 h-2.5 text-teal-500/70 shrink-0" />
                                     <span className="truncate">{task.branch}</span>
                                   </span>
                                 )}
+                                {renderConciseTaskStatusBadge(task, gitStatus)}
                                 {(task.updated_at || task.created_at) && (
-                                  <span className="text-cozy-muted/50 shrink-0">
+                                  <span className="text-cozy-muted/50 shrink-0 truncate">
                                     • {formatRelativeTime(task.updated_at || task.created_at)}
                                   </span>
                                 )}
                               </div>
                             </div>
 
-                            {isActive && (
-                              <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
-                            )}
+                            <div className="shrink-0 flex items-center justify-center pl-1">
+                              {isReplying ? (
+                                <span title="Agent is replying..." className="inline-flex items-center justify-center">
+                                  <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
+                                </span>
+                              ) : hasUnreadReply ? (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
+                                  title="Agent finished replying"
+                                />
+                              ) : isActive ? (
+                                <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
+                              ) : null}
+                            </div>
                           </button>
                         );
                       })}

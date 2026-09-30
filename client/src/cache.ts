@@ -352,3 +352,61 @@ export function clearCachedQueuedMessages(sessionId: string): void {
     localStorage.removeItem(`${PREFIX}queue:${sessionId}`);
   } catch {}
 }
+
+// Task Queued Messages Count Cache
+export function setCachedTaskQueuedCount(taskId: string, count: number): void {
+  if (!taskId) return;
+  try {
+    if (count <= 0) {
+      localStorage.removeItem(`${PREFIX}task_queue_count:${taskId}`);
+    } else {
+      localStorage.setItem(`${PREFIX}task_queue_count:${taskId}`, String(count));
+    }
+  } catch {}
+}
+
+export function getCachedTaskQueuedCount(taskId: string): number {
+  if (!taskId) return 0;
+  try {
+    const raw = localStorage.getItem(`${PREFIX}task_queue_count:${taskId}`);
+    return raw ? parseInt(raw, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Unread Task Replies Cache (Blue dot notification)
+export function getCachedUnreadReplyTaskIds(): string[] {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}unread_replies`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function setCachedUnreadReplyTaskIds(taskIds: string[]): void {
+  try {
+    localStorage.setItem(`${PREFIX}unread_replies`, JSON.stringify(taskIds));
+  } catch {}
+}
+
+export function addUnreadReplyTaskId(taskId: string): void {
+  if (!taskId) return;
+  const list = getCachedUnreadReplyTaskIds();
+  if (!list.includes(taskId)) {
+    setCachedUnreadReplyTaskIds([...list, taskId]);
+    window.dispatchEvent(new CustomEvent('unread-task-replies-updated', { detail: { taskId, action: 'add' } }));
+  }
+}
+
+export function removeUnreadReplyTaskId(taskId: string): void {
+  if (!taskId) return;
+  const list = getCachedUnreadReplyTaskIds();
+  if (list.includes(taskId)) {
+    const updated = list.filter((id) => id !== taskId);
+    setCachedUnreadReplyTaskIds(updated);
+    window.dispatchEvent(new CustomEvent('unread-task-replies-updated', { detail: { taskId, action: 'remove' } }));
+  }
+}
+

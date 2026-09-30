@@ -29,6 +29,8 @@ import {
   resolveModelAndEffort,
   getCachedQueuedMessages,
   setCachedQueuedMessages,
+  setCachedTaskQueuedCount,
+  removeUnreadReplyTaskId,
 } from '../cache';
 
 interface ChatPaneProps {
@@ -79,6 +81,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       : cachedSessions[0]?.id;
     return targetId ? (getCachedMessages(targetId) || []) : [];
   });
+  const [loadingChats, setLoadingChats] = useState(true);
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -210,6 +213,18 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const configBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    if (task?.id) {
+      removeUnreadReplyTaskId(task.id);
+    }
+  }, [task?.id]);
+
+  useEffect(() => {
+    if (task?.id) {
+      setCachedTaskQueuedCount(task.id, queuedMessages.length);
+    }
+  }, [task?.id, queuedMessages.length]);
+
+  useEffect(() => {
     if (!showConfig) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (
@@ -246,17 +261,22 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       setChats(data);
       setCachedChats(task.id, data);
       if (data.length > 0) {
-        setActiveChatId((curr) => {
-          if (curr && data.some((c) => c.id === curr)) {
-            setCachedActiveChatId(task.id, curr);
-            return curr;
-          }
-          const nextActive = data[0].id;
-          setCachedActiveChatId(task.id, nextActive);
-          return nextActive;
-        });
+        const nextActive = (activeChatId && data.some((c) => c.id === activeChatId))
+          ? activeChatId
+          : data[0].id;
+        setActiveChatId(nextActive);
+        setCachedActiveChatId(task.id, nextActive);
+
+        try {
+          const fresh = await getChatMessages(nextActive);
+          setMessages(fresh);
+          setCachedMessages(nextActive, fresh);
+        } catch {}
       }
-    } catch {}
+    } catch {
+    } finally {
+      setLoadingChats(false);
+    }
   };
 
   useEffect(() => {
@@ -1246,6 +1266,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       handleSendMessage();
     }
   };
+
+  if (loadingChats) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center h-full bg-cozy-bg text-cozy-muted gap-3 select-none">
+        <Loader2 className="w-7 h-7 text-teal-500 animate-spin" />
+      </div>
+    );
+  }
 
   const activeChat = chats.find((c) => c.id === activeChatId);
 
