@@ -32,6 +32,12 @@ import {
   setCachedChats,
   setCachedMessages,
   setCachedTask,
+  getCachedAllTasksGitStatus,
+  setCachedAllTasksGitStatus,
+  getCachedProjectTasksGitStatus,
+  setCachedProjectTasksGitStatus,
+  getCachedActiveDevServers,
+  setCachedActiveDevServers,
 } from '../cache';
 
 interface ProjectsTasksSidebarProps {
@@ -64,12 +70,40 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   const [tasks, setTasks] = useState<Task[]>(() => getCachedAllTasks() || []);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeDevServerTaskIds, setActiveDevServerTaskIds] = useState<Set<string>>(new Set());
+  const [activeDevServerTaskIds, setActiveDevServerTaskIds] = useState<Set<string>>(() => {
+    const cached = getCachedActiveDevServers();
+    return cached ? new Set(cached) : new Set();
+  });
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(new Set());
 
   // Task Git status and agent status for concise badges and indicator
-  const [tasksGitStatus, setTasksGitStatus] = useState<Record<string, TaskGitStatus>>({});
-  const [tasksAgentStatus, setTasksAgentStatus] = useState<Record<string, 'WIP' | 'idle'>>({});
+  const [tasksGitStatus, setTasksGitStatus] = useState<Record<string, TaskGitStatus>>(() => {
+    const globalCached = getCachedAllTasksGitStatus();
+    if (globalCached && Object.keys(globalCached).length > 0) {
+      return globalCached;
+    }
+    const cachedTasks = getCachedAllTasks() || [];
+    const projectIds = Array.from(new Set(cachedTasks.map((t) => t.project_id).filter(Boolean)));
+    const aggregated: Record<string, TaskGitStatus> = {};
+    for (const pId of projectIds) {
+      const pStatus = getCachedProjectTasksGitStatus(pId);
+      if (pStatus) {
+        Object.assign(aggregated, pStatus);
+      }
+    }
+    if (Object.keys(aggregated).length > 0) {
+      setCachedAllTasksGitStatus(aggregated);
+    }
+    return aggregated;
+  });
+  const [tasksAgentStatus, setTasksAgentStatus] = useState<Record<string, 'WIP' | 'idle'>>(() => {
+    const cachedTasks = getCachedAllTasks() || [];
+    const initial: Record<string, 'WIP' | 'idle'> = {};
+    cachedTasks.forEach((t) => {
+      if (t.agent_status) initial[t.id] = t.agent_status;
+    });
+    return initial;
+  });
   const [unreadTaskIds, setUnreadTaskIds] = useState<string[]>(() => getCachedUnreadReplyTaskIds());
 
   const tasksAgentStatusRef = useRef<Record<string, 'WIP' | 'idle'>>({});
@@ -87,12 +121,20 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         projectIds.map((pId) => getProjectTasksGitStatus(pId, force))
       );
       const combined: Record<string, TaskGitStatus> = {};
-      results.forEach((res) => {
+      results.forEach((res, index) => {
         if (res.status === 'fulfilled' && res.value) {
+          const pId = projectIds[index];
+          if (pId) {
+            setCachedProjectTasksGitStatus(pId, res.value);
+          }
           Object.assign(combined, res.value);
         }
       });
-      setTasksGitStatus((prev) => ({ ...prev, ...combined }));
+      setTasksGitStatus((prev) => {
+        const next = { ...prev, ...combined };
+        setCachedAllTasksGitStatus(next);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to load git statuses for sidebar:', err);
     }
@@ -215,12 +257,16 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     try {
       const activeIds = await getActiveDevServers();
       setActiveDevServerTaskIds(new Set(activeIds));
+      setCachedActiveDevServers(activeIds);
     } catch (err) {
       console.error('Failed to load active dev servers:', err);
     }
   };
 
   useEffect(() => {
+    if (tasks.length > 0) {
+      fetchGitStatuses(tasks, false);
+    }
     fetchData();
     fetchActiveDevServers();
   }, []);
@@ -253,7 +299,15 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     const handleUpdate = () => {
       fetchData();
     };
-    const handleStatusUpdate = () => {
+    const handleStatusUpdate = (e?: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (detail?.taskId && detail?.status) {
+        setTasksGitStatus((prev) => {
+          const next = { ...prev, [detail.taskId]: detail.status };
+          setCachedAllTasksGitStatus(next);
+          return next;
+        });
+      }
       fetchData();
       if (tasks.length > 0) {
         fetchGitStatuses(tasks, true);
