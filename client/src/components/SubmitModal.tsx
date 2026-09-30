@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink, Loader2 } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 import { useSubmit } from '../contexts/SubmitContext';
@@ -367,7 +367,11 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-ocean cursor-pointer"
           >
-            <UploadCloud className="w-3.5 h-3.5" />
+            {isGenerating || isSubmitting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <UploadCloud className="w-3.5 h-3.5" />
+            )}
             <span>
               {isSuccess
                 ? 'Done'

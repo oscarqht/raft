@@ -54,16 +54,15 @@ export const SubmitDock: React.FC = () => {
                   {isFailed && <AlertTriangle className="w-2.5 h-2.5 mr-1" />}
                   {isRunning ? 'submitting' : isFailed ? 'failed' : 'pushed'}
                 </span>
-                {!isRunning && (
-                  <button
-                    type="button"
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all cursor-pointer"
-                    onClick={() => dismissJob(task.id)}
-                    title="Dismiss"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="w-6 h-6 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all cursor-pointer"
+                  onClick={() => dismissJob(task.id)}
+                  title={isRunning ? 'Dismiss (submit keeps running in the background)' : 'Dismiss'}
+                  aria-label="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
             <div className="pt-2 border-t border-cozy-border/50">
