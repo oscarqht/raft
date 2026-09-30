@@ -6,7 +6,8 @@ import {
   CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp,
   KeyRound, RotateCcw, Braces
 } from 'lucide-react';
-import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload } from '../types';
+import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload, ActivitySummary } from '../types';
+import { getMessageActivity } from '../api';
 import Ansi from 'ansi-to-react';
 import { MarkdownView } from './MarkdownView';
 import { HumanInputCard } from './HumanInputCard';
@@ -569,15 +570,23 @@ const StepCard: React.FC<{
 };
 
 const AgentActivityView: React.FC<{
+  messageId?: string;
   steps: AgentStep[];
+  activitySummary?: ActivitySummary;
   isStreaming?: boolean;
   onAbort?: () => void;
   onCopyAll: (text: string) => void;
-}> = ({ steps, isStreaming, onAbort, onCopyAll }) => {
+  onStepsLoaded?: (steps: AgentStep[]) => void;
+}> = ({ messageId, steps: propSteps, activitySummary, isStreaming, onAbort, onCopyAll, onStepsLoaded }) => {
   const [isManuallyToggled, setIsManuallyToggled] = useState<boolean | null>(null);
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set());
   const [copiedAll, setCopiedAll] = useState(false);
   const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+  const [loadedSteps, setLoadedSteps] = useState<AgentStep[] | null>(null);
+  const [isLoadingSteps, setIsLoadingSteps] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const steps = propSteps && propSteps.length > 0 ? propSteps : (loadedSteps || []);
 
   // Default open while streaming; auto-collapse when completed
   const isExpanded = isManuallyToggled !== null ? isManuallyToggled : Boolean(isStreaming);
@@ -685,13 +694,23 @@ const AgentActivityView: React.FC<{
   }, []);
 
   const totalDuration = useMemo(() => {
-    return steps.reduce((sum, s) => sum + (s.duration || 0), 0);
-  }, [steps]);
+    if (steps.length > 0) {
+      return steps.reduce((sum, s) => sum + (s.duration || 0), 0);
+    }
+    return activitySummary?.totalDuration || 0;
+  }, [steps, activitySummary]);
 
   const summary = useMemo(() => {
-    const files = steps.filter((s) => s.category === 'file_read' || s.category === 'file_write').length;
-    const commands = steps.filter((s) => s.category === 'command').length;
-    const count = steps.length;
+    const files =
+      steps.length > 0
+        ? steps.filter((s) => s.category === 'file_read' || s.category === 'file_write').length
+        : activitySummary?.files || 0;
+    const commands =
+      steps.length > 0
+        ? steps.filter((s) => s.category === 'command').length
+        : activitySummary?.commands || 0;
+    const count =
+      steps.length > 0 ? steps.length : activitySummary?.totalSteps || 0;
 
     let label = '';
     let icon = <Sparkles className="w-3.5 h-3.5 text-teal-500 shrink-0" />;
@@ -709,7 +728,7 @@ const AgentActivityView: React.FC<{
     }
 
     return { label, count, icon };
-  }, [steps]);
+  }, [steps, activitySummary]);
 
   const handleCopyActions = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -729,6 +748,30 @@ const AgentActivityView: React.FC<{
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
+  const handleToggleExpand = () => {
+    const nextState = !isExpanded;
+    setIsManuallyToggled(nextState);
+
+    // If expanding, steps are not loaded yet, and we have a messageId:
+    if (nextState && steps.length === 0 && messageId && !isLoadingSteps) {
+      setIsLoadingSteps(true);
+      setLoadError(null);
+      getMessageActivity(messageId)
+        .then((res) => {
+          if (res && Array.isArray(res.steps)) {
+            setLoadedSteps(res.steps);
+            onStepsLoaded?.(res.steps);
+          }
+        })
+        .catch((err) => {
+          setLoadError(err.message || 'Failed to load command activity');
+        })
+        .finally(() => {
+          setIsLoadingSteps(false);
+        });
+    }
+  };
+
   const activeStep = useMemo(() => {
     return steps.find((s) => s.status === 'running');
   }, [steps]);
@@ -738,7 +781,7 @@ const AgentActivityView: React.FC<{
       {/* Summary Pill Button */}
       <button
         type="button"
-        onClick={() => setIsManuallyToggled(!isExpanded)}
+        onClick={handleToggleExpand}
         className="inline-flex items-center gap-2 text-xs font-medium text-cozy-muted hover:text-cozy-text transition-colors py-1 px-2.5 rounded-lg bg-cozy-subtle hover:bg-cozy-subtle/80 border border-cozy-border cursor-pointer max-w-full shrink-0 select-none whitespace-nowrap"
       >
         {isStreaming && activeStep ? (
@@ -765,43 +808,68 @@ const AgentActivityView: React.FC<{
       {/* Expanded Interactive Activity Container */}
       {isExpanded && (
         <div className="relative mt-2 w-full">
-          <div
-            ref={containerRef}
-            onScroll={handleScroll}
-            className="w-full p-3 rounded-xl bg-cozy-subtle/40 dark:bg-[#1f1f1f] border border-cozy-border flex flex-col gap-2 max-h-96 overflow-y-auto"
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
-              <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
-                Agent Activity Timeline ({steps.length} {steps.length === 1 ? 'step' : 'steps'})
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopyActions}
-                  className="flex items-center gap-1 text-[11px] text-cozy-muted hover:text-teal-500 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
-                  title="Copy all actions and outputs"
-                >
-                  {copiedAll ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                  <span>{copiedAll ? 'Copied' : 'Copy log'}</span>
-                </button>
+          {isLoadingSteps ? (
+            <div className="w-full p-3.5 rounded-xl bg-cozy-subtle/40 dark:bg-[#1f1f1f] border border-cozy-border flex flex-col gap-2.5 animate-pulse">
+              <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
+                <div className="h-3 w-40 bg-cozy-muted/20 rounded" />
+                <div className="h-3 w-16 bg-cozy-muted/20 rounded" />
+              </div>
+              <div className="space-y-2 py-1">
+                <div className="h-8 bg-cozy-subtle rounded-lg w-full" />
+                <div className="h-8 bg-cozy-subtle rounded-lg w-full" />
+                <div className="h-8 bg-cozy-subtle rounded-lg w-full" />
               </div>
             </div>
-
-            <div ref={contentRef} className="flex flex-col gap-1.5">
-              {steps.map((step) => (
-                <StepCard
-                  key={step.id}
-                  step={step}
-                  isExpanded={expandedStepIds.has(step.id)}
-                  onToggleExpand={() => toggleStepExpand(step.id)}
-                  onAbort={onAbort}
-                />
-              ))}
+          ) : loadError ? (
+            <div className="w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-between">
+              <span>{loadError}</span>
+              <button
+                type="button"
+                onClick={handleToggleExpand}
+                className="underline hover:text-rose-300 ml-2 cursor-pointer font-medium"
+              >
+                Retry
+              </button>
             </div>
-          </div>
+          ) : (
+            <div
+              ref={containerRef}
+              onScroll={handleScroll}
+              className="w-full p-3 rounded-xl bg-cozy-subtle/40 dark:bg-[#1f1f1f] border border-cozy-border flex flex-col gap-2 max-h-96 overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-cozy-border/40 select-none">
+                <span className="text-[11px] font-semibold text-cozy-muted uppercase tracking-wider">
+                  Agent Activity Timeline ({summary.count} {summary.count === 1 ? 'step' : 'steps'})
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopyActions}
+                    className="flex items-center gap-1 text-[11px] text-cozy-muted hover:text-teal-500 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
+                    title="Copy all actions and outputs"
+                  >
+                    {copiedAll ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedAll ? 'Copied' : 'Copy log'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div ref={contentRef} className="flex flex-col gap-1.5">
+                {steps.map((step) => (
+                  <StepCard
+                    key={step.id}
+                    step={step}
+                    isExpanded={expandedStepIds.has(step.id)}
+                    onToggleExpand={() => toggleStepExpand(step.id)}
+                    onAbort={onAbort}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Floating Scroll to Bottom Button */}
-          {showScrollBottomBtn && (
+          {showScrollBottomBtn && !isLoadingSteps && (
             <button
               type="button"
               onClick={scrollToBottom}
@@ -823,6 +891,7 @@ interface ChatMessageListProps {
   liveStreamingChunk?: string;
   isStreaming?: boolean;
   taskId?: string;
+  sessionId?: string;
   clis?: CliInfo[];
   currentCli?: string;
   onRetryPrompt?: (userPrompt: string, failedMsgId: string) => void;
@@ -838,6 +907,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   liveStreamingChunk,
   isStreaming,
   taskId,
+  sessionId,
   clis,
   currentCli,
   onRetryPrompt,
@@ -851,6 +921,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
   const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
   const isFirstRender = useRef(true);
+  const shouldScrollToBottomOnLoadRef = useRef(true);
+  const prevTaskIdRef = useRef<string | undefined>(taskId);
+  const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
   const fallbackCopy = useCallback((text: string) => {
     try {
@@ -927,12 +1000,58 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
     overscan: 5,
   });
 
+  // When switching tasks or sessions, arm the instant scroll to bottom on load
   useEffect(() => {
-    isFirstRender.current = true;
-  }, [taskId]);
+    if (taskId !== prevTaskIdRef.current || sessionId !== prevSessionIdRef.current) {
+      prevTaskIdRef.current = taskId;
+      prevSessionIdRef.current = sessionId;
+      shouldScrollToBottomOnLoadRef.current = true;
+      isAutoScrollEnabled.current = true;
+    }
+  }, [taskId, sessionId]);
 
   useEffect(() => {
-    if (!isAutoScrollEnabled.current && !isFirstRender.current) return;
+    if (messages.length === 0) return;
+
+    const performInstantScroll = () => {
+      if (messages.length > 0) {
+        rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'auto' });
+      }
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    };
+
+    if (shouldScrollToBottomOnLoadRef.current || isFirstRender.current) {
+      shouldScrollToBottomOnLoadRef.current = false;
+      isFirstRender.current = false;
+      isAutoScrollEnabled.current = true;
+
+      // 1. Immediately scroll
+      performInstantScroll();
+
+      // 2. Next animation frame (once initial DOM nodes are created)
+      const raf = requestAnimationFrame(() => {
+        performInstantScroll();
+      });
+
+      // 3. Short timeouts after TanStack virtualizer measureElement has measured dynamic row heights
+      const timer1 = setTimeout(() => {
+        performInstantScroll();
+      }, 50);
+
+      const timer2 = setTimeout(() => {
+        performInstantScroll();
+      }, 150);
+
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+
+    if (!isAutoScrollEnabled.current) return;
 
     if (isStreaming) {
       const raf = requestAnimationFrame(() => {
@@ -942,16 +1061,8 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = React.memo(({
       });
       return () => cancelAnimationFrame(raf);
     } else {
-      if (isFirstRender.current) {
-        isFirstRender.current = false;
-        if (scrollContainerRef.current) {
-          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-        }
-      } else {
-        if (messages.length > 0) {
-          rowVirtualizer.scrollToIndex(messages.length - 1, { align: 'end', behavior: 'smooth' });
-        }
-      }
+      // Instant scroll to bottom when new messages arrive or turn finishes
+      performInstantScroll();
     }
   }, [messages, liveStreamingChunk, isStreaming, rowVirtualizer]);
 
@@ -1261,8 +1372,8 @@ const MessageItem: React.FC<{
   // Fallback friendly message if assistant completed actions with no explicit closing text
   const displayContent =
     cleanContent ||
-    (!isStreaming && !isUser && (steps.length > 0 || thoughts)
-      ? `Completed ${steps.length > 0 ? `${steps.length} ` : ''}workspace actions and finished tasks.`
+    (!isStreaming && !isUser && (steps.length > 0 || thoughts || msg.has_activity || msg.activity_summary)
+      ? `Completed ${(msg.activity_summary?.totalSteps || steps.length) > 0 ? `${msg.activity_summary?.totalSteps || steps.length} ` : ''}workspace actions and finished tasks.`
       : '');
 
   // Text that should be copied when clicking copy
@@ -1390,12 +1501,17 @@ const MessageItem: React.FC<{
         }`}
       >
         {/* Agent Activity Timeline & Steps (Both streaming & completed) */}
-        {!isUser && steps.length > 0 && !spendCapInfo.isSpendCap && !authInfo.isAuthRequired && (
+        {!isUser && (steps.length > 0 || msg.has_activity || msg.activity_summary) && !spendCapInfo.isSpendCap && !authInfo.isAuthRequired && (
           <AgentActivityView
+            messageId={msg.id}
             steps={steps}
+            activitySummary={msg.activity_summary}
             isStreaming={isStreaming}
             onAbort={onAbort}
             onCopyAll={(text) => handleCopyText('thought', text)}
+            onStepsLoaded={(loaded) => {
+              msg.steps = loaded;
+            }}
           />
         )}
 

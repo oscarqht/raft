@@ -3,6 +3,7 @@ import {
   Task,
   ChatSession,
   ChatMessage,
+  AgentStep,
   Settings,
   CliInfo,
   ModelOption,
@@ -435,6 +436,17 @@ export async function getChatMessages(sessionId: string, signal?: AbortSignal): 
 
 export async function deleteChatMessage(id: string): Promise<{ success: boolean }> {
   const res = await fetch(`${API_BASE}/messages/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+export async function getMessageActivity(
+  messageId: string,
+  signal?: AbortSignal
+): Promise<{ messageId: string; steps: AgentStep[]; thoughts?: string }> {
+  const res = await fetch(`${API_BASE}/messages/${messageId}/activity`, { signal });
+  if (!res.ok) {
+    throw new Error('Failed to load message activity');
+  }
   return res.json();
 }
 

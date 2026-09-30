@@ -1590,6 +1590,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           liveStreamingChunk={streamingChunk}
           isStreaming={isStreaming}
           taskId={task.id}
+          sessionId={activeChatId || undefined}
           clis={clis}
           currentCli={tabCli || settings?.agent_cli || 'codex'}
           activeHitl={activeChatId ? activeHitl[activeChatId] : null}
