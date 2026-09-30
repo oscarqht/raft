@@ -2650,6 +2650,9 @@ wss.on('connection', (ws: WebSocket) => {
           }
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') args.push('--effort', effortToUse);
+          args.push('--output-format', 'stream-json');
+          args.push('--verbose');
+          args.push('--include-partial-messages');
           args.push('--dangerously-skip-permissions');
         } else {
           // codex
