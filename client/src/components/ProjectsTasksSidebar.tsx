@@ -918,9 +918,6 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                       </button>
 
                       <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-[10px] font-normal text-cozy-muted px-1.5 py-0.2 rounded-full bg-cozy-subtle/80 border border-cozy-border/40">
-                          {group.tasks.length}
-                        </span>
                         {onConfigureProject && (
                           <button
                             type="button"
@@ -944,6 +941,11 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                         >
                           <Plus className="w-3 h-3" />
                         </button>
+                        {group.tasks.length > 0 && (
+                          <span className="text-[10px] font-normal text-cozy-muted px-1.5 py-0.2 rounded-full bg-cozy-subtle/80 border border-cozy-border/40">
+                            {group.tasks.length}
+                          </span>
+                        )}
                       </div>
                     </div>
 
