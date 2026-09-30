@@ -40,6 +40,7 @@ import {
   runSubmitAgent,
   spawnAgentCli,
   buildConversationContextFallback,
+  parseLegacyThoughtToSteps,
   AUTH_REQUIRED_REGEX,
   SPEND_CAP_REGEX,
   CommitMessageResult,
@@ -1461,9 +1462,10 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
     `).run(chatSessionId, id, 'Chat 1', defaultCli, defaultModel, defaultEffort, 'idle', now, now);
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
-    const initialChat = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatSessionId);
+    const initialChat = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(chatSessionId) as any;
     if (task && initialChat) {
       task.initialChat = initialChat;
+      task.chats = [initialChat];
     }
 
     // Auto-install project dependencies in the new worktree
@@ -1482,7 +1484,12 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
       }
     }
 
-    res.json({ ...task, project: formatProject(project) });
+    res.json({
+      ...task,
+      project: formatProject(project),
+      chats: initialChat ? [initialChat] : [],
+      initial_chat: initialChat || null,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -1900,7 +1907,17 @@ app.get('/api/tasks/:taskId/attachments/:attachmentId/content', (req: Request, r
 
 // Chat sessions & messages
 app.get('/api/tasks/:taskId/chats', (req: Request, res: Response) => {
-  const chats = db.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at ASC').all(req.params.taskId);
+  const chats = db.prepare('SELECT * FROM chat_sessions WHERE task_id = ? ORDER BY created_at ASC').all(req.params.taskId) as any[];
+  const includeMessages = req.query.include_messages === 'true';
+  const activeChatId = req.query.active_chat_id as string | undefined;
+
+  if (includeMessages && chats.length > 0) {
+    const targetChat = (activeChatId && chats.find((c) => c.id === activeChatId)) || chats[0];
+    if (targetChat) {
+      targetChat.messages = getSessionMessages(targetChat.id);
+    }
+  }
+
   res.json(chats);
 });
 
@@ -1958,6 +1975,114 @@ interface ActiveChatSession {
 }
 
 const activeChatSessions = new Map<string, ActiveChatSession>();
+
+function extractMessageActivity(rawContent: string, rawMetadata: string | null) {
+  let steps: any[] = [];
+  let thoughts: string | null = null;
+  let cleanContent = rawContent || '';
+
+  if (rawMetadata) {
+    try {
+      const parsed = JSON.parse(rawMetadata);
+      if (Array.isArray(parsed.steps) && parsed.steps.length > 0) {
+        steps = parsed.steps;
+      }
+    } catch {}
+  }
+
+  if (typeof rawContent === 'string') {
+    const thoughtMatch = rawContent.match(/<thought>([\s\S]*?)<\/thought>/);
+    if (thoughtMatch) {
+      thoughts = thoughtMatch[1].trim();
+      cleanContent = rawContent.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
+    } else {
+      const lines = rawContent.split('\n');
+      const thoughtLines: string[] = [];
+      const contentLines: string[] = [];
+      let inThoughts = true;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (
+          inThoughts &&
+          (trimmed.startsWith('→') ||
+            trimmed.startsWith('[') ||
+            trimmed.startsWith('Run:') ||
+            trimmed.startsWith('Search:'))
+        ) {
+          thoughtLines.push(line);
+        } else {
+          inThoughts = false;
+          contentLines.push(line);
+        }
+      }
+      if (thoughtLines.length > 0) {
+        thoughts = thoughtLines.join('\n').trim();
+        cleanContent = contentLines.join('\n').trim();
+      }
+    }
+
+    if (steps.length === 0 && thoughts) {
+      steps = parseLegacyThoughtToSteps(thoughts);
+    }
+  }
+
+  return { steps, thoughts, cleanContent };
+}
+
+function getSessionMessages(chatId: string) {
+  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
+
+  for (const msg of messages) {
+    let parsedMeta: any = null;
+    if (msg.metadata) {
+      try {
+        parsedMeta = JSON.parse(msg.metadata);
+        if (parsedMeta && Array.isArray(parsedMeta.attachments)) {
+          msg.attachments = parsedMeta.attachments;
+        }
+      } catch {}
+    }
+
+    if (msg.role === 'assistant') {
+      const { steps, cleanContent } = extractMessageActivity(msg.content, msg.metadata);
+      if (steps.length > 0) {
+        const files = steps.filter((s: any) => s.category === 'file_read' || s.category === 'file_write').length;
+        const commands = steps.filter((s: any) => s.category === 'command').length;
+        const totalDuration = steps.reduce((sum: number, s: any) => sum + (s.duration || 0), 0);
+        msg.has_activity = true;
+        msg.activity_summary = {
+          files,
+          commands,
+          totalSteps: steps.length,
+          totalDuration: Math.round(totalDuration * 10) / 10,
+        };
+
+        // Strip heavy steps from metadata to keep initial payload tiny
+        if (parsedMeta && parsedMeta.steps) {
+          delete parsedMeta.steps;
+          msg.metadata = JSON.stringify(parsedMeta);
+        }
+
+        // Clean out heavy thought block from content
+        msg.content = cleanContent;
+      }
+    }
+  }
+
+  // If there is an active running session for this chat, sync the in-memory latest content
+  const activeSession = activeChatSessions.get(chatId);
+  if (activeSession && messages.length > 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg && (lastMsg.id === activeSession.assistantMsgId || lastMsg.role === 'assistant')) {
+      const liveText = activeSession.getContent();
+      if (liveText) {
+        lastMsg.content = liveText;
+      }
+    }
+  }
+
+  return messages;
+}
 
 function broadcastWs(data: any) {
   const payload = JSON.stringify(data);
@@ -2083,33 +2208,24 @@ app.delete('/api/messages/:id', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+app.get('/api/messages/:id/activity', (req: Request, res: Response) => {
+  const messageId = req.params.id as string;
+  const msg = db.prepare('SELECT id, session_id, role, content, metadata FROM chat_messages WHERE id = ?').get(messageId) as any;
+  if (!msg) {
+    return res.status(404).json({ error: 'Message not found' });
+  }
+
+  const { steps, thoughts } = extractMessageActivity(msg.content, msg.metadata);
+  res.json({
+    messageId,
+    steps,
+    thoughts,
+  });
+});
+
 app.get('/api/chats/:id/messages', (req: Request, res: Response) => {
   const chatId = req.params.id as string;
-  const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
-
-  for (const msg of messages) {
-    if (msg.metadata) {
-      try {
-        const parsed = JSON.parse(msg.metadata);
-        if (parsed && Array.isArray(parsed.attachments)) {
-          msg.attachments = parsed.attachments;
-        }
-      } catch {}
-    }
-  }
-
-  // If there is an active running session for this chat, sync the in-memory latest content
-  const activeSession = activeChatSessions.get(chatId);
-  if (activeSession && messages.length > 0) {
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg && (lastMsg.id === activeSession.assistantMsgId || lastMsg.role === 'assistant')) {
-      const liveText = activeSession.getContent();
-      if (liveText) {
-        lastMsg.content = liveText;
-      }
-    }
-  }
-
+  const messages = getSessionMessages(chatId);
   res.json(messages);
 });
 

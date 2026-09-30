@@ -13,11 +13,18 @@ import {
   AgentSkill,
 } from './types';
 
+import { idbGet, idbSet, idbDelete } from './idb';
+
 const PREFIX = 'raft:';
 const LEGACY_PREFIX = 'termai:';
 const MAX_MESSAGES_PER_SESSION = 80;
 const MAX_CACHED_SESSIONS = 25;
 const MAX_CACHED_TASKS = 25;
+
+// In-Memory synchronous stores for instant 0ms task switching and unlimited active memory
+const memoryTasks = new Map<string, Task>();
+const memoryChats = new Map<string, ChatSession[]>();
+const memoryMessages = new Map<string, ChatMessage[]>();
 
 // LRU tracking index
 interface CacheIndex {
@@ -204,21 +211,34 @@ export function setCachedAllTasks(tasks: Task[]): void {
 // Task Cache
 export function getCachedTask(taskId: string): Task | null {
   if (!taskId) return null;
+  if (memoryTasks.has(taskId)) {
+    return memoryTasks.get(taskId)!;
+  }
   try {
     const raw = localStorage.getItem(`${PREFIX}task:${taskId}`) || localStorage.getItem(`${LEGACY_PREFIX}task:${taskId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      memoryTasks.set(taskId, parsed);
+      return parsed;
+    }
+  } catch {}
+
+  // Asynchronously backfill from IndexedDB if not found yet
+  idbGet<Task>(`${PREFIX}task:${taskId}`).then((t) => {
+    if (t) memoryTasks.set(taskId, t);
+  }).catch(() => {});
+
+  return null;
 }
 
 export function setCachedTask(task: Task): void {
   if (!task?.id) return;
+  memoryTasks.set(task.id, task);
+  idbSet(`${PREFIX}task:${task.id}`, task).catch(() => {});
   try {
     localStorage.setItem(`${PREFIX}task:${task.id}`, JSON.stringify(task));
     touchTaskId(task.id);
   } catch (e) {
-    // Quota fallback: clean up old cache entries
     cleanOldCache();
   }
 }
@@ -226,22 +246,48 @@ export function setCachedTask(task: Task): void {
 // Chat Sessions Cache
 export function getCachedChats(taskId: string): ChatSession[] | null {
   if (!taskId) return null;
+  if (memoryChats.has(taskId)) {
+    return memoryChats.get(taskId)!;
+  }
   try {
     const raw = localStorage.getItem(`${PREFIX}chats:${taskId}`) || localStorage.getItem(`${LEGACY_PREFIX}chats:${taskId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      memoryChats.set(taskId, parsed);
+      return parsed;
+    }
+  } catch {}
+
+  // Asynchronously backfill from IndexedDB
+  idbGet<ChatSession[]>(`${PREFIX}chats:${taskId}`).then((chats) => {
+    if (chats) memoryChats.set(taskId, chats);
+  }).catch(() => {});
+
+  return null;
 }
 
 export function setCachedChats(taskId: string, chats: ChatSession[]): void {
   if (!taskId) return;
+  memoryChats.set(taskId, chats);
+  idbSet(`${PREFIX}chats:${taskId}`, chats).catch(() => {});
   try {
     localStorage.setItem(`${PREFIX}chats:${taskId}`, JSON.stringify(chats));
     touchTaskId(taskId);
   } catch {
     cleanOldCache();
   }
+}
+
+export async function loadCachedChatsAsync(taskId: string): Promise<ChatSession[] | null> {
+  if (!taskId) return null;
+  const sync = getCachedChats(taskId);
+  if (sync && sync.length > 0) return sync;
+  const idbData = await idbGet<ChatSession[]>(`${PREFIX}chats:${taskId}`);
+  if (idbData && idbData.length > 0) {
+    memoryChats.set(taskId, idbData);
+    return idbData;
+  }
+  return null;
 }
 
 // Active Chat ID Cache
@@ -264,18 +310,33 @@ export function setCachedActiveChatId(taskId: string, chatId: string): void {
 // Chat Messages Cache
 export function getCachedMessages(sessionId: string): ChatMessage[] | null {
   if (!sessionId) return null;
+  if (memoryMessages.has(sessionId)) {
+    return memoryMessages.get(sessionId)!;
+  }
   try {
     const raw = localStorage.getItem(`${PREFIX}messages:${sessionId}`) || localStorage.getItem(`${LEGACY_PREFIX}messages:${sessionId}`);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      memoryMessages.set(sessionId, parsed);
+      return parsed;
+    }
+  } catch {}
+
+  // Asynchronously backfill from IndexedDB
+  idbGet<ChatMessage[]>(`${PREFIX}messages:${sessionId}`).then((msgs) => {
+    if (msgs) memoryMessages.set(sessionId, msgs);
+  }).catch(() => {});
+
+  return null;
 }
 
 export function setCachedMessages(sessionId: string, messages: ChatMessage[]): void {
   if (!sessionId) return;
+  memoryMessages.set(sessionId, messages);
+  // Persist complete message history into IndexedDB without quota truncation
+  idbSet(`${PREFIX}messages:${sessionId}`, messages).catch(() => {});
   try {
-    // Keep most recent messages up to MAX_MESSAGES_PER_SESSION to avoid hitting storage quotas
+    // Keep most recent messages in localStorage for instant synchronous cold start
     const slice = messages.length > MAX_MESSAGES_PER_SESSION 
       ? messages.slice(-MAX_MESSAGES_PER_SESSION) 
       : messages;
@@ -286,9 +347,25 @@ export function setCachedMessages(sessionId: string, messages: ChatMessage[]): v
   }
 }
 
+export async function loadCachedMessagesAsync(sessionId: string): Promise<ChatMessage[] | null> {
+  if (!sessionId) return null;
+  const sync = getCachedMessages(sessionId);
+  if (sync && sync.length > 0) return sync;
+  const idbData = await idbGet<ChatMessage[]>(`${PREFIX}messages:${sessionId}`);
+  if (idbData && idbData.length > 0) {
+    memoryMessages.set(sessionId, idbData);
+    return idbData;
+  }
+  return null;
+}
+
 // Delete cached task
 export function deleteCachedTask(taskId: string, projectId?: string): void {
   if (!taskId) return;
+  memoryTasks.delete(taskId);
+  memoryChats.delete(taskId);
+  idbDelete(`${PREFIX}task:${taskId}`).catch(() => {});
+  idbDelete(`${PREFIX}chats:${taskId}`).catch(() => {});
   try {
     localStorage.removeItem(`${PREFIX}task:${taskId}`);
     localStorage.removeItem(`${PREFIX}chats:${taskId}`);
@@ -314,6 +391,8 @@ export function deleteCachedTask(taskId: string, projectId?: string): void {
 
 // Delete cached chat
 export function deleteCachedChat(taskId: string, chatId: string): void {
+  memoryMessages.delete(chatId);
+  idbDelete(`${PREFIX}messages:${chatId}`).catch(() => {});
   try {
     localStorage.removeItem(`${PREFIX}messages:${chatId}`);
     const activeId = getCachedActiveChatId(taskId);
@@ -323,6 +402,8 @@ export function deleteCachedChat(taskId: string, chatId: string): void {
     const currentChats = getCachedChats(taskId);
     if (currentChats) {
       const filtered = currentChats.filter((c) => c.id !== chatId);
+      memoryChats.set(taskId, filtered);
+      idbSet(`${PREFIX}chats:${taskId}`, filtered).catch(() => {});
       localStorage.setItem(`${PREFIX}chats:${taskId}`, JSON.stringify(filtered));
     }
   } catch {}

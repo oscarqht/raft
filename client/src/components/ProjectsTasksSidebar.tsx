@@ -15,7 +15,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { Task, Project, TaskGitStatus } from '../types';
-import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus } from '../api';
+import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats } from '../api';
 import { formatRelativeTime } from '../utils/time';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -28,12 +28,16 @@ import {
   setCachedProjects,
   getCachedAllTasks,
   setCachedAllTasks,
+  getCachedChats,
+  setCachedChats,
+  setCachedMessages,
+  setCachedTask,
 } from '../cache';
 
 interface ProjectsTasksSidebarProps {
   currentTaskId?: string;
   currentProjectId?: string;
-  onSelectTask: (taskId: string, projectId?: string) => void;
+  onSelectTask: (taskId: string, projectId?: string, task?: Task) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   ws: WebSocket | null;
@@ -153,6 +157,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
 
       const initialAgentStatus: Record<string, 'WIP' | 'idle'> = {};
       tasksData.forEach((t) => {
+        setCachedTask(t);
         initialAgentStatus[t.id] = t.agent_status || 'idle';
       });
       setTasksAgentStatus((prev) => {
@@ -168,6 +173,42 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
       setLoading(false);
     }
   };
+
+  const hoverTimerRef = useRef<Record<string, any>>({});
+  const prefetchedTaskIdsRef = useRef<Set<string>>(new Set());
+
+  const handleTaskMouseEnter = useCallback((taskId: string) => {
+    if (prefetchedTaskIdsRef.current.has(taskId)) return;
+    if (getCachedChats(taskId)) {
+      prefetchedTaskIdsRef.current.add(taskId);
+      return;
+    }
+
+    if (hoverTimerRef.current[taskId]) {
+      clearTimeout(hoverTimerRef.current[taskId]);
+    }
+
+    hoverTimerRef.current[taskId] = setTimeout(async () => {
+      try {
+        prefetchedTaskIdsRef.current.add(taskId);
+        const chatsData = await getTaskChats(taskId, { includeMessages: true });
+        if (Array.isArray(chatsData) && chatsData.length > 0) {
+          setCachedChats(taskId, chatsData);
+          const firstWithMsgs = chatsData.find((c) => Array.isArray(c.messages));
+          if (firstWithMsgs && firstWithMsgs.messages) {
+            setCachedMessages(firstWithMsgs.id, firstWithMsgs.messages);
+          }
+        }
+      } catch {}
+    }, 150);
+  }, []);
+
+  const handleTaskMouseLeave = useCallback((taskId: string) => {
+    if (hoverTimerRef.current[taskId]) {
+      clearTimeout(hoverTimerRef.current[taskId]);
+      delete hoverTimerRef.current[taskId];
+    }
+  }, []);
 
   // Load active dev servers
   const fetchActiveDevServers = async () => {
@@ -637,7 +678,9 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                           <button
                             key={task.id}
                             type="button"
-                            onClick={() => onSelectTask(task.id, task.project_id)}
+                            onClick={() => onSelectTask(task.id, task.project_id, task)}
+                            onMouseEnter={() => handleTaskMouseEnter(task.id)}
+                            onMouseLeave={() => handleTaskMouseLeave(task.id)}
                             className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between gap-2 text-left transition-colors cursor-pointer group ${
                               isActive
                                 ? 'bg-cozy-surface dark:bg-[#242424] text-cozy-text font-medium border border-cozy-border'

@@ -3,6 +3,7 @@ import {
   Task,
   ChatSession,
   ChatMessage,
+  AgentStep,
   Settings,
   CliInfo,
   ModelOption,
@@ -386,8 +387,18 @@ export async function restartDevServer(taskId: string): Promise<DevServerState> 
   return res.json();
 }
 
-export async function getTaskChats(taskId: string): Promise<ChatSession[]> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/chats`);
+export interface GetTaskChatsOptions {
+  includeMessages?: boolean;
+  activeChatId?: string;
+  signal?: AbortSignal;
+}
+
+export async function getTaskChats(taskId: string, options?: GetTaskChatsOptions): Promise<ChatSession[]> {
+  const params = new URLSearchParams();
+  if (options?.includeMessages) params.set('include_messages', 'true');
+  if (options?.activeChatId) params.set('active_chat_id', options.activeChatId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const res = await fetch(`${API_BASE}/tasks/${taskId}/chats${qs}`, { signal: options?.signal });
   return res.json();
 }
 
@@ -418,13 +429,24 @@ export async function deleteChatSession(id: string): Promise<{ success: boolean 
   return res.json();
 }
 
-export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
-  const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`);
+export async function getChatMessages(sessionId: string, signal?: AbortSignal): Promise<ChatMessage[]> {
+  const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`, { signal });
   return res.json();
 }
 
 export async function deleteChatMessage(id: string): Promise<{ success: boolean }> {
   const res = await fetch(`${API_BASE}/messages/${id}`, { method: 'DELETE' });
+  return res.json();
+}
+
+export async function getMessageActivity(
+  messageId: string,
+  signal?: AbortSignal
+): Promise<{ messageId: string; steps: AgentStep[]; thoughts?: string }> {
+  const res = await fetch(`${API_BASE}/messages/${messageId}/activity`, { signal });
+  if (!res.ok) {
+    throw new Error('Failed to load message activity');
+  }
   return res.json();
 }
 

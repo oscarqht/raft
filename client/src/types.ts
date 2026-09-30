@@ -55,6 +55,8 @@ export interface Task {
   created_at: number;
   updated_at: number;
   project?: Project;
+  chats?: ChatSession[];
+  initial_chat?: ChatSession;
 }
 
 export interface ChatSession {
@@ -69,6 +71,7 @@ export interface ChatSession {
   cli_session_agent?: string;
   created_at: number;
   updated_at: number;
+  messages?: ChatMessage[];
 }
 
 export interface FileAttachment {
@@ -96,6 +99,13 @@ export interface AgentStep {
   endTime?: number;
 }
 
+export interface ActivitySummary {
+  files: number;
+  commands: number;
+  totalSteps: number;
+  totalDuration: number;
+}
+
 export interface ChatMessage {
   id: string;
   session_id: string;
@@ -105,6 +115,8 @@ export interface ChatMessage {
   attachments?: FileAttachment[];
   timestamp: number;
   steps?: AgentStep[];
+  has_activity?: boolean;
+  activity_summary?: ActivitySummary;
 }
 
 export interface QueuedMessage {

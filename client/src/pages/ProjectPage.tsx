@@ -31,6 +31,7 @@ import {
   setCachedProjectTasksGitStatus,
   setCachedChats,
   setCachedActiveChatId,
+  setCachedMessages,
 } from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
@@ -277,6 +278,14 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         setCachedActiveChatId(newTask.id, initialChat.id);
       }
       setCachedTask(newTask);
+
+      // Pre-seed chat cache immediately for instant 0ms task page readiness
+      if (newTask.chats && newTask.chats.length > 0) {
+        setCachedChats(newTask.id, newTask.chats);
+        setCachedActiveChatId(newTask.id, newTask.chats[0].id);
+        setCachedMessages(newTask.chats[0].id, []);
+      }
+
       setTasks((prev) => {
         const next = [newTask, ...prev.filter((t) => t.id !== newTask.id)];
         setCachedProjectTasks(projectId, next);
