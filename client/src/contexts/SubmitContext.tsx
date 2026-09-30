@@ -9,6 +9,7 @@ export interface SubmitJob {
   task: Task;
   status: 'submitting' | 'done' | 'error';
   logs: string[];
+  createdAt: number;
   gitStatus?: GitStatus;
 }
 
@@ -69,7 +70,7 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
   const startSubmit = useCallback(
     (task: Task, commitMessage: string) => {
       if (!ws) return;
-      setJobs((prev) => ({ ...prev, [task.id]: { task, status: 'submitting', logs: [] } }));
+      setJobs((prev) => ({ ...prev, [task.id]: { task, status: 'submitting', logs: [], createdAt: Date.now() } }));
       ws.send(JSON.stringify({ type: 'start_submit', taskId: task.id, commitMessage }));
     },
     [ws]

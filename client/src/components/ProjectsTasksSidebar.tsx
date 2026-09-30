@@ -65,6 +65,11 @@ interface ProjectGroup {
   tasks: Task[];
 }
 
+const SIDEBAR_WIDTH_KEY = 'raft.tasksSidebarWidth';
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 560;
+const SIDEBAR_DEFAULT_WIDTH = 256;
+
 export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   currentTaskId,
   currentProjectId,
@@ -75,6 +80,36 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   ws,
 }) => {
   const navigate = useNavigate();
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(saved) && saved > 0
+      ? Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, saved))
+      : SIDEBAR_DEFAULT_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    let latest = startWidth;
+    setIsResizing(true);
+    const prevCursor = document.body.style.cursor;
+    document.body.style.cursor = 'col-resize';
+    const onMove = (ev: MouseEvent) => {
+      latest = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, startWidth + ev.clientX - startX));
+      setSidebarWidth(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = prevCursor;
+      setIsResizing(false);
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(latest));
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
   const [projects, setProjects] = useState<Project[]>(() => getCachedProjects() || []);
   const [tasks, setTasks] = useState<Task[]>(() => getCachedAllTasks() || []);
   const [loading, setLoading] = useState(false);
@@ -729,7 +764,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         }}
         onMouseEnter={() => handleTaskMouseEnter(task.id)}
         onMouseLeave={() => handleTaskMouseLeave(task.id)}
-        className={`w-full px-2 py-1.5 rounded-lg flex items-center justify-between gap-1.5 text-left transition-colors cursor-pointer group ${
+        className={`relative w-full px-2 py-1.5 rounded-lg flex items-center gap-1.5 text-left transition-colors cursor-pointer group ${
           isActive
             ? 'bg-cozy-surface dark:bg-[#242424] text-cozy-text font-medium border border-cozy-border'
             : 'hover:bg-cozy-subtle dark:hover:bg-[#212121] text-cozy-muted hover:text-cozy-text border border-transparent'
@@ -738,7 +773,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span
-              className={`text-xs truncate font-medium ${
+              className={`text-xs truncate font-medium min-w-0 ${
                 isActive
                   ? 'text-cozy-text'
                   : 'text-cozy-muted group-hover:text-cozy-text'
@@ -757,6 +792,17 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
               </span>
             )}
 
+            {isReplying ? (
+              <span title="Agent is replying..." className="inline-flex items-center justify-center shrink-0">
+                <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
+              </span>
+            ) : hasUnreadReply ? (
+              <span
+                className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse shrink-0"
+                title="Agent finished replying"
+              />
+            ) : null}
+
             {hasActiveDevServer && (
               <span
                 className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"
@@ -767,41 +813,28 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
 
           <div className="flex items-center gap-1.5 text-[10px] text-cozy-muted/70 mt-0.5 overflow-hidden">
             {task.branch && (
-              <span className="flex items-center gap-0.5 font-mono text-[10px] text-cozy-muted/80 max-w-[110px] truncate shrink-0">
+              <span className="flex items-center gap-0.5 font-mono text-[10px] text-cozy-muted/80 min-w-0 truncate">
                 <GitBranch className="w-2.5 h-2.5 text-teal-500/70 shrink-0" />
                 <span className="truncate">{task.branch}</span>
               </span>
             )}
             {renderConciseTaskStatusBadge(task, gitStatus)}
             {(task.updated_at || task.created_at) && (
-              <span className="text-cozy-muted/50 shrink-0 truncate">
+              <span className="text-cozy-muted/50 shrink-0 whitespace-nowrap">
                 • {formatRelativeTime(task.updated_at || task.created_at)}
               </span>
             )}
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center gap-0.5 pl-1 -mr-1">
-          <div className="w-4 h-4 flex items-center justify-center">
-            {isReplying ? (
-              <span title="Agent is replying..." className="inline-flex items-center justify-center">
-                <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
-              </span>
-            ) : hasUnreadReply ? (
-              <span
-                className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
-                title="Agent finished replying"
-              />
-            ) : null}
-          </div>
-
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md pl-1 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto bg-cozy-subtle dark:bg-[#212121] transition-opacity">
           <button
             type="button"
             onClick={(e) => handleTogglePin(e, task)}
             className={`p-1 rounded transition-all cursor-pointer ${
               isPinned
                 ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
-                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle opacity-0 group-hover:opacity-100'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40'
             }`}
             title={isPinned ? 'Unpin task' : 'Pin task'}
             aria-label={isPinned ? 'Unpin task' : 'Pin task'}
@@ -812,7 +845,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
           <button
             type="button"
             onClick={(e) => handleDeleteTask(e, task)}
-            className="p-1 rounded transition-all cursor-pointer text-cozy-muted hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
+            className="p-1 rounded transition-all cursor-pointer text-cozy-muted hover:text-red-500 hover:bg-red-500/10"
             title="Delete task"
             aria-label="Delete task"
           >
@@ -826,13 +859,31 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   return (
     <aside
       aria-label="Projects and Tasks Sidebar"
-      className={`h-full shrink-0 flex flex-col transition-all duration-200 ease-in-out select-none overflow-hidden ${
+      style={{ width: isCollapsed ? 0 : sidebarWidth }}
+      className={`relative h-full shrink-0 flex flex-col select-none overflow-hidden ${
+        isResizing ? '' : 'transition-all duration-200 ease-in-out'
+      } ${
         isCollapsed
-          ? 'w-0 opacity-0 pointer-events-none'
-          : 'w-64 border-r border-cozy-border bg-cozy-subtle/30 dark:bg-[#171717]'
+          ? 'opacity-0 pointer-events-none'
+          : 'border-r border-cozy-border bg-cozy-subtle/30 dark:bg-[#171717]'
       }`}
     >
-      <div className="w-64 h-full flex flex-col overflow-hidden">
+      {!isCollapsed && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onMouseDown={handleResizeStart}
+          onDoubleClick={() => {
+            setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+            localStorage.setItem(SIDEBAR_WIDTH_KEY, String(SIDEBAR_DEFAULT_WIDTH));
+          }}
+          className={`absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize transition-colors hover:bg-teal-500/40 ${
+            isResizing ? 'bg-teal-500/60' : ''
+          }`}
+        />
+      )}
+      <div className="h-full flex flex-col overflow-hidden" style={{ width: sidebarWidth }}>
         {/* Sidebar Header */}
         <div className="h-11 px-3 border-b border-cozy-border flex items-center justify-between shrink-0 bg-transparent">
           <div className="flex items-center gap-2 text-xs font-semibold text-cozy-text min-w-0">
@@ -908,7 +959,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                     </span>
                   </div>
 
-                  <div className="space-y-1 pl-1">
+                  <div className="space-y-1 pl-4">
                     {pinnedTasks.map((task) => renderTaskItem(task, true))}
                   </div>
                 </div>
@@ -931,7 +982,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                   <div key={group.projectId} className="flex flex-col space-y-1">
                     {/* Project Section Header */}
                     <div
-                      className={`flex items-center justify-between px-2 py-1 rounded-lg group/project text-[11px] font-semibold transition-all ${
+                      className={`flex items-center justify-between px-2 py-1.5 rounded-lg group/project text-[13px] font-semibold transition-all ${
                         isProjectSelected
                           ? 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border border-teal-500/25 shadow-soft-xs'
                           : 'text-cozy-muted hover:bg-cozy-subtle/60 border border-transparent'
@@ -940,10 +991,10 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                       <button
                         type="button"
                         onClick={() => navigate(`/projects/${group.projectId}`)}
-                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left transition-colors cursor-pointer"
+                        className="flex items-center gap-2 min-w-0 flex-1 text-left transition-colors cursor-pointer"
                         title={`Select project: ${group.projectName}`}
                       >
-                        <ProjectIcon icon={group.projectIcon} className="w-3.5 h-3.5 shrink-0" />
+                        <ProjectIcon icon={group.projectIcon} className="w-5 h-5 shrink-0" />
                         <span
                           className={`truncate font-semibold ${
                             isProjectSelected
@@ -993,11 +1044,11 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                     {/* Tasks List or Empty State */}
                     {group.tasks.length === 0 ? (
                       hasAnyProjectTasks ? (
-                        <div className="px-2 py-1 text-[10px] text-cozy-muted/60 italic">
+                        <div className="pl-6 pr-2 py-1 text-[10px] text-cozy-muted/60 italic">
                           All tasks in this project are pinned
                         </div>
                       ) : (
-                        <div className="pl-2 pr-1 py-1">
+                        <div className="pl-4 pr-1 py-1">
                           <button
                             type="button"
                             onClick={(e) => handleCreateTaskInProject(e, group.projectId)}
@@ -1009,7 +1060,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                         </div>
                       )
                     ) : (
-                      <div className="space-y-1 pl-1">
+                      <div className="space-y-1 pl-4">
                         {visibleTasks.map((task) => renderTaskItem(task, false))}
 
                         {/* Expand / Collapse Button */}
