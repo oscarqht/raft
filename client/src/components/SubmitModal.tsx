@@ -406,8 +406,8 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
-            disabled={isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim())}
+            onClick={isSuccess ? onClose : handleSubmit}
+            disabled={!isSuccess && (isSubmitting || isGenerating || hasNothingToSubmit || (totalChanges > 0 && !commitMessage.trim()))}
             title={hasNothingToSubmit ? 'No changes to commit or push' : undefined}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-glow-ocean cursor-pointer"
           >
