@@ -14,9 +14,10 @@ import {
   ChevronUp,
   Pin,
   Sliders,
+  Trash2,
 } from 'lucide-react';
 import { Task, Project, TaskGitStatus } from '../types';
-import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats, updateTask } from '../api';
+import { getTasks, getActiveDevServers, getProjects, getProjectTasksGitStatus, getTaskChats, updateTask, deleteTask } from '../api';
 import { formatRelativeTime } from '../utils/time';
 import { ProjectIcon } from './ProjectIcon';
 import {
@@ -40,6 +41,10 @@ import {
   getCachedActiveDevServers,
   setCachedActiveDevServers,
   isTaskPendingDelete,
+  addPendingDeletingTaskId,
+  removePendingDeletingTaskId,
+  deleteCachedTask,
+  restoreCachedTask,
 } from '../cache';
 
 interface ProjectsTasksSidebarProps {
@@ -570,6 +575,32 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     });
   };
 
+  const handleDeleteTask = async (e: React.MouseEvent, task: Task) => {
+    e.stopPropagation();
+    if (!confirm('Delete this task and clean up its git worktree?')) return;
+
+    // Optimistically remove so background refreshes don't resurrect it
+    addPendingDeletingTaskId(task.id);
+    deleteCachedTask(task.id, task.project_id);
+    setTasks((prev) => prev.filter((t) => t.id !== task.id));
+    window.dispatchEvent(
+      new CustomEvent('task-deleted', { detail: { taskId: task.id, projectId: task.project_id } })
+    );
+    if (task.id === currentTaskId) {
+      navigate(task.project_id ? `/projects/${task.project_id}` : '/');
+    }
+
+    try {
+      await deleteTask(task.id);
+    } catch (err: any) {
+      restoreCachedTask(task, task.project_id);
+      setTasks((prev) => (prev.some((t) => t.id === task.id) ? prev : [task, ...prev]));
+      alert(err?.message || 'Failed to delete task');
+    } finally {
+      removePendingDeletingTaskId(task.id);
+    }
+  };
+
   const renderConciseTaskStatusBadge = (t: Task, s?: TaskGitStatus) => {
     const isCompleted = t.status === 'completed';
 
@@ -750,7 +781,20 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
           </div>
         </div>
 
-        <div className="shrink-0 flex items-center gap-0.5 pl-1">
+        <div className="shrink-0 flex items-center gap-0.5 pl-1 -mr-1">
+          <div className="w-4 h-4 flex items-center justify-center">
+            {isReplying ? (
+              <span title="Agent is replying..." className="inline-flex items-center justify-center">
+                <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
+              </span>
+            ) : hasUnreadReply ? (
+              <span
+                className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
+                title="Agent finished replying"
+              />
+            ) : null}
+          </div>
+
           <button
             type="button"
             onClick={(e) => handleTogglePin(e, task)}
@@ -765,18 +809,15 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
             <Pin className={`w-3 h-3 ${isPinned ? 'fill-current' : ''}`} />
           </button>
 
-          <div className="w-4 h-4 flex items-center justify-center">
-            {isReplying ? (
-              <span title="Agent is replying..." className="inline-flex items-center justify-center">
-                <Loader2 className="w-3.5 h-3.5 text-teal-500 animate-spin" />
-              </span>
-            ) : hasUnreadReply ? (
-              <span
-                className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
-                title="Agent finished replying"
-              />
-            ) : null}
-          </div>
+          <button
+            type="button"
+            onClick={(e) => handleDeleteTask(e, task)}
+            className="p-1 rounded transition-all cursor-pointer text-cozy-muted hover:text-red-500 hover:bg-red-500/10 opacity-0 group-hover:opacity-100"
+            title="Delete task"
+            aria-label="Delete task"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         </div>
       </div>
     );
