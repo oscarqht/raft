@@ -6,7 +6,6 @@ import {
   Plus,
   Search,
   PanelLeftClose,
-  Check,
   Loader2,
   ListTodo,
   Layers,
@@ -776,8 +775,6 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                 className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] animate-pulse"
                 title="Agent finished replying"
               />
-            ) : isActive ? (
-              <Check className="w-3.5 h-3.5 text-teal-500 shrink-0" />
             ) : null}
           </div>
         </div>
