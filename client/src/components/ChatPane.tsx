@@ -135,13 +135,13 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const cachedChats = getCachedChats(task.id) || [];
     const cachedActive = getCachedActiveChatId(task.id);
     const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
-    return active?.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+    return active?.agent_cli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
   });
   const [tabModel, setTabModel] = useState<string>(() => {
     const cachedChats = getCachedChats(task.id) || [];
     const cachedActive = getCachedActiveChatId(task.id);
     const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
-    return active?.model || task.project?.default_model || settings?.default_model || '';
+    return active?.model || settings?.default_model || task.project?.default_model || '';
   });
   const [tabEffort, setTabEffort] = useState<string>(() => {
     const cachedChats = getCachedChats(task.id) || [];
@@ -413,7 +413,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         return;
       }
 
-      const cli = currentChat.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+      const cli = currentChat.agent_cli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
       setTabCli(cli);
 
       // Instantly load cached models for this CLI if available
@@ -429,7 +429,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setTabModel(resolved.modelId);
         setTabEffort(resolved.effort);
       } else {
-        setTabModel(currentChat.model || task.project?.default_model || settings?.default_model || '');
+        setTabModel(currentChat.model || settings?.default_model || task.project?.default_model || '');
         setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
       }
     }
@@ -488,7 +488,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   // Load models when tab CLI changes
   useEffect(() => {
-    const cli = tabCli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+    const cli = tabCli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
     let isCurrent = true;
 
     // Immediately show cached models for this CLI if available
