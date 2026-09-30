@@ -373,6 +373,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
             </div>
           ) : project ? (
             <NewTaskPane
+              key={project.id}
               project={project}
               availableBranches={availableBranches}
               baseBranch={baseBranch}

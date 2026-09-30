@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { GitBranch, Sparkles, Sliders, Loader2, ArrowRight, FolderGit2 } from 'lucide-react';
 import { Project } from '../types';
 import { ProjectIcon } from './ProjectIcon';
+import { getNewTaskDraft, setNewTaskDraft, clearNewTaskDraft } from '../cache';
 
 interface NewTaskPaneProps {
   project: Project;
@@ -24,8 +25,14 @@ export const NewTaskPane: React.FC<NewTaskPaneProps> = ({
   isCreating,
   error: externalError,
 }) => {
-  const [taskName, setTaskName] = useState('');
-  const [initialPrompt, setInitialPrompt] = useState('');
+  const [taskName, setTaskName] = useState(() => {
+    const draft = getNewTaskDraft(project.id);
+    return draft?.taskName || '';
+  });
+  const [initialPrompt, setInitialPrompt] = useState(() => {
+    const draft = getNewTaskDraft(project.id);
+    return draft?.initialPrompt || '';
+  });
   const [localError, setLocalError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -33,8 +40,31 @@ export const NewTaskPane: React.FC<NewTaskPaneProps> = ({
     inputRef.current?.focus();
   }, [project.id]);
 
+  const currentDraftProjectIdRef = useRef(project.id);
+  useEffect(() => {
+    if (currentDraftProjectIdRef.current !== project.id) {
+      currentDraftProjectIdRef.current = project.id;
+      const draft = getNewTaskDraft(project.id);
+      setTaskName(draft?.taskName || '');
+      setInitialPrompt(draft?.initialPrompt || '');
+      setLocalError(null);
+      inputRef.current?.focus();
+      return;
+    }
+
+    if (!taskName.trim() && !initialPrompt.trim()) {
+      clearNewTaskDraft(project.id);
+    } else {
+      setNewTaskDraft(project.id, {
+        taskName,
+        initialPrompt,
+      });
+    }
+  }, [project.id, taskName, initialPrompt]);
+
   useEffect(() => {
     const handleReset = () => {
+      clearNewTaskDraft(project.id);
       setTaskName('');
       setInitialPrompt('');
       setLocalError(null);
@@ -42,7 +72,7 @@ export const NewTaskPane: React.FC<NewTaskPaneProps> = ({
     };
     window.addEventListener('reset-new-task-form', handleReset);
     return () => window.removeEventListener('reset-new-task-form', handleReset);
-  }, []);
+  }, [project.id]);
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -55,6 +85,9 @@ export const NewTaskPane: React.FC<NewTaskPaneProps> = ({
     setLocalError(null);
     try {
       await onCreateTask(trimmedName, baseBranch || project.branch_convention || 'main', initialPrompt.trim());
+      clearNewTaskDraft(project.id);
+      setTaskName('');
+      setInitialPrompt('');
     } catch (err: any) {
       setLocalError(err?.message || 'Failed to create task');
     }

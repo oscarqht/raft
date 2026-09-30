@@ -406,3 +406,12 @@ export interface UpdaterStatusResponse {
   status: UpdateStatus;
 }
 
+export interface TaskDraft {
+  text: string;
+  attachments: FileAttachment[];
+}
+
+export interface NewTaskDraft {
+  taskName: string;
+  initialPrompt: string;
+}
