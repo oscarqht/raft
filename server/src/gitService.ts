@@ -1124,7 +1124,7 @@ export class GitService {
     let isMerged = false;
     if (pr && pr.state === 'merged') {
       isMerged = true;
-    } else if (targetRef && aheadCount === 0) {
+    } else if (targetRef && aheadCount === 0 && !hasLocalChanges) {
       let isAncestor = false;
       try {
         execSync(`git merge-base --is-ancestor HEAD "${targetRef}"`, { cwd: worktreePath, stdio: 'ignore' });
@@ -1132,45 +1132,80 @@ export class GitService {
       } catch {}
 
       if (isAncestor) {
-        let headCommitTime = 0;
+        // 1. Check if targetRef contains an actual merge commit that merged this branch
+        let mergeCommitFound = false;
         try {
-          headCommitTime =
-            parseInt(
-              execSync('git log -1 --format="%ct" HEAD', {
-                cwd: worktreePath,
-                encoding: 'utf-8',
-                stdio: ['pipe', 'pipe', 'ignore'],
-              }).trim(),
-              10
-            ) * 1000;
+          const out = execSync(
+            `git log "${targetRef}" --merges -F -n 50 --grep="${branch}" --format="%h %ct"`,
+            { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+          ).trim();
+          if (out) {
+            const lines = out.split(/\r?\n/).filter(Boolean);
+            for (const line of lines) {
+              const parts = line.trim().split(/\s+/);
+              const commitTime = parseInt(parts[1], 10) * 1000;
+              // If taskCreatedAt is known, the merge commit must have occurred at or after task creation
+              // (with 5-second tolerance for git second-resolution timestamps)
+              if (!options?.taskCreatedAt || commitTime >= options.taskCreatedAt - 5000) {
+                mergeCommitFound = true;
+                break;
+              }
+            }
+          }
         } catch {}
 
-        let branchMentionedInTarget = false;
-        try {
-          const out = execSync(`git log "${targetRef}" -n 25 --grep="${branch}" --format="%h"`, {
-            cwd: worktreePath,
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'ignore'],
-          }).trim();
-          branchMentionedInTarget = out.length > 0;
-        } catch {}
+        // 2. Check if this branch had actual commits created on it and was fast-forward merged
+        let hasBranchCommits = false;
+        if (!mergeCommitFound) {
+          try {
+            const reflogOut = execSync(
+              `git reflog show --format="%H %gs" -n 50 "${branch}"`,
+              { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
+            ).trim();
+            if (reflogOut) {
+              const lines = reflogOut.split(/\r?\n/).filter(Boolean);
+              const currentHead = execSync('git rev-parse HEAD', { cwd: worktreePath, encoding: 'utf-8' }).trim();
+              let creationCommit = '';
+              for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i];
+                if (line.includes('branch: Created from')) {
+                  creationCommit = line.split(/\s+/)[0];
+                  break;
+                }
+              }
 
-        if (
-          branchMentionedInTarget ||
-          (options?.taskCreatedAt && headCommitTime && headCommitTime >= options.taskCreatedAt - 60000)
-        ) {
+              const isAtCreationCommit =
+                Boolean(creationCommit) &&
+                (creationCommit.toLowerCase().startsWith(currentHead.toLowerCase()) ||
+                  currentHead.toLowerCase().startsWith(creationCommit.toLowerCase()));
+
+              if (!isAtCreationCommit) {
+                hasBranchCommits = lines.some((line) => {
+                  const gs = line.replace(/^[a-f0-9]+\s+/, '').trim();
+                  return (
+                    gs.startsWith('commit:') ||
+                    gs.startsWith('commit (amend):') ||
+                    gs.startsWith('commit (initial):')
+                  );
+                });
+              }
+            }
+          } catch {}
+        }
+
+        if (mergeCommitFound || hasBranchCommits) {
           isMerged = true;
         }
       }
     }
 
     let lifecycleStage: 'in_progress' | 'pr_open' | 'merged' | 'clean' = 'clean';
-    if (isMerged) {
+    if (hasLocalChanges || basic.unpushedCount > 0 || aheadCount > 0) {
+      lifecycleStage = 'in_progress';
+    } else if (isMerged) {
       lifecycleStage = 'merged';
     } else if (pr && pr.state === 'open') {
       lifecycleStage = 'pr_open';
-    } else if (hasLocalChanges || basic.unpushedCount > 0 || aheadCount > 0) {
-      lifecycleStage = 'in_progress';
     } else {
       lifecycleStage = 'clean';
     }

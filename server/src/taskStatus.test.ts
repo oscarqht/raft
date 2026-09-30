@@ -106,3 +106,89 @@ test('GitService.getDetailedTaskStatus detects behind base branch and local chan
     } catch {}
   }
 });
+
+test('GitService.getDetailedTaskStatus does not falsely mark newly created task as merged', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-status-test-new-'));
+  try {
+    const bareDir = path.join(tmpDir, 'remote.git');
+    const repoDir = path.join(tmpDir, 'repo');
+    execSync(`git init --bare "${bareDir}"`, { stdio: 'ignore' });
+    execSync(`git clone "${bareDir}" "${repoDir}"`, { stdio: 'ignore' });
+    execSync('git config user.name "Tester"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+
+    // Initial commit on main right before task creation
+    fs.writeFileSync(path.join(repoDir, 'README.md'), '# Main', 'utf-8');
+    execSync('git add . && git commit -m "chore(release): v0.34.0"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
+
+    // Task is created a few seconds after the commit on main
+    const taskCreatedAt = Date.now();
+    const wtResult = GitService.createWorktree(repoDir, 'save-draft', 'main');
+    const wtPath = wtResult.worktreePath;
+    execSync('git config user.name "Tester"', { cwd: wtPath, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: wtPath, stdio: 'ignore' });
+
+    // Status on clean newly created task should be 'clean', NOT 'merged'
+    const status = await GitService.getDetailedTaskStatus(wtPath, 'save-draft', 'main', {
+      forceRefresh: true,
+      taskCreatedAt,
+    });
+    assert.equal(status.isMerged, false);
+    assert.equal(status.lifecycleStage, 'clean');
+    assert.equal(status.hasLocalChanges, false);
+    assert.equal(status.aheadCount, 0);
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
+test('GitService.getDetailedTaskStatus accurately detects merged tasks via merge commits', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'raft-status-test-merge-'));
+  try {
+    const bareDir = path.join(tmpDir, 'remote.git');
+    const repoDir = path.join(tmpDir, 'repo');
+    execSync(`git init --bare "${bareDir}"`, { stdio: 'ignore' });
+    execSync(`git clone "${bareDir}" "${repoDir}"`, { stdio: 'ignore' });
+    execSync('git config user.name "Tester"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: repoDir, stdio: 'ignore' });
+
+    fs.writeFileSync(path.join(repoDir, 'README.md'), '# Main', 'utf-8');
+    execSync('git add . && git commit -m "init"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
+
+    const taskCreatedAt = Date.now();
+    const wtResult = GitService.createWorktree(repoDir, 'feature-x', 'main');
+    const wtPath = wtResult.worktreePath;
+    execSync('git config user.name "Tester"', { cwd: wtPath, stdio: 'ignore' });
+    execSync('git config user.email "test@example.com"', { cwd: wtPath, stdio: 'ignore' });
+
+    // Add commit on feature branch
+    fs.writeFileSync(path.join(wtPath, 'feature.txt'), 'feature content', 'utf-8');
+    execSync('git add . && git commit -m "feat: feature content"', { cwd: wtPath, stdio: 'ignore' });
+
+    // Merge feature branch into main with a merge commit
+    execSync('git checkout main', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git merge --no-ff -m "Merge branch \'feature-x\' into main" feature-x', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
+
+    // Fetch in worktree
+    execSync('git fetch origin main', { cwd: wtPath, stdio: 'ignore' });
+
+    // Fast-forward or pull worktree HEAD to targetRef so aheadCount is 0
+    execSync('git merge --ff-only origin/main', { cwd: wtPath, stdio: 'ignore' });
+
+    const status = await GitService.getDetailedTaskStatus(wtPath, 'feature-x', 'main', {
+      forceRefresh: true,
+      taskCreatedAt,
+    });
+    assert.equal(status.isMerged, true);
+    assert.equal(status.lifecycleStage, 'merged');
+  } finally {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
