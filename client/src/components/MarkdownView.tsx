@@ -156,7 +156,7 @@ export const CodeBlockItem: React.FC<{
           )}
         </button>
       </div>
-      <div className="p-3 overflow-x-auto text-cozy-text leading-relaxed whitespace-pre font-mono">
+      <div className="p-3 overflow-x-auto text-cozy-text leading-relaxed whitespace-pre font-mono select-text">
         {code}
       </div>
     </div>
@@ -622,7 +622,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = React.memo(({
   if (!content) return null;
 
   return (
-    <div className={`space-y-2.5 leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 ${className}`}>
+    <div className={`space-y-2.5 leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 select-text ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkBreaks]}
         components={components}

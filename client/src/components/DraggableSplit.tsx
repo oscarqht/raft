@@ -135,7 +135,7 @@ export const DraggableSplit: React.FC<DraggableSplitProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="flex-1 flex overflow-hidden relative w-full h-full select-none">
+    <div ref={containerRef} className={`flex-1 flex overflow-hidden relative w-full h-full ${isDragging ? 'select-none' : ''}`}>
       {/* Full-screen invisible overlay during dragging to prevent iframe from capturing pointer events */}
       {!isMobile && isDragging && (
         <div
