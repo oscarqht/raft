@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { db, findGitAccountForRemote, getSetting } from './db.js';
 import { GitService, sanitizeBranchName } from './gitService.js';
+import { buildPromptWithContext, executeAlphaAuxiliaryJob } from './alphaAgentRunner.js';
 
 export interface CliInstallGuide {
   title: string;
@@ -1999,7 +2000,8 @@ export async function runDiscoveryAgent(
   cliName: string,
   model?: string,
   thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
-  onEvent?: (event: StreamEvent) => void
+  onEvent?: (event: StreamEvent) => void,
+  contextOptions?: { projectName?: string; systemPrompt?: string }
 ): Promise<{
   dev_cmd: string;
   dev_port: number;
@@ -2045,54 +2047,76 @@ Important instructions:
 }
 \`\`\``;
 
+  const enrichedDiscoveryPrompt = buildPromptWithContext(discoveryPrompt, {
+    projectName: contextOptions?.projectName || path.basename(projectPath),
+    worktreePath: projectPath,
+    systemPrompt: contextOptions?.systemPrompt,
+    isAlpha: cliName === 'alpha',
+    jobRequirementTitle: 'Job Requirement: Auto-Discover Project Settings and Scripts',
+  });
+
   let collectedOutput = '';
 
-  const args: string[] = [];
-  if (cliName === 'agy') {
-    args.push('-p', discoveryPrompt);
-    if (model) args.push('--model', model);
-    const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
-    args.push('--effort', effort);
-    args.push('--output-format', 'stream-json');
-    args.push('--dangerously-skip-permissions');
-  } else if (cliName === 'claude') {
-    args.push('-p', discoveryPrompt);
-    if (model) args.push('--model', model);
-    if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
-    args.push('--output-format', 'stream-json');
-    args.push('--verbose');
-    args.push('--dangerously-skip-permissions');
-  } else {
-    // codex
-    args.push('exec', discoveryPrompt);
-    if (model) args.push('--model', model);
-    if (thinkingEffort && thinkingEffort !== 'none') {
-      args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+  if (cliName === 'alpha') {
+    try {
+      const result = await executeAlphaAuxiliaryJob({
+        prompt: enrichedDiscoveryPrompt,
+        worktreePath: projectPath,
+        onEvent: emit,
+      });
+      collectedOutput = result.fullContent;
+    } catch (err: any) {
+      emit({ type: 'error', content: err.message || 'Alpha Intelligence discovery error' });
+      throw err;
     }
-    args.push('-c', 'service_tier="fast"');
-  }
-
-  await new Promise<void>((resolve) => {
-    const proc = spawnAgentCli(cliName, args, projectPath, (ev) => {
-      emit(ev);
-      if (ev.content) collectedOutput += ev.content;
-      if (ev.type === 'done' || ev.type === 'error') {
-        resolve();
+  } else {
+    const args: string[] = [];
+    if (cliName === 'agy') {
+      args.push('-p', enrichedDiscoveryPrompt);
+      if (model) args.push('--model', model);
+      const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+      args.push('--effort', effort);
+      args.push('--output-format', 'stream-json');
+      args.push('--dangerously-skip-permissions');
+    } else if (cliName === 'claude') {
+      args.push('-p', enrichedDiscoveryPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+      args.push('--output-format', 'stream-json');
+      args.push('--verbose');
+      args.push('--dangerously-skip-permissions');
+    } else {
+      // codex
+      args.push('exec', enrichedDiscoveryPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') {
+        args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
       }
-    });
+      args.push('-c', 'service_tier="fast"');
+    }
 
-    // Timeout protection after 120 seconds
-    const timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {}
-      resolve();
-    }, 120000);
+    await new Promise<void>((resolve) => {
+      const proc = spawnAgentCli(cliName, args, projectPath, (ev) => {
+        emit(ev);
+        if (ev.content) collectedOutput += ev.content;
+        if (ev.type === 'done' || ev.type === 'error') {
+          resolve();
+        }
+      });
 
-    proc.on('close', () => {
-      clearTimeout(timer);
+      // Timeout protection after 120 seconds
+      const timer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {}
+        resolve();
+      }, 120000);
+
+      proc.on('close', () => {
+        clearTimeout(timer);
+      });
     });
-  });
+  }
 
   // Parse JSON from output
   const jsonMatch = collectedOutput.match(/```json\s*([\s\S]*?)\s*```/) || collectedOutput.match(/(\{[\s\S]*"dev_cmd"[\s\S]*\})/);
@@ -2154,9 +2178,10 @@ async function resolveConflictsWithAgent(
   currentBranch: string,
   targetBranch: string,
   emit: (ev: StreamEvent) => void,
-  setActiveChild: (proc: any) => void
+  setActiveChild: (proc: any) => void,
+  contextOptions?: { projectName?: string; taskName?: string; systemPrompt?: string }
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<void>(async (resolve, reject) => {
     emit({ type: 'status', content: `Merge conflicts detected. Launching AI agent to resolve conflicts...` });
     emit({ type: 'chunk', content: `⚠️ Merge conflicts encountered during rebase of "${currentBranch}" onto "${targetBranch}". Launching AI agent to resolve conflicts...\n` });
 
@@ -2171,23 +2196,68 @@ Resolve all merge conflicts cleanly:
 Do NOT run git checkout, git pull, git fetch, git fsck, test suites, or reflog. Focus strictly on resolving the merge conflicts and running git rebase --continue.
 Output a clear summary of which conflicts were resolved and confirm the rebase is cleanly completed.`;
 
+    const enrichedConflictPrompt = buildPromptWithContext(conflictPrompt, {
+      projectName: contextOptions?.projectName || path.basename(worktreePath),
+      taskName: contextOptions?.taskName || currentBranch,
+      worktreePath,
+      branch: currentBranch,
+      baseBranch: targetBranch,
+      systemPrompt: contextOptions?.systemPrompt,
+      isAlpha: cliName === 'alpha',
+      jobRequirementTitle: 'Job Requirement: Resolve Git Merge Conflicts and Continue Rebase',
+    });
+
+    if (cliName === 'alpha') {
+      const abortController = new AbortController();
+      setActiveChild({
+        kill: () => abortController.abort(),
+      });
+
+      try {
+        await executeAlphaAuxiliaryJob({
+          prompt: enrichedConflictPrompt,
+          worktreePath,
+          onEvent: emit,
+          signal: abortController.signal,
+        });
+      } catch (err: any) {
+        reject(err);
+        return;
+      }
+
+      try {
+        const status = execSync('git status', { cwd: worktreePath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+        const stillRebasing =
+          status.includes('rebase in progress') ||
+          status.includes('You are currently rebasing') ||
+          status.includes('both modified:');
+        if (stillRebasing) {
+          reject(new Error('AI conflict resolution agent finished, but git rebase is still in progress or has unresolved conflicts.'));
+          return;
+        }
+      } catch {}
+
+      resolve();
+      return;
+    }
+
     const args: string[] = [];
     if (cliName === 'agy') {
-      args.push('-p', conflictPrompt);
+      args.push('-p', enrichedConflictPrompt);
       if (model) args.push('--model', model);
       const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
       args.push('--effort', effort);
       args.push('--output-format', 'stream-json');
       args.push('--dangerously-skip-permissions');
     } else if (cliName === 'claude') {
-      args.push('-p', conflictPrompt);
+      args.push('-p', enrichedConflictPrompt);
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
       args.push('--output-format', 'stream-json');
       args.push('--verbose');
       args.push('--dangerously-skip-permissions');
     } else {
-      args.push('exec', conflictPrompt);
+      args.push('exec', enrichedConflictPrompt);
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') {
         args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
@@ -2237,7 +2307,8 @@ async function rebaseAndResolve(
   thinkingEffort: string | undefined,
   emit: (event: StreamEvent) => void,
   setActiveChild: (child: any) => void,
-  isCancelled: () => boolean
+  isCancelled: () => boolean,
+  contextOptions?: { projectName?: string; taskName?: string; systemPrompt?: string }
 ): Promise<void> {
   let inRebase = false;
   try {
@@ -2300,7 +2371,8 @@ async function rebaseAndResolve(
     currentBranch,
     ontoRef,
     emit,
-    setActiveChild
+    setActiveChild,
+    contextOptions
   );
 }
 
@@ -2316,7 +2388,8 @@ export async function executeAutoSyncAndRebase(
   emit: (event: StreamEvent) => void = () => {},
   setActiveChild: (child: any) => void = () => {},
   repoRoot?: string,
-  isCancelled: () => boolean = () => false
+  isCancelled: () => boolean = () => false,
+  contextOptions?: { projectName?: string; taskName?: string; systemPrompt?: string }
 ): Promise<void> {
   emit({ type: 'status', content: `Syncing remote changes and rebasing onto ${baseBranch}...` });
 
@@ -2526,7 +2599,7 @@ export async function executeAutoSyncAndRebase(
   emit({ type: 'status', content: `Rebasing ${currentBranch} onto ${baseBranch}...` });
   emit({ type: 'chunk', content: `→ git rebase --autostash ${baseBranch}\n` });
 
-  await rebaseAndResolve(worktreePath, baseBranch, currentBranch, cliName, model, thinkingEffort, emit, setActiveChild, isCancelled);
+  await rebaseAndResolve(worktreePath, baseBranch, currentBranch, cliName, model, thinkingEffort, emit, setActiveChild, isCancelled, contextOptions);
 }
 
 // Rebase Agent: pulls base branch from remote, syncs local base branch, and rebases current branch cleanly
@@ -2538,7 +2611,8 @@ export function runRebaseAgent(
   thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
   onEvent?: (event: StreamEvent) => void,
   repoRoot?: string,
-  branchName?: string
+  branchName?: string,
+  contextOptions?: { projectName?: string; taskName?: string; systemPrompt?: string }
 ): { kill: (signal?: any) => void } {
   let thinkingEffort: string | undefined;
   let emit: (event: StreamEvent) => void;
@@ -2577,7 +2651,8 @@ export function runRebaseAgent(
         emit,
         (child) => { activeChild = child; },
         repoRoot,
-        () => isCancelled
+        () => isCancelled,
+        contextOptions
       );
       if (!isCancelled) {
         emit({ type: 'status', content: `Rebase complete!` });
@@ -2625,7 +2700,8 @@ export function runSubmitAgent(
   _model?: string,
   thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
   onEventOrBaseBranch?: ((event: StreamEvent) => void) | string,
-  baseBranch?: string
+  baseBranch?: string,
+  contextOptions?: { projectName?: string; taskName?: string; systemPrompt?: string }
 ): { kill: (signal?: any) => void } {
   let emit: (event: StreamEvent) => void;
   let resolvedBaseBranch = baseBranch;
@@ -2734,7 +2810,8 @@ export function runSubmitAgent(
         emit,
         (child) => { currentChild = child; },
         undefined,
-        () => isKilled
+        () => isKilled,
+        contextOptions
       );
 
       if (isKilled) return;
@@ -2888,7 +2965,8 @@ export async function runCommitMessageAgent(
   cliName: string,
   model?: string,
   thinkingEffortOrOnEvent?: string | ((event: StreamEvent) => void),
-  onEvent?: (event: StreamEvent) => void
+  onEvent?: (event: StreamEvent) => void,
+  contextOptions?: { projectName?: string; baseBranch?: string; systemPrompt?: string }
 ): Promise<CommitMessageResult> {
   let thinkingEffort: string | undefined;
   let emit: (event: StreamEvent) => void;
@@ -2960,53 +3038,78 @@ Output ONLY a JSON block enclosed in \`\`\`json ... \`\`\` matching this schema:
 }
 \`\`\``;
 
+  const enrichedCommitPrompt = buildPromptWithContext(commitPrompt, {
+    projectName: contextOptions?.projectName || path.basename(worktreePath),
+    taskName,
+    worktreePath,
+    branch: branchName,
+    baseBranch: contextOptions?.baseBranch || 'main',
+    systemPrompt: contextOptions?.systemPrompt,
+    isAlpha: cliName === 'alpha',
+    jobRequirementTitle: 'Job Requirement: Generate Clean Git Commit Message',
+  });
+
   let collectedOutput = '';
 
-  const args: string[] = [];
-  if (cliName === 'agy') {
-    args.push('-p', commitPrompt);
-    if (model) args.push('--model', model);
-    const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
-    args.push('--effort', effort);
-    args.push('--output-format', 'stream-json');
-    args.push('--dangerously-skip-permissions');
-  } else if (cliName === 'claude') {
-    args.push('-p', commitPrompt);
-    if (model) args.push('--model', model);
-    if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
-    args.push('--output-format', 'stream-json');
-    args.push('--verbose');
-    args.push('--dangerously-skip-permissions');
-  } else {
-    // codex
-    args.push('exec', commitPrompt);
-    if (model) args.push('--model', model);
-    if (thinkingEffort && thinkingEffort !== 'none') {
-      args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
+  if (cliName === 'alpha') {
+    try {
+      const result = await executeAlphaAuxiliaryJob({
+        prompt: enrichedCommitPrompt,
+        worktreePath,
+        onEvent: emit,
+      });
+      collectedOutput = result.fullContent;
+    } catch (err: any) {
+      emit({ type: 'error', content: err.message || 'Alpha Intelligence commit message error' });
+      throw err;
     }
-    args.push('-c', 'service_tier="fast"');
-  }
-
-  await new Promise<void>((resolve) => {
-    const proc = spawnAgentCli(cliName, args, worktreePath, (ev) => {
-      emit(ev);
-      if (ev.content) collectedOutput += ev.content;
-      if (ev.type === 'done' || ev.type === 'error') {
-        resolve();
+  } else {
+    const args: string[] = [];
+    if (cliName === 'agy') {
+      args.push('-p', enrichedCommitPrompt);
+      if (model) args.push('--model', model);
+      const effort = (thinkingEffort && thinkingEffort !== 'none') ? thinkingEffort : 'medium';
+      args.push('--effort', effort);
+      args.push('--output-format', 'stream-json');
+      args.push('--dangerously-skip-permissions');
+    } else if (cliName === 'claude') {
+      args.push('-p', enrichedCommitPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+      args.push('--output-format', 'stream-json');
+      args.push('--verbose');
+      args.push('--dangerously-skip-permissions');
+    } else {
+      // codex
+      args.push('exec', enrichedCommitPrompt);
+      if (model) args.push('--model', model);
+      if (thinkingEffort && thinkingEffort !== 'none') {
+        args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
       }
-    });
+      args.push('-c', 'service_tier="fast"');
+    }
 
-    const timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {}
-      resolve();
-    }, 60000);
+    await new Promise<void>((resolve) => {
+      const proc = spawnAgentCli(cliName, args, worktreePath, (ev) => {
+        emit(ev);
+        if (ev.content) collectedOutput += ev.content;
+        if (ev.type === 'done' || ev.type === 'error') {
+          resolve();
+        }
+      });
 
-    proc.on('close', () => {
-      clearTimeout(timer);
+      const timer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {}
+        resolve();
+      }, 60000);
+
+      proc.on('close', () => {
+        clearTimeout(timer);
+      });
     });
-  });
+  }
 
   // Extract JSON from output
   const jsonMatch = collectedOutput.match(/```json\s*([\s\S]*?)\s*```/) || collectedOutput.match(/(\{[\s\S]*"title"[\s\S]*\})/);
