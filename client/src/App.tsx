@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
 import { getSettings, getClis, getProject, getTask, deleteTask, updateTask } from './api';
@@ -15,7 +15,13 @@ import {
   setCachedClis,
   getCachedProject,
   setCachedProject,
+  getCachedAllTasks,
+  getCachedChats,
+  getCachedTaskQueuedCount,
+  getCachedQueuedMessages,
+  removeUnreadReplyTaskId,
 } from './cache';
+import { isTaskInBackground, sendTaskNotification, NotificationTriggerType } from './utils/notifications';
 import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
@@ -46,6 +52,17 @@ export default function App() {
   const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
 
+  const currentProjectIdRef = useRef<string | null>(currentProjectId);
+  const currentTaskIdRef = useRef<string | null>(currentTaskId);
+
+  useEffect(() => {
+    currentProjectIdRef.current = currentProjectId;
+  }, [currentProjectId]);
+
+  useEffect(() => {
+    currentTaskIdRef.current = currentTaskId;
+  }, [currentTaskId]);
+
   const [settings, setSettings] = useState<Settings | null>(() => getCachedSettings());
   const [clis, setClis] = useState<CliInfo[]>(() => getCachedClis() || []);
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -71,6 +88,20 @@ export default function App() {
     window.addEventListener('show-dev-server-stopped-toast', handleToast);
     return () => window.removeEventListener('show-dev-server-stopped-toast', handleToast);
   }, []);
+
+  // Listen for notification deep-link navigation
+  useEffect(() => {
+    const handleNotificationNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<{ taskId: string; projectId?: string }>).detail;
+      if (detail?.taskId) {
+        handleNavigate('task', { taskId: detail.taskId, projectId: detail.projectId });
+        removeUnreadReplyTaskId(detail.taskId);
+      }
+    };
+
+    window.addEventListener('navigate-to-task', handleNotificationNavigate);
+    return () => window.removeEventListener('navigate-to-task', handleNotificationNavigate);
+  }, [currentProjectId, activeTask]);
 
   // Always automatically match and sync with current OS theme
   useEffect(() => {
@@ -125,6 +156,98 @@ export default function App() {
           const data = JSON.parse(event.data);
           if (data.type === 'task_agent_status') {
             window.dispatchEvent(new CustomEvent('task-agent-status-updated', { detail: data }));
+          } else if (data.type === 'hitl_input_required') {
+            const taskId = data.taskId;
+            if (taskId && isTaskInBackground(taskId, currentTaskIdRef.current)) {
+              const cachedTask = getCachedTask(taskId);
+              const taskName = data.taskName || cachedTask?.name || 'Task';
+              const projectId = data.projectId || cachedTask?.project_id || currentProjectIdRef.current || undefined;
+              const cachedProject = projectId ? getCachedProject(projectId) : null;
+              const projectName = data.projectName || cachedProject?.name || cachedTask?.project?.name;
+
+              sendTaskNotification({
+                taskId,
+                projectId,
+                projectName,
+                taskName,
+                type: 'hitl',
+                onNavigate: () => {
+                  handleNavigate('task', { taskId, projectId });
+                  removeUnreadReplyTaskId(taskId);
+                },
+              });
+            }
+          } else if (data.type === 'chat_turn_complete') {
+            let taskId = data.taskId;
+            if (!taskId && data.sessionId) {
+              const allTasks = getCachedAllTasks() || [];
+              for (const t of allTasks) {
+                const chats = getCachedChats(t.id);
+                if (chats && chats.some((c) => c.id === data.sessionId)) {
+                  taskId = t.id;
+                  break;
+                }
+              }
+            }
+
+            if (taskId) {
+              const taskQueueCount = getCachedTaskQueuedCount(taskId);
+              const sessionQueue = data.sessionId ? getCachedQueuedMessages(data.sessionId) : [];
+              const hasQueue = taskQueueCount > 0 || sessionQueue.length > 0;
+
+              if (!hasQueue && isTaskInBackground(taskId, currentTaskIdRef.current)) {
+                const cachedTask = getCachedTask(taskId);
+                const taskName = data.taskName || cachedTask?.name || 'Task';
+                const projectId = data.projectId || cachedTask?.project_id || currentProjectIdRef.current || undefined;
+                const cachedProject = projectId ? getCachedProject(projectId) : null;
+                const projectName = data.projectName || cachedProject?.name || cachedTask?.project?.name;
+
+                let meta: any = {};
+                try {
+                  if (typeof data.message?.metadata === 'string') {
+                    meta = JSON.parse(data.message.metadata);
+                  } else if (data.message?.metadata) {
+                    meta = data.message.metadata;
+                  }
+                } catch {}
+
+                const isError = Boolean(
+                  meta.error ||
+                  meta.isAuthRequired ||
+                  data.message?.content?.startsWith('Error:')
+                );
+
+                const hasAskQuestion = Array.isArray(data.steps) && data.steps.some((s: any) =>
+                  (s.title && s.title.toLowerCase().includes('ask_question')) ||
+                  (s.detail && typeof s.detail === 'string' && s.detail.toLowerCase().includes('ask_question'))
+                );
+
+                let notifType: NotificationTriggerType = 'done';
+                let detail = data.message?.content || '';
+
+                if (isError) {
+                  notifType = 'error';
+                  detail = meta.errorMessage || meta.content || data.message?.content || 'Execution failed';
+                } else if (hasAskQuestion) {
+                  notifType = 'question';
+                } else {
+                  notifType = 'done';
+                }
+
+                sendTaskNotification({
+                  taskId,
+                  projectId,
+                  projectName,
+                  taskName,
+                  type: notifType,
+                  detail,
+                  onNavigate: () => {
+                    handleNavigate('task', { taskId, projectId });
+                    removeUnreadReplyTaskId(taskId);
+                  },
+                });
+              }
+            }
           }
         } catch {}
       };

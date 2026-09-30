@@ -34,6 +34,7 @@ import {
   setCachedTaskQueuedCount,
   removeUnreadReplyTaskId,
 } from '../cache';
+import { requestNotificationPermissionOnUserGesture } from '../utils/notifications';
 
 interface ChatPaneProps {
   task: Task;
@@ -1390,6 +1391,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const hasAttachments = pendingAttachments.length > 0;
     if ((!hasText && !hasAttachments) || !activeChatId || !ws || isUploading) return;
     const prompt = inputPrompt.trim() || 'Please inspect the attached file(s).';
+
+    // Request notification permission if still default on explicit user send action
+    requestNotificationPermissionOnUserGesture();
 
     const isBusy =
       isStreamingRef.current ||

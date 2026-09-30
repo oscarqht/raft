@@ -33,7 +33,16 @@ import {
   Server,
   Laptop,
   Activity,
+  Bell,
+  BellRing,
 } from 'lucide-react';
+import {
+  getNotificationPermission,
+  isNotificationEnabled,
+  setNotificationEnabled,
+  requestNotificationPermission,
+  sendTestNotification,
+} from '../utils/notifications';
 import { Settings, CliInfo, ModelOption, GitAccount, AgentSkill, SkillInstallSummaryItem, AlphaStatusResponse } from '../types';
 import {
   updateSettings,
@@ -146,6 +155,51 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [accountVerifyError, setAccountVerifyError] = useState<string | null>(null);
   const [accountSuccessMsg, setAccountSuccessMsg] = useState<string | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+
+  // Desktop Notifications state
+  const [notifPermission, setNotifPermission] = useState(() => getNotificationPermission());
+  const [notifsEnabled, setNotifsEnabled] = useState(() => isNotificationEnabled());
+
+  useEffect(() => {
+    const updateNotifState = () => {
+      setNotifPermission(getNotificationPermission());
+      setNotifsEnabled(isNotificationEnabled());
+    };
+
+    window.addEventListener('notification-permission-changed', updateNotifState);
+    window.addEventListener('notification-preference-changed', updateNotifState);
+    return () => {
+      window.removeEventListener('notification-permission-changed', updateNotifState);
+      window.removeEventListener('notification-preference-changed', updateNotifState);
+    };
+  }, []);
+
+  const handleToggleNotifications = async (enabled: boolean) => {
+    if (enabled && notifPermission === 'default') {
+      const perm = await requestNotificationPermission();
+      setNotifPermission(perm);
+      if (perm === 'granted') {
+        setNotificationEnabled(true);
+        setNotifsEnabled(true);
+      }
+    } else {
+      setNotificationEnabled(enabled);
+      setNotifsEnabled(enabled);
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    const perm = await requestNotificationPermission();
+    setNotifPermission(perm);
+    if (perm === 'granted') {
+      setNotificationEnabled(true);
+      setNotifsEnabled(true);
+    }
+  };
+
+  const handleSendTestNotif = () => {
+    sendTestNotification();
+  };
 
   const loadGitAccounts = async (showLoading = false) => {
     try {
@@ -1511,6 +1565,83 @@ You have access to terminal commands via your connected local desktop device.
             </div>
           </>
         )}
+
+        {/* 4. Desktop Notifications */}
+        <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+                <Bell className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                <span>Desktop Notifications</span>
+              </h2>
+              <p className="text-xs text-cozy-muted mt-1">
+                Receive browser desktop notifications when background tasks complete, require user input, or encounter errors.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
+              {notifPermission === 'granted' && notifsEnabled && (
+                <button
+                  type="button"
+                  onClick={handleSendTestNotif}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all shadow-soft-sm cursor-pointer"
+                  title="Send a sample notification to verify system permissions"
+                >
+                  <BellRing className="w-3.5 h-3.5 text-teal-500" />
+                  <span>Send Test</span>
+                </button>
+              )}
+
+              {notifPermission === 'granted' ? (
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Permission Granted
+                </span>
+              ) : notifPermission === 'denied' ? (
+                <span
+                  className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-red-500/15 text-red-600 dark:text-red-400 border border-red-400/30"
+                  title="Notifications are blocked in your browser site settings"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  Blocked in Browser
+                </span>
+              ) : notifPermission === 'unsupported' ? (
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30">
+                  Not Supported
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleRequestPermission}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer"
+                >
+                  <BellRing className="w-3.5 h-3.5" />
+                  <span>Enable Notifications</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-cozy-border/60 flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <div className="text-sm font-semibold text-cozy-text">Notify for Background Tasks</div>
+              <div className="text-xs text-cozy-muted">
+                Trigger alerts when you are viewing other tasks, projects, or when the window/tab is in the background.
+              </div>
+            </div>
+
+            <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+              <input
+                type="checkbox"
+                checked={notifsEnabled}
+                onChange={(e) => handleToggleNotifications(e.target.checked)}
+                disabled={notifPermission === 'denied' || notifPermission === 'unsupported'}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-cozy-subtle border border-cozy-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500 peer-disabled:opacity-40 peer-disabled:cursor-not-allowed"></div>
+            </label>
+          </div>
+        </div>
       </div>
     )}
 
