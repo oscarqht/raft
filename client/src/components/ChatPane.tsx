@@ -33,6 +33,9 @@ import {
   setCachedQueuedMessages,
   setCachedTaskQueuedCount,
   removeUnreadReplyTaskId,
+  getTaskDraft,
+  setTaskDraft,
+  clearTaskDraft,
 } from '../cache';
 import { requestNotificationPermissionOnUserGesture } from '../utils/notifications';
 
@@ -88,7 +91,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   });
   const [loadingChats, setLoadingChats] = useState(() => !(getCachedChats(task.id)?.length));
 
-  const [inputPrompt, setInputPrompt] = useState('');
+  const [inputPrompt, setInputPrompt] = useState(() => {
+    const draft = getTaskDraft(task.id);
+    return draft?.text || '';
+  });
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingChunk, setStreamingChunk] = useState('');
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
@@ -168,12 +174,36 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const [showMobileActionsMenu, setShowMobileActionsMenu] = useState(false);
 
   // Attachments state
-  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
+  const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>(() => {
+    const draft = getTaskDraft(task.id);
+    return draft?.attachments || [];
+  });
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mobileActionsRef = useRef<HTMLDivElement>(null);
+
+  // Persist unsent draft (text & pending attachments) to sessionStorage
+  const currentDraftTaskIdRef = useRef(task.id);
+  useEffect(() => {
+    if (currentDraftTaskIdRef.current !== task.id) {
+      currentDraftTaskIdRef.current = task.id;
+      const draft = getTaskDraft(task.id);
+      setInputPrompt(draft?.text || '');
+      setPendingAttachments(draft?.attachments || []);
+      return;
+    }
+
+    if (!inputPrompt.trim() && pendingAttachments.length === 0) {
+      clearTaskDraft(task.id);
+    } else {
+      setTaskDraft(task.id, {
+        text: inputPrompt,
+        attachments: pendingAttachments,
+      });
+    }
+  }, [task.id, inputPrompt, pendingAttachments]);
 
   useEffect(() => {
     if (!showMobileActionsMenu) return;
@@ -1423,6 +1453,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       setCachedQueuedMessages(activeChatId, updated);
       setCachedTaskQueuedCount(task.id, updated.length);
 
+      clearTaskDraft(task.id);
       setInputPrompt('');
       setPendingAttachments([]);
       setUploadError(null);
@@ -1430,6 +1461,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
 
     const currentAttachments = [...pendingAttachments];
+    clearTaskDraft(task.id);
     setInputPrompt('');
     setPendingAttachments([]);
     setUploadError(null);

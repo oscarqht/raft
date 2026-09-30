@@ -11,6 +11,8 @@ import {
   CliInfo,
   GitAccount,
   AgentSkill,
+  TaskDraft,
+  NewTaskDraft,
 } from './types';
 
 import { idbGet, idbSet, idbDelete } from './idb';
@@ -897,6 +899,69 @@ export function setCachedSkills(skills: AgentSkill[]): void {
   if (!Array.isArray(skills)) return;
   try {
     localStorage.setItem(`${PREFIX}skills`, JSON.stringify(skills));
+  } catch {}
+}
+
+// Drafts (sessionStorage-backed, isolated per session/tab lifecycle)
+const TASK_DRAFT_KEY_PREFIX = `${PREFIX}draft:task:`;
+const NEW_TASK_DRAFT_KEY_PREFIX = `${PREFIX}draft:project-new-task:`;
+
+export function getTaskDraft(taskId: string): TaskDraft | null {
+  if (!taskId) return null;
+  try {
+    const raw = sessionStorage.getItem(`${TASK_DRAFT_KEY_PREFIX}${taskId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.text === 'string' && Array.isArray(parsed.attachments)) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function setTaskDraft(taskId: string, draft: TaskDraft): void {
+  if (!taskId) return;
+  try {
+    sessionStorage.setItem(`${TASK_DRAFT_KEY_PREFIX}${taskId}`, JSON.stringify(draft));
+  } catch {}
+}
+
+export function clearTaskDraft(taskId: string): void {
+  if (!taskId) return;
+  try {
+    sessionStorage.removeItem(`${TASK_DRAFT_KEY_PREFIX}${taskId}`);
+  } catch {}
+}
+
+export function getNewTaskDraft(projectId: string): NewTaskDraft | null {
+  if (!projectId) return null;
+  try {
+    const raw = sessionStorage.getItem(`${NEW_TASK_DRAFT_KEY_PREFIX}${projectId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && (typeof parsed.taskName === 'string' || typeof parsed.initialPrompt === 'string')) {
+        return {
+          taskName: typeof parsed.taskName === 'string' ? parsed.taskName : '',
+          initialPrompt: typeof parsed.initialPrompt === 'string' ? parsed.initialPrompt : '',
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function setNewTaskDraft(projectId: string, draft: NewTaskDraft): void {
+  if (!projectId) return;
+  try {
+    sessionStorage.setItem(`${NEW_TASK_DRAFT_KEY_PREFIX}${projectId}`, JSON.stringify(draft));
+  } catch {}
+}
+
+export function clearNewTaskDraft(projectId: string): void {
+  if (!projectId) return;
+  try {
+    sessionStorage.removeItem(`${NEW_TASK_DRAFT_KEY_PREFIX}${projectId}`);
   } catch {}
 }
 
