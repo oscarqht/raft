@@ -29,6 +29,7 @@ import {
   setCachedProjectTasks,
   getCachedProjectTasksGitStatus,
   setCachedProjectTasksGitStatus,
+  setCachedAllTasksGitStatus,
   setCachedChats,
   setCachedActiveChatId,
   setCachedMessages,
@@ -94,6 +95,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       setTasksStatus((prev) => {
         const next = { ...prev, ...statuses };
         setCachedProjectTasksGitStatus(projectId, next);
+        setCachedAllTasksGitStatus(next);
         return next;
       });
     } catch {}
@@ -135,6 +137,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           },
         };
         setCachedProjectTasksGitStatus(projectId, next);
+        setCachedAllTasksGitStatus(next);
         return next;
       });
     };
@@ -180,6 +183,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
               },
             };
             setCachedProjectTasksGitStatus(projectId, next);
+            setCachedAllTasksGitStatus(next);
             return next;
           });
         }

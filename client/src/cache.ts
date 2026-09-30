@@ -21,10 +21,12 @@ const MAX_MESSAGES_PER_SESSION = 80;
 const MAX_CACHED_SESSIONS = 25;
 const MAX_CACHED_TASKS = 25;
 
-// In-Memory synchronous stores for instant 0ms task switching and unlimited active memory
 const memoryTasks = new Map<string, Task>();
 const memoryChats = new Map<string, ChatSession[]>();
 const memoryMessages = new Map<string, ChatMessage[]>();
+const memoryProjectTasksGitStatus = new Map<string, Record<string, TaskGitStatus>>();
+const memoryAllTasksGitStatus = new Map<string, TaskGitStatus>();
+let memoryActiveDevServers: string[] | null = null;
 
 // LRU tracking index
 interface CacheIndex {
@@ -171,20 +173,123 @@ export function deleteCachedProjectTasks(projectId: string): void {
 // Project Tasks Git Status Cache
 export function getCachedProjectTasksGitStatus(projectId: string): Record<string, TaskGitStatus> | null {
   if (!projectId) return null;
+  if (memoryProjectTasksGitStatus.has(projectId)) {
+    return memoryProjectTasksGitStatus.get(projectId)!;
+  }
   try {
     const raw = localStorage.getItem(`${PREFIX}tasks_git_status:${projectId}`) || localStorage.getItem(`${LEGACY_PREFIX}tasks_git_status:${projectId}`);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        memoryProjectTasksGitStatus.set(projectId, parsed);
+        return parsed;
+      }
+    }
   } catch {}
   return null;
 }
 
 export function setCachedProjectTasksGitStatus(projectId: string, statuses: Record<string, TaskGitStatus>): void {
   if (!projectId || !statuses) return;
+  memoryProjectTasksGitStatus.set(projectId, statuses);
   try {
     localStorage.setItem(`${PREFIX}tasks_git_status:${projectId}`, JSON.stringify(statuses));
   } catch {
     cleanOldCache();
   }
+  idbSet(`${PREFIX}tasks_git_status:${projectId}`, statuses).catch(() => {});
+}
+
+// All Tasks Git Status Cache (for instant sidebar and task page badge rendering)
+export function getCachedAllTasksGitStatus(): Record<string, TaskGitStatus> | null {
+  if (memoryAllTasksGitStatus.size > 0) {
+    const obj: Record<string, TaskGitStatus> = {};
+    for (const [k, v] of memoryAllTasksGitStatus.entries()) {
+      obj[k] = v;
+    }
+    return obj;
+  }
+  try {
+    const raw = localStorage.getItem(`${PREFIX}all_tasks_git_status`) || localStorage.getItem(`${LEGACY_PREFIX}all_tasks_git_status`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        for (const [k, v] of Object.entries(parsed)) {
+          memoryAllTasksGitStatus.set(k, v as TaskGitStatus);
+        }
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedAllTasksGitStatus(statuses: Record<string, TaskGitStatus>): void {
+  if (!statuses || typeof statuses !== 'object') return;
+  for (const [k, v] of Object.entries(statuses)) {
+    memoryAllTasksGitStatus.set(k, v);
+  }
+  try {
+    localStorage.setItem(`${PREFIX}all_tasks_git_status`, JSON.stringify(statuses));
+  } catch {
+    cleanOldCache();
+  }
+  idbSet(`${PREFIX}all_tasks_git_status`, statuses).catch(() => {});
+}
+
+export function getCachedTaskGitStatus(taskId: string): TaskGitStatus | null {
+  if (!taskId) return null;
+  if (memoryAllTasksGitStatus.has(taskId)) {
+    return memoryAllTasksGitStatus.get(taskId)!;
+  }
+  const allCached = getCachedAllTasksGitStatus();
+  if (allCached && allCached[taskId]) {
+    return allCached[taskId];
+  }
+  return null;
+}
+
+export function setCachedTaskGitStatus(taskId: string, status: TaskGitStatus, projectId?: string): void {
+  if (!taskId || !status) return;
+  memoryAllTasksGitStatus.set(taskId, status);
+  const current = getCachedAllTasksGitStatus() || {};
+  current[taskId] = status;
+  setCachedAllTasksGitStatus(current);
+
+  if (projectId) {
+    const projectStatuses = getCachedProjectTasksGitStatus(projectId) || {};
+    projectStatuses[taskId] = status;
+    setCachedProjectTasksGitStatus(projectId, projectStatuses);
+  }
+}
+
+// Active Dev Servers Cache
+export function getCachedActiveDevServers(): string[] | null {
+  if (memoryActiveDevServers !== null) {
+    return memoryActiveDevServers;
+  }
+  try {
+    const raw = localStorage.getItem(`${PREFIX}active_dev_servers`) || localStorage.getItem(`${LEGACY_PREFIX}active_dev_servers`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memoryActiveDevServers = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedActiveDevServers(taskIds: string[]): void {
+  if (!Array.isArray(taskIds)) return;
+  memoryActiveDevServers = taskIds;
+  try {
+    localStorage.setItem(`${PREFIX}active_dev_servers`, JSON.stringify(taskIds));
+  } catch {
+    cleanOldCache();
+  }
+  idbSet(`${PREFIX}active_dev_servers`, taskIds).catch(() => {});
 }
 
 // All Tasks Cache (across projects)
@@ -373,8 +478,13 @@ export function deleteCachedTask(taskId: string, projectId?: string): void {
     localStorage.removeItem(`${PREFIX}task_queue_count:${taskId}`);
     const index = getIndex();
     index.taskIds = index.taskIds.filter((id) => id !== taskId);
-    saveIndex(index);
     removeUnreadReplyTaskId(taskId);
+    memoryAllTasksGitStatus.delete(taskId);
+    const allStatuses = getCachedAllTasksGitStatus();
+    if (allStatuses && allStatuses[taskId]) {
+      delete allStatuses[taskId];
+      setCachedAllTasksGitStatus(allStatuses);
+    }
 
     if (projectId) {
       const cached = getCachedProjectTasks(projectId);

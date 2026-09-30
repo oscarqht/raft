@@ -6,6 +6,7 @@ import { getTaskGitStatus, updateTask } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
 import { ProjectIcon } from './ProjectIcon';
+import { getCachedTaskGitStatus, setCachedTaskGitStatus } from '../cache';
 
 interface HeaderProps {
   currentPath?: {
@@ -51,7 +52,9 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const [taskStatus, setTaskStatus] = useState<TaskGitStatus | null>(null);
+  const [taskStatus, setTaskStatus] = useState<TaskGitStatus | null>(() => {
+    return currentPath?.taskId ? getCachedTaskGitStatus(currentPath.taskId) : null;
+  });
   const [loadingStatus, setLoadingStatus] = useState(false);
 
   const fetchTaskStatus = useCallback(async (force = false) => {
@@ -63,15 +66,24 @@ export const Header: React.FC<HeaderProps> = ({
     try {
       const s = await getTaskGitStatus(currentPath.taskId, force);
       setTaskStatus(s);
+      if (currentPath?.taskId) {
+        setCachedTaskGitStatus(currentPath.taskId, s, currentPath.projectId);
+      }
     } catch {}
     finally {
       setLoadingStatus(false);
     }
-  }, [currentPath?.taskId]);
+  }, [currentPath?.taskId, currentPath?.projectId]);
 
   useEffect(() => {
+    if (currentPath?.taskId) {
+      const cached = getCachedTaskGitStatus(currentPath.taskId);
+      if (cached) {
+        setTaskStatus(cached);
+      }
+    }
     fetchTaskStatus(false);
-  }, [fetchTaskStatus]);
+  }, [fetchTaskStatus, currentPath?.taskId]);
 
   useEffect(() => {
     const handleFocus = () => fetchTaskStatus(false);

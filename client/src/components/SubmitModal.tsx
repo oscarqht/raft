@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, UploadCloud, Sparkles, CheckCircle2, AlertTriangle, FileCode, Terminal, Loader2, GitCommit, GitPullRequest, ExternalLink } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
+import { setCachedTaskGitStatus } from '../cache';
 
 interface SubmitModalProps {
   task: Task;
@@ -127,8 +128,13 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
           if (ev.type === 'done') {
             setIsSubmitting(false);
             setIsSuccess(true);
-            getTaskGitStatus(task.id, true).then(setGitStatus).catch(() => {});
-            window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id } }));
+            getTaskGitStatus(task.id, true).then((s) => {
+              setGitStatus(s);
+              setCachedTaskGitStatus(task.id, s, task.project_id);
+              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id, status: s } }));
+            }).catch(() => {
+              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId: task.id } }));
+            });
           } else if (ev.type === 'error') {
             setIsSubmitting(false);
             setIsSuccess(false);
