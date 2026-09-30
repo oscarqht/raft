@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 use tokio::sync::Mutex;
 
@@ -249,12 +248,11 @@ pub async fn check_and_download(app: &AppHandle, show_window: bool, force: bool)
                         "Version v{} is downloaded. Click here or open the status bar menu to restart.",
                         version
                     );
-                    let _ = app
-                        .notification()
-                        .builder()
-                        .title("Alpha Bro Update Ready")
-                        .body(notif_body)
-                        .show();
+                    crate::notify::show_notification(
+                        &app,
+                        "Alpha Bro Update Ready",
+                        &notif_body,
+                    );
                 }
                 Err(e) => {
                     eprintln!("[raft] Update download failed: {e}");
@@ -370,12 +368,18 @@ pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
                         .map(|b| b.exists())
                         .unwrap_or(false);
                     if !bundle_exists {
-                        let installed_app = std::path::Path::new("/Applications/Raft.app");
-                        if installed_app.exists() {
-                            println!("[raft] Relaunching /Applications/Raft.app...");
+                        let installed_app = std::path::Path::new("/Applications/Alpha Bro.app");
+                        let fallback_app = std::path::Path::new("/Applications/Raft.app");
+                        let target = if installed_app.exists() {
+                            installed_app
+                        } else {
+                            fallback_app
+                        };
+                        if target.exists() {
+                            println!("[raft] Relaunching {}...", target.display());
                             let _ = std::process::Command::new("open")
                                 .arg("-a")
-                                .arg(installed_app)
+                                .arg(target)
                                 .spawn();
                             std::process::exit(0);
                         }
@@ -401,14 +405,20 @@ fn get_updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String>
                     .and_then(|p| p.parent());
                 let bundle_exists = bundle_opt.map(|b| b.exists()).unwrap_or(false);
                 if !bundle_exists {
-                    let installed_app = std::path::PathBuf::from("/Applications/Raft.app/Contents/MacOS/raft");
-                    if installed_app.exists() {
-                        println!("[raft] Current running app bundle was deleted; targeting /Applications/Raft.app for update");
-                        builder = builder.executable_path(installed_app);
+                    let installed_app = std::path::PathBuf::from("/Applications/Alpha Bro.app/Contents/MacOS/raft");
+                    let fallback_app = std::path::PathBuf::from("/Applications/Raft.app/Contents/MacOS/raft");
+                    let target = if installed_app.exists() {
+                        installed_app
+                    } else {
+                        fallback_app
+                    };
+                    if target.exists() {
+                        println!("[raft] Current running app bundle was deleted; targeting {} for update", target.display());
+                        builder = builder.executable_path(target);
                     } else {
                         let path_str = bundle_opt.map(|b| b.display().to_string()).unwrap_or_default();
                         return Err(format!(
-                            "Cannot update: Application bundle at '{path_str}' does not exist on disk. Please reinstall Raft into /Applications."
+                            "Cannot update: Application bundle at '{path_str}' does not exist on disk. Please reinstall Alpha Bro into /Applications."
                         ));
                     }
                 }

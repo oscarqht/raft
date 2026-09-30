@@ -105,6 +105,10 @@ pub fn open_full_disk_access_settings() {
                 let _ = std::process::Command::new("open")
                     .args(["-R", &app_bundle.to_string_lossy()])
                     .spawn();
+            } else if std::path::Path::new("/Applications/Alpha Bro.app").exists() {
+                let _ = std::process::Command::new("open")
+                    .args(["-R", "/Applications/Alpha Bro.app"])
+                    .spawn();
             } else if std::path::Path::new("/Applications/Raft.app").exists() {
                 let _ = std::process::Command::new("open")
                     .args(["-R", "/Applications/Raft.app"])

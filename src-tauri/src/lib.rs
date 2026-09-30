@@ -1,3 +1,4 @@
+mod notify;
 mod server;
 mod tray;
 mod updater;
@@ -169,15 +170,13 @@ pub fn run() {
 
                         #[cfg(target_os = "macos")]
                         {
-                            use tauri_plugin_notification::NotificationExt;
                             if !tray::check_full_disk_access() {
                                 println!("[raft] Full Disk Access is not granted yet. Notifying user...");
-                                let _ = app_handle
-                                    .notification()
-                                    .builder()
-                                    .title("Alpha Bro Permissions")
-                                    .body("Alpha Bro needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.")
-                                    .show();
+                                notify::show_notification(
+                                    &app_handle,
+                                    "Alpha Bro Permissions",
+                                    "Alpha Bro needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.",
+                                );
                             }
                         }
                     }
