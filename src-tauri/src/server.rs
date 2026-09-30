@@ -103,27 +103,115 @@ pub fn resolve_host() -> String {
 
 /// Check if a local port is available to bind
 fn is_port_available(port: u16, host: &str) -> bool {
+    let timeout = Duration::from_millis(150);
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        if std::net::TcpStream::connect((ip, port)).is_ok() {
+        let sock_addr = std::net::SocketAddr::new(ip, port);
+        if std::net::TcpStream::connect_timeout(&sock_addr, timeout).is_ok() {
             return false;
         }
     }
-    if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+    let local_v4 = std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), port);
+    if std::net::TcpStream::connect_timeout(&local_v4, timeout).is_ok() {
         return false;
     }
-    if std::net::TcpStream::connect(("::1", port)).is_ok() {
+    let local_v6 = std::net::SocketAddr::new(std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST), port);
+    if std::net::TcpStream::connect_timeout(&local_v6, timeout).is_ok() {
         return false;
     }
     if TcpListener::bind(("0.0.0.0", port)).is_err() {
         return false;
     }
-    if TcpListener::bind(("::", port)).is_err() {
+    if TcpListener::bind(("127.0.0.1", port)).is_err() {
         return false;
     }
     true
 }
 
-/// Find an available port starting from `start_port`
+#[cfg(unix)]
+fn kill_process_on_port(port: u16) {
+    println!("[raft] Port {port} is occupied; inspecting processes holding the port...");
+    let current_pid = std::process::id();
+
+    // 1. Try lsof to get PIDs holding the port
+    if let Ok(output) = std::process::Command::new("lsof")
+        .args(["-ti", &format!(":{port}")])
+        .output()
+    {
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if let Ok(pid) = trimmed.parse::<u32>() {
+                    if pid != current_pid && pid > 1 {
+                        println!("[raft] Terminating process {pid} occupying port {port}...");
+                        let _ = std::process::Command::new("kill")
+                            .args(["-9", &pid.to_string()])
+                            .output();
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Fallback on Linux: fuser
+    let _ = std::process::Command::new("fuser")
+        .args(["-k", "-n", "tcp", &port.to_string()])
+        .output();
+}
+
+#[cfg(windows)]
+fn kill_process_on_port(port: u16) {
+    println!("[raft] Port {port} is occupied; terminating occupying processes on Windows...");
+    let script = format!(
+        "Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_process_on_port(_port: u16) {}
+
+/// Ensure that the designated port is available before launching the server.
+/// If port is in use (e.g. during an update restart when the previous process is shutting down),
+/// it waits up to 3 seconds. If still occupied, it forcibly terminates the occupying process.
+pub async fn ensure_port_available(port: u16, host: &str) -> Result<(), String> {
+    if is_port_available(port, host) {
+        return Ok(());
+    }
+
+    println!("[raft] Port {port} is currently in use. Waiting for it to be released...");
+
+    // Phase 1: Wait up to 3 seconds (15 x 200ms) for the previous server to release the port naturally
+    for _ in 0..15 {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        if is_port_available(port, host) {
+            println!("[raft] Port {port} is now available.");
+            return Ok(());
+        }
+    }
+
+    // Phase 2: If still busy after 3 seconds, terminate any lingering process holding the port
+    println!("[raft] Port {port} is still in use after 3s grace period. Terminating occupying process...");
+    kill_process_on_port(port);
+
+    // Phase 3: Wait up to 3 seconds (15 x 200ms) for port to become available after termination
+    for _ in 0..15 {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        if is_port_available(port, host) {
+            println!("[raft] Port {port} successfully reclaimed.");
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "Port {port} remains occupied and could not be freed after multiple attempts. Please ensure no other application is using port {port}."
+    ))
+}
+
+/// Find an available port starting from `start_port` (legacy fallback)
+#[allow(dead_code)]
 pub fn find_available_port(start_port: u16, max_attempts: u16, host: &str) -> Option<u16> {
     for port in start_port..(start_port + max_attempts) {
         if is_port_available(port, host) {
@@ -366,8 +454,12 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     })?);
 
     let host = resolve_host();
-    let port = find_available_port(3300, 20, &host)
-        .ok_or_else(|| "No available port found between 3300 and 3320.".to_string())?;
+    let port = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.trim().parse::<u16>().ok())
+        .unwrap_or(3300);
+
+    ensure_port_available(port, &host).await?;
 
     let mut entry = resolve_server_script(&app)?;
     entry.app_root = clean_path(entry.app_root);

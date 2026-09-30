@@ -355,7 +355,7 @@ pub async fn install_and_relaunch_inner(app: &AppHandle) -> Result<(), String> {
 
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         #[cfg(target_os = "macos")]
         {
             if let Ok(curr_exe) = std::env::current_exe() {
