@@ -114,13 +114,24 @@ export const TaskQuickSwitcher: React.FC<TaskQuickSwitcherProps> = ({
 
     const groups: ProjectGroup[] = [];
     for (const [projectId, data] of map.entries()) {
-      // Sort tasks within project by updated_at descending
-      const sortedTasks = [...data.tasks].sort(
-        (a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0)
-      );
+      // Sort tasks within project by WIP first, then last active descending
+      const sortedTasks = [...data.tasks].sort((a, b) => {
+        const aWip = a.agent_status === 'WIP';
+        const bWip = b.agent_status === 'WIP';
+        if (aWip && !bWip) return -1;
+        if (!aWip && bWip) return 1;
+        const timeA = Math.max(a.updated_at || 0, a.created_at || 0);
+        const timeB = Math.max(b.updated_at || 0, b.created_at || 0);
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.created_at || 0) - (a.created_at || 0);
+      });
 
       const latestUpdatedAt = Math.max(
-        ...sortedTasks.map((t) => t.updated_at || t.created_at || 0),
+        ...sortedTasks.map((t) => {
+          const isWip = t.agent_status === 'WIP';
+          const baseTime = Math.max(t.updated_at || 0, t.created_at || 0);
+          return isWip ? Math.max(baseTime, Date.now()) : baseTime;
+        }),
         0
       );
 

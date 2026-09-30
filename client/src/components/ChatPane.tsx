@@ -33,6 +33,7 @@ import {
   setCachedQueuedMessages,
   setCachedTaskQueuedCount,
   removeUnreadReplyTaskId,
+  setCachedTask,
 } from '../cache';
 
 interface ChatPaneProps {
@@ -891,6 +892,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setCachedChats(task.id, merged);
         return merged;
       });
+      const now = Date.now();
+      const updatedTask = { ...task, updated_at: now };
+      setCachedTask(updatedTask);
+      window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
     } catch {
       pendingChatIdsRef.current.delete(newId);
       deleteCachedChat(task.id, newId);
@@ -1115,6 +1120,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     try {
       const uploaded = await uploadTaskAttachments(task.id, fileArray);
       setPendingAttachments((prev) => [...prev, ...uploaded]);
+      const now = Date.now();
+      const updatedTask = { ...task, updated_at: now };
+      setCachedTask(updatedTask);
+      window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
     } catch (err: any) {
       setUploadError(err.message || 'Failed to upload attachment(s)');
     } finally {
@@ -1255,6 +1264,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             thinkingEffort: effortToSend,
           })
         );
+        const now = Date.now();
+        if (task?.id) {
+          const updatedTask = { ...task, updated_at: now, agent_status: 'WIP' as const };
+          setCachedTask(updatedTask);
+          window.dispatchEvent(new CustomEvent('task-updated', { detail: updatedTask }));
+        }
       } catch (err) {
         console.error('Failed to send chat message:', err);
         if (targetSessionId === activeChatIdRef.current) {

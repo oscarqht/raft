@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -242,6 +242,19 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     }
   };
 
+  const sortedTasks: Task[] = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      const aWip = a.agent_status === 'WIP' || tasksStatus[a.id]?.agent_status === 'WIP';
+      const bWip = b.agent_status === 'WIP' || tasksStatus[b.id]?.agent_status === 'WIP';
+      if (aWip && !bWip) return -1;
+      if (!aWip && bWip) return 1;
+      const timeA = Math.max(a.updated_at || 0, a.created_at || 0);
+      const timeB = Math.max(b.updated_at || 0, b.created_at || 0);
+      if (timeB !== timeA) return timeB - timeA;
+      return (b.created_at || 0) - (a.created_at || 0);
+    });
+  }, [tasks, tasksStatus]);
+
   useEffect(() => {
     if (!projectId) return;
     const cp = getCachedProject(projectId);
@@ -432,7 +445,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {tasks.map((t) => {
+          {sortedTasks.map((t) => {
             const isDeletingThis = deletingTaskId === t.id;
             return (
               <div
