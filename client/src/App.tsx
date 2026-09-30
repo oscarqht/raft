@@ -20,6 +20,7 @@ import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
 import { TaskPage } from './pages/TaskPage';
+import { SubmitProvider } from './contexts/SubmitContext';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loader2, Square, X, AlertCircle, RotateCw } from 'lucide-react';
@@ -290,6 +291,7 @@ export default function App() {
   const isProjectPage = Boolean(projectMatch && !projectTaskMatch);
 
   return (
+    <SubmitProvider ws={ws}>
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-cozy-bg text-cozy-text font-sans">
       <Header
         currentPath={{
@@ -455,5 +457,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </SubmitProvider>
   );
 }

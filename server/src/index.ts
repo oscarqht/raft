@@ -2418,7 +2418,7 @@ wss.on('connection', (ws: WebSocket) => {
             if (ev.type === 'done') {
               GitService.invalidateTaskStatus(task.worktree_path);
             }
-            send({ type: 'submit_event', event: ev });
+            send({ type: 'submit_event', taskId, event: ev });
           },
           task.base_branch
         );
