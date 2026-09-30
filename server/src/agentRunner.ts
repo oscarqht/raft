@@ -986,6 +986,74 @@ export function truncateOutput(output: any, maxBytes = 100 * 1024): string {
   return str;
 }
 
+export function formatToolStepInfo(
+  toolName: string,
+  params: any = {}
+): { category: AgentStep['category']; title: string; detail: string } {
+  const lowerTool = (toolName || '').toLowerCase();
+  let category: AgentStep['category'] = 'other';
+  let title = toolName || 'tool';
+  let detail = typeof params === 'string' ? params : JSON.stringify(params);
+
+  const cmd =
+    params.command ||
+    params.CommandLine ||
+    (lowerTool === 'bash' && typeof params === 'string' ? params : undefined);
+
+  if (cmd) {
+    category = 'command';
+    detail = cmd;
+    title = `Run: ${cmd}`;
+  } else if (
+    params.path ||
+    params.file ||
+    params.file_path ||
+    params.AbsolutePath ||
+    params.TargetFile ||
+    lowerTool === 'read' ||
+    lowerTool === 'view' ||
+    lowerTool === 'edit' ||
+    lowerTool === 'write'
+  ) {
+    const target =
+      params.path ||
+      params.file ||
+      params.file_path ||
+      params.AbsolutePath ||
+      params.TargetFile ||
+      '';
+    const basename = path.basename(target) || target;
+    detail = target || detail;
+    if (
+      lowerTool.includes('write') ||
+      lowerTool.includes('replace') ||
+      lowerTool.includes('edit') ||
+      lowerTool.includes('sed')
+    ) {
+      category = 'file_write';
+      title = basename ? `Edit: ${basename}` : toolName;
+    } else {
+      category = 'file_read';
+      title = basename ? `${toolName.replace(/_/g, ' ')}: ${basename}` : toolName;
+    }
+  } else if (params.query || lowerTool.includes('search') || lowerTool.includes('grep') || lowerTool.includes('glob')) {
+    category = 'search';
+    const q = params.query || params.pattern || detail;
+    detail = q;
+    title = `Search: "${q}"`;
+  } else if (params.Url || params.url || lowerTool.includes('fetch') || lowerTool.includes('browser')) {
+    category = lowerTool.startsWith('browser') ? 'browser' : 'file_read';
+    const u = params.Url || params.url || detail;
+    detail = u;
+    title = `${lowerTool.startsWith('browser') ? 'Browser' : 'Fetch'}: ${u}`;
+  } else {
+    category = 'other';
+    title = toolName.replace(/_/g, ' ');
+  }
+
+  return { category, title, detail };
+}
+
 export function parseLegacyActionLine(line: string, index = 0): AgentStep | null {
   const clean = stripAnsi(line).trim();
   if (!clean) return null;
@@ -1191,6 +1259,8 @@ export function spawnAgentCli(
   let lineBuffer = '';
   let hasStreamedDeltas = false;
   let lastReportedConversationId: string | null = null;
+  let activeClaudeThinkingStepId: string | null = null;
+  let accumulatedClaudeThinking = '';
 
   proc.stdout?.on('data', (data: Buffer) => {
     lineBuffer += data.toString('utf-8');
@@ -1408,19 +1478,184 @@ export function spawnAgentCli(
                 });
               }
             }
-          } else if (parsed.event === 'result') {
-            const finalResponse = parsed.result?.response;
-            if (finalResponse) {
+          } else if (parsed.event === 'result' || parsed.type === 'result') {
+            if (parsed.is_error || parsed.subtype === 'error') {
+              const cleanMsg = typeof parsed.result === 'string' ? parsed.result : (parsed.error?.message || 'Agent execution failed');
+              const isSpendCap = SPEND_CAP_REGEX.test(cleanMsg);
+              const isAuthRequired = AUTH_REQUIRED_REGEX.test(cleanMsg);
               onEvent({
-                type: 'chunk',
-                content: finalResponse,
-                metadata: { ...parsed, isFinalResult: true },
+                type: 'error',
+                content: cleanMsg,
+                metadata: {
+                  ...parsed,
+                  isSpendCap,
+                  isAuthRequired,
+                  errorType: isSpendCap ? 'spend_cap' : (isAuthRequired ? 'auth_required' : 'agent_error'),
+                },
                 conversationId: detectedConversationId,
               });
+            } else {
+              const finalResponse = parsed.result?.response || (typeof parsed.result === 'string' ? parsed.result : undefined);
+              if (finalResponse) {
+                onEvent({
+                  type: 'chunk',
+                  content: finalResponse,
+                  metadata: { ...parsed, isFinalResult: true },
+                  conversationId: detectedConversationId,
+                });
+              }
             }
           } else if (parsed.type || parsed.role) {
             // General JSON event (Claude, Codex, etc.)
-            if (parsed.type === 'item.started' && parsed.item) {
+            if (parsed.type === 'stream_event' && parsed.event) {
+              const streamEv = parsed.event;
+              if (streamEv.type === 'content_block_start') {
+                const cb = streamEv.content_block;
+                if (cb?.type === 'thinking') {
+                  activeClaudeThinkingStepId = `claude-think-${streamEv.index ?? Date.now()}`;
+                  accumulatedClaudeThinking = cb.thinking || '';
+                  const agentStep: AgentStep = {
+                    id: activeClaudeThinkingStepId,
+                    type: 'thought',
+                    category: 'other',
+                    title: 'Reasoning',
+                    thought: accumulatedClaudeThinking,
+                    status: 'running',
+                    startTime: Date.now(),
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                }
+              } else if (streamEv.type === 'content_block_delta') {
+                const delta = streamEv.delta;
+                if (delta?.type === 'thinking_delta' && delta.thinking) {
+                  accumulatedClaudeThinking += delta.thinking;
+                  if (!activeClaudeThinkingStepId) {
+                    activeClaudeThinkingStepId = `claude-think-${streamEv.index ?? Date.now()}`;
+                  }
+                  onEvent({
+                    type: 'thought',
+                    content: delta.thinking,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+                  const agentStep: AgentStep = {
+                    id: activeClaudeThinkingStepId,
+                    type: 'thought',
+                    category: 'other',
+                    title: 'Reasoning',
+                    thought: accumulatedClaudeThinking,
+                    status: 'running',
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                } else if (delta?.type === 'text_delta' && delta.text) {
+                  hasStreamedDeltas = true;
+                  onEvent({
+                    type: 'chunk',
+                    content: delta.text,
+                    metadata: parsed,
+                    conversationId: detectedConversationId,
+                  });
+                }
+              } else if (streamEv.type === 'content_block_stop') {
+                if (activeClaudeThinkingStepId) {
+                  const agentStep: AgentStep = {
+                    id: activeClaudeThinkingStepId,
+                    type: 'thought',
+                    category: 'other',
+                    title: 'Reasoning',
+                    thought: accumulatedClaudeThinking || 'Thinking completed',
+                    status: 'completed',
+                    endTime: Date.now(),
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                  activeClaudeThinkingStepId = null;
+                }
+              }
+            } else if (parsed.type === 'assistant' && parsed.message?.content && Array.isArray(parsed.message.content)) {
+              for (const block of parsed.message.content) {
+                if (block.type === 'tool_use') {
+                  const toolName = block.name || 'tool';
+                  const params = block.input || {};
+                  const { category, title, detail } = formatToolStepInfo(toolName, params);
+                  const agentStep: AgentStep = {
+                    id: block.id || `claude-tool-${Date.now()}`,
+                    type: 'tool',
+                    toolName,
+                    category,
+                    title,
+                    detail,
+                    status: 'running',
+                    startTime: Date.now(),
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                  onEvent({ type: 'thought', content: `→ ${title}\n`, metadata: parsed, conversationId: detectedConversationId });
+                } else if (block.type === 'thinking') {
+                  const thinkText = block.thinking || accumulatedClaudeThinking || '';
+                  const thinkStepId = activeClaudeThinkingStepId || `claude-think-${Date.now()}`;
+                  const agentStep: AgentStep = {
+                    id: thinkStepId,
+                    type: 'thought',
+                    category: 'other',
+                    title: 'Reasoning',
+                    thought: thinkText || 'Thinking completed',
+                    status: 'completed',
+                    endTime: Date.now(),
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                  if (!hasStreamedDeltas && thinkText) {
+                    onEvent({ type: 'thought', content: thinkText + '\n', metadata: parsed, conversationId: detectedConversationId });
+                  }
+                  activeClaudeThinkingStepId = null;
+                } else if (block.type === 'text' && block.text) {
+                  if (!hasStreamedDeltas) {
+                    onEvent({
+                      type: 'chunk',
+                      content: block.text,
+                      metadata: parsed,
+                      conversationId: detectedConversationId,
+                    });
+                  }
+                }
+              }
+            } else if (parsed.type === 'user' && parsed.message?.content && Array.isArray(parsed.message.content)) {
+              for (const block of parsed.message.content) {
+                if (block.type === 'tool_result') {
+                  const isErr = Boolean(block.is_error);
+                  const rawOut = (parsed.tool_use_result ? (parsed.tool_use_result.stdout || parsed.tool_use_result.stderr) : undefined) ?? block.content ?? '';
+                  const cleanOut = truncateOutput(typeof rawOut === 'string' ? rawOut : JSON.stringify(rawOut));
+                  let cleanErr: string | undefined;
+                  if (isErr) {
+                    const rawErr = parsed.tool_use_result?.stderr || block.content || 'Tool execution failed';
+                    cleanErr = truncateOutput(typeof rawErr === 'string' ? rawErr : JSON.stringify(rawErr));
+                  }
+                  const agentStep: AgentStep = {
+                    id: block.tool_use_id || `claude-tool-${Date.now()}`,
+                    type: 'tool',
+                    category: 'other',
+                    title: 'Tool execution',
+                    status: isErr ? 'failed' : 'completed',
+                    output: cleanOut,
+                    error: cleanErr,
+                    endTime: Date.now(),
+                  };
+                  onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+                }
+              }
+            } else if (parsed.type === 'system' && parsed.subtype === 'thinking_tokens') {
+              if (!activeClaudeThinkingStepId) {
+                activeClaudeThinkingStepId = `claude-think-${Date.now()}`;
+                const agentStep: AgentStep = {
+                  id: activeClaudeThinkingStepId,
+                  type: 'thought',
+                  category: 'other',
+                  title: 'Reasoning',
+                  thought: `Thinking... (${parsed.estimated_tokens || 0} tokens)`,
+                  status: 'running',
+                  startTime: Date.now(),
+                };
+                onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
+              }
+            } else if (parsed.type === 'item.started' && parsed.item) {
               const item = parsed.item;
               if (item.type === 'command_execution') {
                 const cmd = item.command || '';
@@ -1513,14 +1748,14 @@ export function spawnAgentCli(
             } else if (parsed.type === 'tool_use') {
               const toolName = parsed.name || 'tool';
               const params = parsed.input || {};
-              const title = params.CommandLine ? `Run: ${params.CommandLine}` : params.path || params.file ? `File: ${path.basename(params.path || params.file)}` : toolName;
+              const { category, title, detail } = formatToolStepInfo(toolName, params);
               const agentStep: AgentStep = {
                 id: parsed.id || `claude-tool-${Date.now()}`,
                 type: 'tool',
                 toolName,
-                category: params.CommandLine ? 'command' : 'other',
+                category,
                 title,
-                detail: params.CommandLine || JSON.stringify(params),
+                detail,
                 status: 'running',
                 startTime: Date.now(),
               };
@@ -1632,9 +1867,10 @@ export function spawnAgentCli(
     if (lineBuffer.trim()) {
       try {
         const parsed = JSON.parse(lineBuffer.trim());
-        if (parsed.event === 'result' && !hasStreamedDeltas && parsed.result?.response) {
-          onEvent({ type: 'chunk', content: parsed.result.response, metadata: parsed });
-        } else if (parsed.event !== 'step_update') {
+        const resText = parsed.result?.response || (typeof parsed.result === 'string' ? parsed.result : undefined);
+        if ((parsed.event === 'result' || parsed.type === 'result') && !hasStreamedDeltas && resText) {
+          onEvent({ type: 'chunk', content: resText, metadata: { ...parsed, isFinalResult: true } });
+        } else if (parsed.event !== 'step_update' && parsed.type !== 'system' && parsed.type !== 'rate_limit_event') {
           onEvent({ type: 'chunk', content: lineBuffer });
         }
       } catch {
@@ -1823,6 +2059,8 @@ Important instructions:
     args.push('-p', discoveryPrompt);
     if (model) args.push('--model', model);
     if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+    args.push('--output-format', 'stream-json');
+    args.push('--verbose');
     args.push('--dangerously-skip-permissions');
   } else {
     // codex
@@ -1945,6 +2183,8 @@ Output a clear summary of which conflicts were resolved and confirm the rebase i
       args.push('-p', conflictPrompt);
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+      args.push('--output-format', 'stream-json');
+      args.push('--verbose');
       args.push('--dangerously-skip-permissions');
     } else {
       args.push('exec', conflictPrompt);
@@ -2734,6 +2974,8 @@ Output ONLY a JSON block enclosed in \`\`\`json ... \`\`\` matching this schema:
     args.push('-p', commitPrompt);
     if (model) args.push('--model', model);
     if (thinkingEffort && thinkingEffort !== 'none') args.push('--effort', thinkingEffort);
+    args.push('--output-format', 'stream-json');
+    args.push('--verbose');
     args.push('--dangerously-skip-permissions');
   } else {
     // codex

@@ -140,6 +140,9 @@ test('CLI argument construction logic for resuming vs starting new sessions', ()
       args.push('--session-id', newClaudeId);
       args.push('-p', prompt);
     }
+    args.push('--output-format', 'stream-json');
+    args.push('--verbose');
+    args.push('--include-partial-messages');
     args.push('--dangerously-skip-permissions');
     return args;
   }
@@ -147,10 +150,17 @@ test('CLI argument construction logic for resuming vs starting new sessions', ()
   const claudeFirstTurn = buildClaudeArgs(null, 'claude-uuid-1111', 'hello');
   assert.ok(claudeFirstTurn.includes('--session-id'));
   assert.equal(claudeFirstTurn[claudeFirstTurn.indexOf('--session-id') + 1], 'claude-uuid-1111');
+  assert.ok(claudeFirstTurn.includes('--output-format'));
+  assert.equal(claudeFirstTurn[claudeFirstTurn.indexOf('--output-format') + 1], 'stream-json');
+  assert.ok(claudeFirstTurn.includes('--verbose'));
+  assert.ok(claudeFirstTurn.includes('--include-partial-messages'));
 
   const claudeSecondTurn = buildClaudeArgs('claude-uuid-1111', 'claude-uuid-2222', '1');
   assert.ok(claudeSecondTurn.includes('--resume'));
   assert.equal(claudeSecondTurn[claudeSecondTurn.indexOf('--resume') + 1], 'claude-uuid-1111');
+  assert.ok(claudeSecondTurn.includes('--output-format'));
+  assert.ok(claudeSecondTurn.includes('--verbose'));
+  assert.ok(claudeSecondTurn.includes('--include-partial-messages'));
 });
 
 test('AUTH_REQUIRED_REGEX accurately detects authentication and session expiry errors', async () => {
