@@ -3,7 +3,7 @@ import {
   Bot, User, ChevronDown, ChevronRight, Copy, Check, Terminal, Cpu, Sparkles,
   FileCode, Play, ZoomIn, Download, Eye, AlertTriangle, Coins, Settings as SettingsIcon, Zap,
   CheckCircle2, XCircle, Loader2, Square, Search, Edit3, Globe, Brain, Clock, ChevronUp,
-  KeyRound, RotateCcw
+  KeyRound, RotateCcw, Braces
 } from 'lucide-react';
 import { ChatMessage, FileAttachment, CliInfo, AgentStep, AlphaHitlPayload } from '../types';
 import Ansi from 'ansi-to-react';
@@ -595,7 +595,7 @@ const StepCard: React.FC<{
           <Brain className="w-3 h-3" />
           <span>Reasoning</span>
         </div>
-        <div className="italic text-cozy-muted text-xs whitespace-pre-wrap">
+        <div className="italic text-cozy-muted text-xs whitespace-pre-wrap select-text">
           {typeof step.thought === 'string' ? step.thought : (typeof step.title === 'string' ? step.title : JSON.stringify(step.thought || step.title || ''))}
         </div>
       </div>
@@ -1158,9 +1158,9 @@ const MessageItem: React.FC<{
   const isUser = msg.role === 'user';
   const [showThoughts, setShowThoughts] = useState(false);
   const [expandedSkillName, setExpandedSkillName] = useState<string | null>(null);
-  const [copiedTarget, setCopiedTarget] = useState<'msg' | 'thought' | null>(null);
+  const [copiedTarget, setCopiedTarget] = useState<'msg' | 'thought' | 'json' | 'export' | null>(null);
 
-  const handleCopyText = useCallback((target: 'msg' | 'thought', text: string) => {
+  const handleCopyText = useCallback((target: 'msg' | 'thought' | 'json' | 'export', text: string) => {
     onCopy(text);
     setCopiedTarget(target);
     setTimeout(() => {
@@ -1327,19 +1327,122 @@ const MessageItem: React.FC<{
     return steps.find((s) => s.status === 'running') || null;
   }, [steps]);
 
-  // Text that should be copied when clicking copy
-  const textToCopy = authInfo.isAuthRequired
-    ? authInfo.message
-    : spendCapInfo.isSpendCap
-    ? spendCapInfo.message
-    : cleanContent || (thoughts ? thoughts : msg.content);
-
   // Fallback friendly message if assistant completed actions with no explicit closing text
   const displayContent =
     cleanContent ||
     (!isStreaming && !isUser && (steps.length > 0 || thoughts)
       ? `Completed ${steps.length > 0 ? `${steps.length} ` : ''}workspace actions and finished tasks.`
       : '');
+
+  // Text that should be copied when clicking copy
+  const textToCopy = authInfo.isAuthRequired
+    ? authInfo.message
+    : spendCapInfo.isSpendCap
+    ? spendCapInfo.message
+    : displayContent || cleanContent || (thoughts ? thoughts : msg.content);
+
+  // Generate structured JSON payload for entire assistant reply including thinking, tool calls, and message content
+  const getReplyJsonObject = useCallback(() => {
+    const thoughtSteps = steps.filter((s) => s.type === 'thought' || Boolean(s.thought));
+    const thinkingText =
+      thoughts ||
+      (thoughtSteps.length > 0
+        ? thoughtSteps.map((s) => s.thought || s.detail || s.title).filter(Boolean).join('\n\n')
+        : null);
+
+    const toolSteps = steps.filter((s) => s.type === 'tool');
+    const toolCalls = toolSteps.map((s) => ({
+      id: s.id,
+      tool: s.toolName || 'tool',
+      title: s.title,
+      category: s.category,
+      detail: s.detail || undefined,
+      status: s.status,
+      duration: s.duration,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      output: s.output ? normalizeStepOutput(s.output) : undefined,
+      error: s.error ? normalizeStepOutput(s.error) : undefined,
+    }));
+
+    const messageText =
+      displayContent ||
+      cleanContent ||
+      (typeof msg.content === 'string' ? msg.content : (msg.content ? String(msg.content) : ''));
+
+    let parsedMetadata: any = null;
+    if (msg.metadata) {
+      try {
+        parsedMetadata = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+      } catch {}
+    }
+
+    return {
+      id: msg.id,
+      session_id: msg.session_id,
+      role: msg.role,
+      timestamp: msg.timestamp,
+      message: messageText,
+      content: messageText,
+      thinking: thinkingText,
+      tool_calls: toolCalls,
+      steps: steps.map((s) => ({
+        id: s.id,
+        type: s.type,
+        toolName: s.toolName,
+        category: s.category,
+        title: s.title,
+        detail: s.detail,
+        status: s.status,
+        duration: s.duration,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        thought: s.thought,
+        output: s.output ? normalizeStepOutput(s.output) : undefined,
+        error: s.error ? normalizeStepOutput(s.error) : undefined,
+      })),
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(detectedSkills.length > 0 ? { skills: detectedSkills } : {}),
+      ...(parsedMetadata ? { metadata: parsedMetadata } : {}),
+    };
+  }, [msg, displayContent, cleanContent, thoughts, steps, attachments, detectedSkills]);
+
+  const handleCopyJson = useCallback(() => {
+    try {
+      const data = getReplyJsonObject();
+      const jsonStr = JSON.stringify(data, null, 2);
+      onCopy(jsonStr);
+      setCopiedTarget('json');
+      setTimeout(() => {
+        setCopiedTarget((prev) => (prev === 'json' ? null : prev));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy JSON:', err);
+    }
+  }, [getReplyJsonObject, onCopy]);
+
+  const handleExportJson = useCallback(() => {
+    try {
+      const data = getReplyJsonObject();
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dateStr = new Date(msg.timestamp).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = `agent-reply-${msg.id ? msg.id.slice(0, 8) : dateStr}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setCopiedTarget('export');
+      setTimeout(() => {
+        setCopiedTarget((prev) => (prev === 'export' ? null : prev));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to export JSON:', err);
+    }
+  }, [getReplyJsonObject, msg.id, msg.timestamp]);
 
   return (
     <div
@@ -1366,7 +1469,7 @@ const MessageItem: React.FC<{
         )}
 
         <div
-          className={`group relative text-sm transition-colors duration-150 min-w-0 max-w-full ${
+          className={`group relative text-sm transition-colors duration-150 min-w-0 max-w-full select-text ${
             isUser
               ? 'bg-[#f4f4f4] dark:bg-[#2f2f2f] text-cozy-text rounded-3xl px-4 py-2.5 break-words [overflow-wrap:anywhere] font-normal'
               : authInfo.isAuthRequired || spendCapInfo.isSpendCap
@@ -1466,7 +1569,7 @@ const MessageItem: React.FC<{
           )}
 
           {isUser ? (
-            <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0">{displayContent}</div>
+            <div className="whitespace-pre-wrap font-sans leading-relaxed break-words [overflow-wrap:anywhere] min-w-0 select-text">{displayContent}</div>
           ) : authInfo.isAuthRequired ? (
             <div className="space-y-4">
               {/* Header */}
@@ -1628,7 +1731,7 @@ const MessageItem: React.FC<{
               </div>
             </div>
           ) : displayContent ? (
-            <MarkdownView content={displayContent} isStreaming={isStreaming} className="text-cozy-text font-sans min-w-0" />
+            <MarkdownView content={displayContent} isStreaming={isStreaming} className="text-cozy-text font-sans min-w-0 select-text" />
           ) : isStreaming ? (
             <div className="flex items-center justify-between gap-2 text-xs text-teal-600 dark:text-teal-400 font-medium py-1">
               <div className="flex items-center gap-2 min-w-0 animate-pulse">
@@ -1775,18 +1878,58 @@ const MessageItem: React.FC<{
           )}
 
           {/* Action Row for Assistant Message */}
-          {!isUser && textToCopy && !isStreaming && (
-            <div className="flex items-center gap-1.5 mt-2 text-cozy-muted opacity-0 group-hover:opacity-100 transition-opacity">
+          {!isUser && !isStreaming && (
+            <div className="flex items-center gap-1.5 mt-2 text-cozy-muted opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              {/* Copy message text button */}
+              {textToCopy && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCopyText('msg', textToCopy);
+                  }}
+                  className="p-1 rounded-md hover:bg-cozy-subtle hover:text-cozy-text transition-colors cursor-pointer"
+                  title={copiedTarget === 'msg' ? 'Copied text!' : 'Copy message content'}
+                >
+                  {copiedTarget === 'msg' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              )}
+
+              {/* Copy entire reply as JSON */}
               <button
                 type="button"
-                onClick={() => handleCopyText('msg', textToCopy)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyJson();
+                }}
                 className="p-1 rounded-md hover:bg-cozy-subtle hover:text-cozy-text transition-colors cursor-pointer"
-                title={copiedTarget === 'msg' ? 'Copied!' : 'Copy response'}
+                title={copiedTarget === 'json' ? 'Copied JSON!' : 'Copy entire reply as JSON (with thinking & tool calls)'}
               >
-                {copiedTarget === 'msg' ? (
+                {copiedTarget === 'json' ? (
                   <Check className="w-3.5 h-3.5 text-emerald-500" />
                 ) : (
-                  <Copy className="w-3.5 h-3.5" />
+                  <Braces className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              {/* Export entire reply as JSON file */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExportJson();
+                }}
+                className="p-1 rounded-md hover:bg-cozy-subtle hover:text-cozy-text transition-colors cursor-pointer"
+                title={copiedTarget === 'export' ? 'Exported JSON file!' : 'Export entire reply as JSON'}
+              >
+                {copiedTarget === 'export' ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
                 )}
               </button>
             </div>
@@ -1796,7 +1939,10 @@ const MessageItem: React.FC<{
           {isUser && textToCopy && (
             <button
               type="button"
-              onClick={() => handleCopyText('msg', textToCopy)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopyText('msg', textToCopy);
+              }}
               className="absolute top-2 right-2 p-1 rounded-md text-cozy-muted hover:text-cozy-text opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
               title={copiedTarget === 'msg' ? 'Copied!' : 'Copy message'}
             >
