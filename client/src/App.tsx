@@ -2,7 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate, matchPath } from 'react-router-dom';
 import { Settings, CliInfo, Project, Task } from './types';
 import { getSettings, getClis, getProject, getTask, deleteTask } from './api';
-import { getCachedTask, setCachedTask, deleteCachedTask } from './cache';
+import {
+  getCachedTask,
+  setCachedTask,
+  deleteCachedTask,
+  getCachedSettings,
+  setCachedSettings,
+  getCachedClis,
+  setCachedClis,
+  getCachedProject,
+  setCachedProject,
+} from './cache';
 import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
 import { HomePage } from './pages/HomePage';
@@ -16,13 +26,25 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
+  // Extract current project/task IDs from URL pathname early for optimistic state
+  const projectTaskMatch = matchPath('/projects/:projectId/tasks/:taskId', location.pathname);
+  const projectMatch = matchPath('/projects/:projectId', location.pathname);
+  const taskMatch = matchPath('/tasks/:taskId', location.pathname);
+
+  const currentProjectId = projectTaskMatch?.params.projectId || projectMatch?.params.projectId || null;
+  const currentTaskId = projectTaskMatch?.params.taskId || taskMatch?.params.taskId || null;
+
+  const [activeProject, setActiveProject] = useState<Project | null>(() => {
+    return currentProjectId ? getCachedProject(currentProjectId) : null;
+  });
+  const [activeTask, setActiveTask] = useState<Task | null>(() => {
+    return currentTaskId ? getCachedTask(currentTaskId) : null;
+  });
   const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
 
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [clis, setClis] = useState<CliInfo[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(() => getCachedSettings());
+  const [clis, setClis] = useState<CliInfo[]>(() => getCachedClis() || []);
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [toastMessage, setToastMessage] = useState<{ id: number; text: string } | null>(null);
 
@@ -41,14 +63,6 @@ export default function App() {
     window.addEventListener('show-dev-server-stopped-toast', handleToast);
     return () => window.removeEventListener('show-dev-server-stopped-toast', handleToast);
   }, []);
-
-  // Extract current project/task IDs from URL pathname
-  const projectTaskMatch = matchPath('/projects/:projectId/tasks/:taskId', location.pathname);
-  const projectMatch = matchPath('/projects/:projectId', location.pathname);
-  const taskMatch = matchPath('/tasks/:taskId', location.pathname);
-
-  const currentProjectId = projectTaskMatch?.params.projectId || projectMatch?.params.projectId || null;
-  const currentTaskId = projectTaskMatch?.params.taskId || taskMatch?.params.taskId || null;
 
   // Always automatically match and sync with current OS theme
   useEffect(() => {
@@ -75,9 +89,13 @@ export default function App() {
   useEffect(() => {
     getSettings().then((s) => {
       setSettings(s);
+      setCachedSettings(s);
     }).catch(() => {});
 
-    getClis().then(setClis).catch(() => {});
+    getClis().then((data) => {
+      setClis(data);
+      setCachedClis(data);
+    }).catch(() => {});
   }, []);
 
   // Maintain WebSocket connection
@@ -124,7 +142,12 @@ export default function App() {
   // Update active project/task details for breadcrumbs based on URL
   useEffect(() => {
     if (currentProjectId) {
-      getProject(currentProjectId).then(setActiveProject).catch(() => {});
+      const cached = getCachedProject(currentProjectId);
+      if (cached) setActiveProject(cached);
+      getProject(currentProjectId).then((p) => {
+        setActiveProject(p);
+        setCachedProject(p);
+      }).catch(() => {});
     } else if (!currentTaskId) {
       setActiveProject(null);
     }
@@ -135,11 +158,18 @@ export default function App() {
       const cached = getCachedTask(currentTaskId);
       if (cached) {
         setActiveTask(cached);
-        if (cached.project) setActiveProject(cached.project);
+        if (cached.project) {
+          setActiveProject(cached.project);
+          setCachedProject(cached.project);
+        }
       }
       getTask(currentTaskId).then((t) => {
         setActiveTask(t);
-        if (t.project) setActiveProject(t.project);
+        setCachedTask(t);
+        if (t.project) {
+          setActiveProject(t.project);
+          setCachedProject(t.project);
+        }
       }).catch(() => {});
     } else {
       setActiveTask(null);

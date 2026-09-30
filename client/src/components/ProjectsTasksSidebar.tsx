@@ -24,6 +24,10 @@ import {
   removeUnreadReplyTaskId,
   getCachedTaskQueuedCount,
   getCachedQueuedMessages,
+  getCachedProjects,
+  setCachedProjects,
+  getCachedAllTasks,
+  setCachedAllTasks,
 } from '../cache';
 
 interface ProjectsTasksSidebarProps {
@@ -52,8 +56,8 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   ws,
 }) => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>(() => getCachedProjects() || []);
+  const [tasks, setTasks] = useState<Task[]>(() => getCachedAllTasks() || []);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeDevServerTaskIds, setActiveDevServerTaskIds] = useState<Set<string>>(new Set());
@@ -144,6 +148,8 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
       ]);
       setTasks(tasksData);
       setProjects(projectsData);
+      setCachedAllTasks(tasksData);
+      setCachedProjects(projectsData);
 
       const initialAgentStatus: Record<string, 'WIP' | 'idle'> = {};
       tasksData.forEach((t) => {

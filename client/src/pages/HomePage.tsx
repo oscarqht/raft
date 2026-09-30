@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, FolderGit2, Trash2, ArrowRight, Sparkles, Sliders, Loader2 } from 'lucide-react';
 import { Project, Settings, SelectionMeta } from '../types';
 import { getProjects, deleteProject, validateProjectPath } from '../api';
+import {
+  getCachedProjects,
+  setCachedProjects,
+  deleteCachedProject,
+  setCachedProject,
+} from '../cache';
 import { DiscoveryModal } from '../components/DiscoveryModal';
 import { AddProjectModal } from '../components/AddProjectModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
@@ -21,8 +27,9 @@ export const HomePage: React.FC<HomePageProps> = ({
   ws,
 }) => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProjects = getCachedProjects();
+  const [projects, setProjects] = useState<Project[]>(() => cachedProjects || []);
+  const [loading, setLoading] = useState<boolean>(() => cachedProjects === null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [discoveryPath, setDiscoveryPath] = useState('');
   const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
@@ -41,13 +48,16 @@ export const HomePage: React.FC<HomePageProps> = ({
     try {
       const data = await getProjects();
       setProjects(data);
+      setCachedProjects(data);
+      data.forEach((p) => setCachedProject(p));
     } catch {} finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadProjects(true);
+    const hasCache = getCachedProjects() !== null;
+    loadProjects(!hasCache);
   }, []);
 
   const handleSelectRepository = async (selectedPath: string, _meta: SelectionMeta) => {
@@ -69,8 +79,17 @@ export const HomePage: React.FC<HomePageProps> = ({
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Are you sure you want to remove this project? Any active task worktrees will also be removed.')) {
-      await deleteProject(id);
-      loadProjects();
+      setProjects((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        setCachedProjects(next);
+        return next;
+      });
+      deleteCachedProject(id);
+      try {
+        await deleteProject(id);
+      } finally {
+        loadProjects(false);
+      }
     }
   };
 
@@ -223,9 +242,16 @@ export const HomePage: React.FC<HomePageProps> = ({
         }}
         onCreateSuccess={(newProject) => {
           setIsAddOpen(false);
-          loadProjects();
           if (newProject?.id) {
+            setProjects((prev) => {
+              const next = [newProject, ...prev.filter((p) => p.id !== newProject.id)];
+              setCachedProjects(next);
+              setCachedProject(newProject);
+              return next;
+            });
             handleSelect(newProject.id);
+          } else {
+            loadProjects(false);
           }
         }}
       />
@@ -236,9 +262,16 @@ export const HomePage: React.FC<HomePageProps> = ({
         isOpen={isDiscoveryOpen}
         onClose={() => setIsDiscoveryOpen(false)}
         onSuccess={(newProject?: Project) => {
-          loadProjects();
           if (newProject?.id) {
+            setProjects((prev) => {
+              const next = [newProject, ...prev.filter((p) => p.id !== newProject.id)];
+              setCachedProjects(next);
+              setCachedProject(newProject);
+              return next;
+            });
             handleSelect(newProject.id);
+          } else {
+            loadProjects(false);
           }
         }}
         settings={settings}
@@ -252,7 +285,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           isOpen={!!editingProject}
           onClose={() => setEditingProject(null)}
           onSuccess={() => {
-            loadProjects();
+            loadProjects(false);
             setEditingProject(null);
           }}
           settings={settings}

@@ -12,8 +12,24 @@ import {
   Sliders,
 } from 'lucide-react';
 import { Project, Task, Settings, TaskGitStatus } from '../types';
-import { getProject, getProjectTasks, createTask, deleteTask, validateProjectPath, getProjectTasksGitStatus } from '../api';
-import { setCachedTask, deleteCachedTask } from '../cache';
+import {
+  getProject,
+  getProjectTasks,
+  createTask,
+  deleteTask,
+  validateProjectPath,
+  getProjectTasksGitStatus,
+} from '../api';
+import {
+  setCachedTask,
+  deleteCachedTask,
+  getCachedProject,
+  setCachedProject,
+  getCachedProjectTasks,
+  setCachedProjectTasks,
+  getCachedProjectTasksGitStatus,
+  setCachedProjectTasksGitStatus,
+} from '../cache';
 import { EditTaskModal } from '../components/EditTaskModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
 import { TaskStatusBadges } from '../components/TaskStatusBadges';
@@ -44,21 +60,27 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     ((taskId: string, selectedTask?: Task) =>
       navigate(`/projects/${projectId}/tasks/${taskId}`, { state: { task: selectedTask } }));
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedProject = getCachedProject(projectId);
+  const cachedTasks = getCachedProjectTasks(projectId);
+  const cachedStatus = getCachedProjectTasksGitStatus(projectId);
+
+  const [project, setProject] = useState<Project | null>(() => cachedProject);
+  const [tasks, setTasks] = useState<Task[]>(() => cachedTasks || []);
+  const [loading, setLoading] = useState(() => !cachedProject && !cachedTasks);
   const [error, setError] = useState<string | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [taskName, setTaskName] = useState('');
-  const [baseBranch, setBaseBranch] = useState('');
-  const [availableBranches, setAvailableBranches] = useState<string[]>([]);
+  const [baseBranch, setBaseBranch] = useState(() => cachedProject?.branch_convention || 'main');
+  const [availableBranches, setAvailableBranches] = useState<string[]>(() => {
+    return cachedProject?.branch_convention ? [cachedProject.branch_convention] : ['main'];
+  });
   const [isCreating, setIsCreating] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
-  const [tasksStatus, setTasksStatus] = useState<Record<string, TaskGitStatus>>({});
+  const [tasksStatus, setTasksStatus] = useState<Record<string, TaskGitStatus>>(() => cachedStatus || {});
   const [loadingStatus, setLoadingStatus] = useState(false);
 
   const loadTasksStatus = useCallback(async (force = false) => {
@@ -66,7 +88,11 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     setLoadingStatus(true);
     try {
       const statuses = await getProjectTasksGitStatus(projectId, force);
-      setTasksStatus((prev) => ({ ...prev, ...statuses }));
+      setTasksStatus((prev) => {
+        const next = { ...prev, ...statuses };
+        setCachedProjectTasksGitStatus(projectId, next);
+        return next;
+      });
     } catch {}
     finally {
       setLoadingStatus(false);
@@ -91,18 +117,22 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     const handleAgentStatusUpdate = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail?.taskId) return;
-      setTasks((prev) =>
-        prev.map((t) => (t.id === detail.taskId ? { ...t, agent_status: detail.agentStatus } : t))
-      );
+      setTasks((prev) => {
+        const next = prev.map((t) => (t.id === detail.taskId ? { ...t, agent_status: detail.agentStatus } : t));
+        setCachedProjectTasks(projectId, next);
+        return next;
+      });
       setTasksStatus((prev) => {
         if (!prev[detail.taskId]) return prev;
-        return {
+        const next = {
           ...prev,
           [detail.taskId]: {
             ...prev[detail.taskId],
             agent_status: detail.agentStatus,
           },
         };
+        setCachedProjectTasksGitStatus(projectId, next);
+        return next;
       });
     };
 
@@ -123,7 +153,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };
-  }, [loadTasksStatus]);
+  }, [loadTasksStatus, projectId]);
 
   // Handle direct WebSocket messages for task agent status
   useEffect(() => {
@@ -132,25 +162,29 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'task_agent_status' && data.taskId) {
-          setTasks((prev) =>
-            prev.map((t) => (t.id === data.taskId ? { ...t, agent_status: data.agentStatus } : t))
-          );
+          setTasks((prev) => {
+            const next = prev.map((t) => (t.id === data.taskId ? { ...t, agent_status: data.agentStatus } : t));
+            setCachedProjectTasks(projectId, next);
+            return next;
+          });
           setTasksStatus((prev) => {
             if (!prev[data.taskId]) return prev;
-            return {
+            const next = {
               ...prev,
               [data.taskId]: {
                 ...prev[data.taskId],
                 agent_status: data.agentStatus,
               },
             };
+            setCachedProjectTasksGitStatus(projectId, next);
+            return next;
           });
         }
       } catch {}
     };
     ws.addEventListener('message', handleWsMessage);
     return () => ws.removeEventListener('message', handleWsMessage);
-  }, [ws]);
+  }, [ws, projectId]);
 
   // Refresh relative timestamps periodically
   const [, setTimeTick] = useState(0);
@@ -176,8 +210,10 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         getProjectTasks(projectId),
       ]);
       setProject(p);
+      setCachedProject(p);
       setBaseBranch(p.branch_convention || 'main');
       setTasks(t);
+      setCachedProjectTasks(projectId, t);
       t.forEach((taskItem) => setCachedTask(taskItem));
       loadTasksStatus(false);
 
@@ -191,17 +227,40 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
         }
       } catch {}
     } catch (err: any) {
-      setError(err?.message || 'Failed to load project');
+      if (!project && !tasks.length) {
+        setError(err?.message || 'Failed to load project');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    setProject(null);
-    setTasks([]);
-    setLoading(true);
-    loadData(true);
+    if (!projectId) return;
+    const cp = getCachedProject(projectId);
+    const ct = getCachedProjectTasks(projectId);
+    const cs = getCachedProjectTasksGitStatus(projectId);
+
+    if (cp || ct) {
+      setProject(cp || null);
+      if (cp?.branch_convention) {
+        setBaseBranch(cp.branch_convention);
+      }
+      setTasks(ct || []);
+      if (cs) {
+        setTasksStatus(cs);
+      }
+      setLoading(false);
+      setError(null);
+      loadData(false);
+    } else {
+      setProject(null);
+      setTasks([]);
+      setTasksStatus({});
+      setLoading(true);
+      setError(null);
+      loadData(true);
+    }
   }, [projectId]);
 
   const handleCreateTask = async (e?: React.FormEvent) => {
@@ -211,6 +270,11 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
     try {
       const newTask = await createTask(projectId, taskName.trim(), baseBranch || project?.branch_convention || 'main');
       setCachedTask(newTask);
+      setTasks((prev) => {
+        const next = [newTask, ...prev.filter((t) => t.id !== newTask.id)];
+        setCachedProjectTasks(projectId, next);
+        return next;
+      });
       setIsNewTaskOpen(false);
       setTaskName('');
       onSelectTask(newTask.id, newTask);
@@ -229,7 +293,11 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
   const handleTaskUpdated = (updatedTask: Task) => {
     setCachedTask(updatedTask);
-    setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+    setTasks((prev) => {
+      const next = prev.map((t) => (t.id === updatedTask.id ? updatedTask : t));
+      setCachedProjectTasks(projectId, next);
+      return next;
+    });
   };
 
   const handleDeleteTask = async (id: string, e: React.MouseEvent) => {
@@ -239,8 +307,13 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
       setDeletingTaskId(id);
       try {
         await deleteTask(id);
-        deleteCachedTask(id);
-        await loadData();
+        deleteCachedTask(id, projectId);
+        setTasks((prev) => {
+          const next = prev.filter((t) => t.id !== id);
+          setCachedProjectTasks(projectId, next);
+          return next;
+        });
+        await loadData(false);
       } catch (err: any) {
         alert(err?.message || 'Failed to delete task');
       } finally {
@@ -536,6 +609,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
           onClose={() => setIsConfigModalOpen(false)}
           onSuccess={(updated) => {
             setProject(updated);
+            setCachedProject(updated);
             loadData(false);
           }}
           settings={settings || null}

@@ -124,7 +124,14 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
     let isCurrent = true;
     if (!task || task.id !== taskId) {
-      setIsSwitchingTask(true);
+      const cached = getCachedTask(taskId);
+      if (cached) {
+        setTask(cached);
+        setLoading(false);
+        setIsSwitchingTask(false);
+      } else {
+        setIsSwitchingTask(true);
+      }
     }
     setError(null);
 

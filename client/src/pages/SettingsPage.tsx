@@ -60,6 +60,10 @@ import {
   getCachedProviderPreference,
   setCachedProviderPreference,
   resolveModelAndEffort,
+  getCachedGitAccounts,
+  setCachedGitAccounts,
+  getCachedSkills,
+  setCachedSkills,
 } from '../cache';
 
 interface SettingsPageProps {
@@ -131,8 +135,9 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const cancelInstallRef = React.useRef<(() => void) | null>(null);
 
   // Git Accounts state
-  const [gitAccounts, setGitAccounts] = useState<GitAccount[]>([]);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  const cachedAccounts = getCachedGitAccounts();
+  const [gitAccounts, setGitAccounts] = useState<GitAccount[]>(() => cachedAccounts || []);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(() => cachedAccounts === null);
   const [isAddAccountOpen, setIsAddAccountOpen] = useState(false);
   const [accountProvider, setAccountProvider] = useState<'github' | 'gitlab'>('github');
   const [accountHost, setAccountHost] = useState('');
@@ -142,11 +147,12 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [accountSuccessMsg, setAccountSuccessMsg] = useState<string | null>(null);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
 
-  const loadGitAccounts = async () => {
+  const loadGitAccounts = async (showLoading = false) => {
     try {
-      setIsLoadingAccounts(true);
+      if (showLoading) setIsLoadingAccounts(true);
       const accounts = await getGitAccounts();
       setGitAccounts(accounts);
+      setCachedGitAccounts(accounts);
     } catch (err) {
       console.error('Failed to load git accounts:', err);
     } finally {
@@ -155,7 +161,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   };
 
   useEffect(() => {
-    loadGitAccounts();
+    const hasCache = getCachedGitAccounts() !== null;
+    loadGitAccounts(!hasCache);
   }, []);
 
   const handleVerifyAndLinkAccount = async (e: React.FormEvent) => {
@@ -200,7 +207,11 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     try {
       setDeletingAccountId(id);
       await deleteGitAccount(id);
-      setGitAccounts((prev) => prev.filter((a) => a.id !== id));
+      setGitAccounts((prev) => {
+        const next = prev.filter((a) => a.id !== id);
+        setCachedGitAccounts(next);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to delete git account:', err);
     } finally {
@@ -209,8 +220,9 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   };
 
   // Skills state
-  const [skills, setSkills] = useState<AgentSkill[]>([]);
-  const [isLoadingSkills, setIsLoadingSkills] = useState(true);
+  const cachedSkills = getCachedSkills();
+  const [skills, setSkills] = useState<AgentSkill[]>(() => cachedSkills || []);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(() => cachedSkills === null);
   const [isSkillModalOpen, setIsSkillModalOpen] = useState(false);
   const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null);
   const [skillName, setSkillName] = useState('');
@@ -243,11 +255,13 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     };
   }, []);
 
-  const loadSkills = async () => {
+  const loadSkills = async (showLoading = false) => {
     try {
-      setIsLoadingSkills(true);
+      if (showLoading) setIsLoadingSkills(true);
       const data = await getSkills();
-      setSkills(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setSkills(list);
+      setCachedSkills(list);
     } catch (err) {
       console.error('Failed to load skills:', err);
     } finally {
@@ -256,7 +270,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   };
 
   useEffect(() => {
-    loadSkills();
+    const hasCache = getCachedSkills() !== null;
+    loadSkills(!hasCache);
   }, []);
 
   const handleOpenInstallSkillModal = () => {
@@ -379,7 +394,11 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     try {
       setDeletingSkillId(id);
       await deleteSkill(id);
-      setSkills((prev) => prev.filter((s) => s.id !== id));
+      setSkills((prev) => {
+        const next = prev.filter((s) => s.id !== id);
+        setCachedSkills(next);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to delete skill:', err);
     } finally {

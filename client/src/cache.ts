@@ -1,4 +1,17 @@
-import { Task, ChatSession, ChatMessage, ModelOption, AgentUsageSnapshot, QueuedMessage } from './types';
+import {
+  Task,
+  ChatSession,
+  ChatMessage,
+  ModelOption,
+  AgentUsageSnapshot,
+  QueuedMessage,
+  Project,
+  TaskGitStatus,
+  Settings,
+  CliInfo,
+  GitAccount,
+  AgentSkill,
+} from './types';
 
 const PREFIX = 'raft:';
 const LEGACY_PREFIX = 'termai:';
@@ -56,6 +69,136 @@ function touchSessionId(sessionId: string) {
     });
   }
   saveIndex(index);
+}
+
+// Projects Cache
+export function getCachedProjects(): Project[] | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}projects`) || localStorage.getItem(`${LEGACY_PREFIX}projects`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedProjects(projects: Project[]): void {
+  if (!Array.isArray(projects)) return;
+  try {
+    localStorage.setItem(`${PREFIX}projects`, JSON.stringify(projects));
+  } catch {
+    cleanOldCache();
+  }
+}
+
+// Single Project Cache
+export function getCachedProject(projectId: string): Project | null {
+  if (!projectId) return null;
+  try {
+    const raw = localStorage.getItem(`${PREFIX}project:${projectId}`) || localStorage.getItem(`${LEGACY_PREFIX}project:${projectId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // Fallback: check if it exists in getCachedProjects()
+  const projects = getCachedProjects();
+  if (projects) {
+    const found = projects.find((p) => p.id === projectId);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function setCachedProject(project: Project): void {
+  if (!project?.id) return;
+  try {
+    localStorage.setItem(`${PREFIX}project:${project.id}`, JSON.stringify(project));
+  } catch {
+    cleanOldCache();
+  }
+}
+
+export function deleteCachedProject(projectId: string): void {
+  if (!projectId) return;
+  try {
+    localStorage.removeItem(`${PREFIX}project:${projectId}`);
+    localStorage.removeItem(`${PREFIX}tasks:${projectId}`);
+    localStorage.removeItem(`${PREFIX}tasks_git_status:${projectId}`);
+    const projects = getCachedProjects();
+    if (projects) {
+      const filtered = projects.filter((p) => p.id !== projectId);
+      setCachedProjects(filtered);
+    }
+  } catch {}
+}
+
+// Project Tasks Cache
+export function getCachedProjectTasks(projectId: string): Task[] | null {
+  if (!projectId) return null;
+  try {
+    const raw = localStorage.getItem(`${PREFIX}tasks:${projectId}`) || localStorage.getItem(`${LEGACY_PREFIX}tasks:${projectId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedProjectTasks(projectId: string, tasks: Task[]): void {
+  if (!projectId || !Array.isArray(tasks)) return;
+  try {
+    localStorage.setItem(`${PREFIX}tasks:${projectId}`, JSON.stringify(tasks));
+  } catch {
+    cleanOldCache();
+  }
+}
+
+export function deleteCachedProjectTasks(projectId: string): void {
+  if (!projectId) return;
+  try {
+    localStorage.removeItem(`${PREFIX}tasks:${projectId}`);
+    localStorage.removeItem(`${PREFIX}tasks_git_status:${projectId}`);
+  } catch {}
+}
+
+// Project Tasks Git Status Cache
+export function getCachedProjectTasksGitStatus(projectId: string): Record<string, TaskGitStatus> | null {
+  if (!projectId) return null;
+  try {
+    const raw = localStorage.getItem(`${PREFIX}tasks_git_status:${projectId}`) || localStorage.getItem(`${LEGACY_PREFIX}tasks_git_status:${projectId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+export function setCachedProjectTasksGitStatus(projectId: string, statuses: Record<string, TaskGitStatus>): void {
+  if (!projectId || !statuses) return;
+  try {
+    localStorage.setItem(`${PREFIX}tasks_git_status:${projectId}`, JSON.stringify(statuses));
+  } catch {
+    cleanOldCache();
+  }
+}
+
+// All Tasks Cache (across projects)
+export function getCachedAllTasks(): Task[] | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}all_tasks`) || localStorage.getItem(`${LEGACY_PREFIX}all_tasks`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedAllTasks(tasks: Task[]): void {
+  if (!Array.isArray(tasks)) return;
+  try {
+    localStorage.setItem(`${PREFIX}all_tasks`, JSON.stringify(tasks));
+  } catch {
+    cleanOldCache();
+  }
 }
 
 // Task Cache
@@ -144,15 +287,28 @@ export function setCachedMessages(sessionId: string, messages: ChatMessage[]): v
 }
 
 // Delete cached task
-export function deleteCachedTask(taskId: string): void {
+export function deleteCachedTask(taskId: string, projectId?: string): void {
   if (!taskId) return;
   try {
     localStorage.removeItem(`${PREFIX}task:${taskId}`);
     localStorage.removeItem(`${PREFIX}chats:${taskId}`);
     localStorage.removeItem(`${PREFIX}active_chat:${taskId}`);
+    localStorage.removeItem(`${PREFIX}task_queue_count:${taskId}`);
     const index = getIndex();
     index.taskIds = index.taskIds.filter((id) => id !== taskId);
     saveIndex(index);
+    removeUnreadReplyTaskId(taskId);
+
+    if (projectId) {
+      const cached = getCachedProjectTasks(projectId);
+      if (cached) {
+        setCachedProjectTasks(projectId, cached.filter((t) => t.id !== taskId));
+      }
+    }
+    const allTasks = getCachedAllTasks();
+    if (allTasks) {
+      setCachedAllTasks(allTasks.filter((t) => t.id !== taskId));
+    }
   } catch {}
 }
 
@@ -409,4 +565,78 @@ export function removeUnreadReplyTaskId(taskId: string): void {
     window.dispatchEvent(new CustomEvent('unread-task-replies-updated', { detail: { taskId, action: 'remove' } }));
   }
 }
+
+// Settings Cache
+export function getCachedSettings(): Settings | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}settings`) || localStorage.getItem(`${LEGACY_PREFIX}settings`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+export function setCachedSettings(settings: Settings): void {
+  if (!settings) return;
+  try {
+    localStorage.setItem(`${PREFIX}settings`, JSON.stringify(settings));
+  } catch {}
+}
+
+// CLIs Cache
+export function getCachedClis(): CliInfo[] | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}clis`) || localStorage.getItem(`${LEGACY_PREFIX}clis`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedClis(clis: CliInfo[]): void {
+  if (!Array.isArray(clis)) return;
+  try {
+    localStorage.setItem(`${PREFIX}clis`, JSON.stringify(clis));
+  } catch {}
+}
+
+// Git Accounts Cache
+export function getCachedGitAccounts(): GitAccount[] | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}git_accounts`) || localStorage.getItem(`${LEGACY_PREFIX}git_accounts`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedGitAccounts(accounts: GitAccount[]): void {
+  if (!Array.isArray(accounts)) return;
+  try {
+    localStorage.setItem(`${PREFIX}git_accounts`, JSON.stringify(accounts));
+  } catch {}
+}
+
+// Agent Skills Cache
+export function getCachedSkills(): AgentSkill[] | null {
+  try {
+    const raw = localStorage.getItem(`${PREFIX}skills`) || localStorage.getItem(`${LEGACY_PREFIX}skills`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export function setCachedSkills(skills: AgentSkill[]): void {
+  if (!Array.isArray(skills)) return;
+  try {
+    localStorage.setItem(`${PREFIX}skills`, JSON.stringify(skills));
+  } catch {}
+}
+
 
