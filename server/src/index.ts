@@ -1434,8 +1434,9 @@ app.post('/api/projects/:projectId/tasks', async (req: Request, res: Response) =
 
     // Create default initial chat session tab
     const chatSessionId = uuidv4();
-    const defaultCli = project.default_agent_cli || getEffectiveAgentCli();
-    let defaultModel = project.default_model || getSetting('default_model', '');
+    // Global settings take precedence; project defaults are only a snapshot taken at project creation
+    const defaultCli = getEffectiveAgentCli() || project.default_agent_cli;
+    let defaultModel = getSetting<string>('default_model', '') || project.default_model || '';
     let defaultEffort = getSetting('thinking_effort', 'medium');
 
     try {

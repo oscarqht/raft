@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, X, Send, Square, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
-  Paperclip, Loader2, AlertCircle, Trash2, ArrowUp
+  Paperclip, Loader2, AlertCircle, Trash2, ArrowUp, RotateCcw
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage } from '../types';
 import { ChatMessageList, ChatMessageListHandle } from './ChatMessageList';
@@ -135,13 +135,13 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const cachedChats = getCachedChats(task.id) || [];
     const cachedActive = getCachedActiveChatId(task.id);
     const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
-    return active?.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+    return active?.agent_cli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
   });
   const [tabModel, setTabModel] = useState<string>(() => {
     const cachedChats = getCachedChats(task.id) || [];
     const cachedActive = getCachedActiveChatId(task.id);
     const active = cachedChats.find((c) => c.id === cachedActive) || cachedChats[0];
-    return active?.model || task.project?.default_model || settings?.default_model || '';
+    return active?.model || settings?.default_model || task.project?.default_model || '';
   });
   const [tabEffort, setTabEffort] = useState<string>(() => {
     const cachedChats = getCachedChats(task.id) || [];
@@ -413,7 +413,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         return;
       }
 
-      const cli = currentChat.agent_cli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+      const cli = currentChat.agent_cli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
       setTabCli(cli);
 
       // Instantly load cached models for this CLI if available
@@ -429,7 +429,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setTabModel(resolved.modelId);
         setTabEffort(resolved.effort);
       } else {
-        setTabModel(currentChat.model || task.project?.default_model || settings?.default_model || '');
+        setTabModel(currentChat.model || settings?.default_model || task.project?.default_model || '');
         setTabEffort(currentChat.thinking_effort || settings?.thinking_effort || 'medium');
       }
     }
@@ -488,7 +488,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   // Load models when tab CLI changes
   useEffect(() => {
-    const cli = tabCli || task.project?.default_agent_cli || settings?.agent_cli || 'agy';
+    const cli = tabCli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
     let isCurrent = true;
 
     // Immediately show cached models for this CLI if available
@@ -999,6 +999,55 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         return nextChats;
       });
       updateChatSession(activeChatId, { thinking_effort: newEffort }).catch(() => {});
+    }
+  };
+
+  const globalCli = settings?.agent_cli || '';
+  const globalModel = settings?.default_model || '';
+  const globalEffort = settings?.thinking_effort || '';
+  const isAlphaTab = tabCli?.toLowerCase() === 'alpha';
+  const differsFromGlobal =
+    !!globalCli &&
+    (tabCli !== globalCli ||
+      (!isAlphaTab &&
+        ((!!globalModel && tabModel !== globalModel) ||
+          (!!globalEffort && tabEffort.toLowerCase() !== globalEffort.toLowerCase()))));
+
+  const handleResetToGlobal = () => {
+    if (!globalCli) return;
+    const nextModel = globalModel;
+    const nextEffort = globalEffort || tabEffort;
+
+    userSelectedCliRef.current = globalCli;
+    userSelectedModelRef.current = nextModel;
+    userSelectedEffortRef.current = nextEffort;
+    setTabCli(globalCli);
+    setTabModel(nextModel);
+    setTabEffort(nextEffort);
+
+    if (globalCli !== tabCli) {
+      const cached = getCachedModels(globalCli);
+      if (cached.length > 0) setAvailableModels(cached);
+    }
+    if (nextModel) {
+      setCachedProviderPreference(globalCli, nextModel, nextEffort);
+    }
+
+    if (activeChatId) {
+      setChats((prevChats) => {
+        const nextChats = prevChats.map((c) =>
+          c.id === activeChatId
+            ? { ...c, agent_cli: globalCli, model: nextModel, thinking_effort: nextEffort }
+            : c
+        );
+        setCachedChats(task.id, nextChats);
+        return nextChats;
+      });
+      updateChatSession(activeChatId, {
+        agent_cli: globalCli,
+        model: nextModel,
+        thinking_effort: nextEffort,
+      }).catch(() => {});
     }
   };
 
@@ -2054,14 +2103,27 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                       <Sliders className="w-3.5 h-3.5 text-teal-500" />
                       {tabCli?.toLowerCase() === 'alpha' ? 'Agent Configuration' : 'Agent & Model Configuration'}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowConfig(false)}
-                      className="p-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors text-xs"
-                      title="Close configuration"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      {differsFromGlobal && (
+                        <button
+                          type="button"
+                          onClick={handleResetToGlobal}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-cozy-muted hover:text-teal-600 hover:bg-cozy-subtle transition-colors text-[11px]"
+                          title={`Reset to global default (${[globalCli, globalModel, globalEffort].filter(Boolean).join(' · ')})`}
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Reset to default
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setShowConfig(false)}
+                        className="p-1 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors text-xs"
+                        title="Close configuration"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 text-xs text-cozy-muted pt-0.5">
