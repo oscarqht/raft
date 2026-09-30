@@ -84,9 +84,15 @@ export const Header: React.FC<HeaderProps> = ({
         fetchTaskStatus(true);
       }
     };
+    const handleAgentStatusUpdate = (e: any) => {
+      if (e.detail?.taskId === currentPath?.taskId && e.detail?.agentStatus) {
+        setTaskStatus((prev) => (prev ? { ...prev, agent_status: e.detail.agentStatus } : prev));
+      }
+    };
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener('task-status-updated', handleStatusUpdate);
+    window.addEventListener('task-agent-status-updated', handleAgentStatusUpdate);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const interval = setInterval(() => {
@@ -97,6 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
     return () => {
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener('task-status-updated', handleStatusUpdate);
+      window.removeEventListener('task-agent-status-updated', handleAgentStatusUpdate);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       clearInterval(interval);
     };

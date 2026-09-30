@@ -35,6 +35,7 @@ export interface TaskGitStatus {
   branch: string;
   lifecycleStage: 'in_progress' | 'pr_open' | 'merged' | 'clean';
   remoteUrl?: string;
+  agent_status?: 'WIP' | 'idle';
   checkedAt: number;
 }
 

@@ -1366,7 +1366,16 @@ app.delete('/api/projects/:id', (req: Request, res: Response) => {
 
 // Tasks
 app.get('/api/projects/:projectId/tasks', (req: Request, res: Response) => {
-  const tasks = db.prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC').all(req.params.projectId);
+  const tasks = db.prepare(`
+    SELECT t.*,
+           CASE WHEN EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.task_id = t.id AND cs.status = 'running')
+                THEN 'WIP'
+                ELSE 'idle'
+           END AS agent_status
+    FROM tasks t
+    WHERE t.project_id = ?
+    ORDER BY t.created_at DESC
+  `).all(req.params.projectId);
   res.json(tasks);
 });
 
@@ -1442,6 +1451,10 @@ app.get('/api/tasks', (_req: Request, res: Response) => {
   try {
     const tasks = db.prepare(`
       SELECT t.*,
+             CASE WHEN EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.task_id = t.id AND cs.status = 'running')
+                  THEN 'WIP'
+                  ELSE 'idle'
+             END AS agent_status,
              MAX(t.updated_at, COALESCE((SELECT MAX(cs.updated_at) FROM chat_sessions cs WHERE cs.task_id = t.id), t.updated_at)) AS effective_updated_at
       FROM tasks t
       ORDER BY effective_updated_at DESC
@@ -1544,7 +1557,13 @@ app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
     forceRefresh: force,
     taskCreatedAt: task.created_at,
   });
-  res.json(status);
+  const isAgentRunning = Boolean(
+    db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
+  );
+  res.json({
+    ...status,
+    agent_status: isAgentRunning ? 'WIP' : 'idle',
+  });
 });
 
 // Batch Git status for all tasks in a project
@@ -1555,6 +1574,9 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
 
   await Promise.all(
     tasks.map(async (task) => {
+      const isAgentRunning = Boolean(
+        db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
+      );
       try {
         const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
         const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
@@ -1564,7 +1586,10 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
           forceRefresh: force,
           taskCreatedAt: task.created_at,
         });
-        results[task.id] = status;
+        results[task.id] = {
+          ...status,
+          agent_status: isAgentRunning ? 'WIP' : 'idle',
+        };
       } catch {
         results[task.id] = {
           staged: [],
@@ -1581,6 +1606,7 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
           baseBranch: task.base_branch || 'main',
           branch: task.branch,
           lifecycleStage: 'clean',
+          agent_status: isAgentRunning ? 'WIP' : 'idle',
           checkedAt: Date.now(),
         };
       }
@@ -1901,6 +1927,24 @@ function broadcastWs(data: any) {
       } catch {}
     }
   }
+}
+
+function setChatSessionStatus(sessionId: string, status: 'idle' | 'running', timestamp = Date.now()) {
+  db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run(status, timestamp, sessionId);
+  try {
+    const session = db.prepare('SELECT task_id FROM chat_sessions WHERE id = ?').get(sessionId) as { task_id: string } | undefined;
+    if (session?.task_id) {
+      const isRunning = Boolean(
+        db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(session.task_id)
+      );
+      broadcastWs({
+        type: 'task_agent_status',
+        taskId: session.task_id,
+        sessionId,
+        agentStatus: isRunning ? 'WIP' : 'idle',
+      });
+    }
+  } catch {}
 }
 
 // Forward script manager events to all connected clients
@@ -2451,7 +2495,7 @@ wss.on('connection', (ws: WebSocket) => {
           now + 1
         );
 
-        db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('running', now, sessionId);
+        setChatSessionStatus(sessionId, 'running', now);
 
         let assistantThoughts = '';
         let assistantResponse = '';
@@ -2544,7 +2588,7 @@ wss.on('connection', (ws: WebSocket) => {
               steps: [],
             });
             activeChatSessions.delete(sessionId);
-            db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', Date.now(), sessionId);
+            setChatSessionStatus(sessionId, 'idle', Date.now());
             return;
           }
 
@@ -2619,7 +2663,7 @@ wss.on('connection', (ws: WebSocket) => {
               } catch {}
 
               activeChatSessions.delete(sessionId);
-              db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', finishedAt, sessionId);
+              setChatSessionStatus(sessionId, 'idle', finishedAt);
 
               broadcastWs({
                 type: 'chat_turn_complete',
@@ -2654,7 +2698,7 @@ wss.on('connection', (ws: WebSocket) => {
             }
             saveAssistantProgress(true);
             activeChatSessions.delete(sessionId);
-            db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', currentNow, sessionId);
+            setChatSessionStatus(sessionId, 'idle', currentNow);
             broadcastWs({ type: 'aborted', sessionId });
           };
 
@@ -2849,7 +2893,7 @@ wss.on('connection', (ws: WebSocket) => {
             } catch {}
 
             activeChatSessions.delete(sessionId);
-            db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', finishedAt, sessionId);
+            setChatSessionStatus(sessionId, 'idle', finishedAt);
 
             broadcastWs({
               type: 'chat_turn_complete',
@@ -2885,7 +2929,7 @@ wss.on('connection', (ws: WebSocket) => {
           }
           saveAssistantProgress(true);
           activeChatSessions.delete(sessionId);
-          db.prepare('UPDATE chat_sessions SET status = ?, updated_at = ? WHERE id = ?').run('idle', currentNow, sessionId);
+          setChatSessionStatus(sessionId, 'idle', currentNow);
           broadcastWs({ type: 'aborted', sessionId });
         };
 
