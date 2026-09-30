@@ -351,14 +351,23 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
         if (Array.isArray(nextActiveChat.messages)) {
           lastLoadedActiveChatRef.current = nextActiveId;
-          setMessages(nextActiveChat.messages);
-          setCachedMessages(nextActiveId, nextActiveChat.messages);
+          const incomingMessages: ChatMessage[] = nextActiveChat.messages;
+          setMessages((prev) => {
+            if (prev.length > 0 && incomingMessages.length === 0) return prev;
+            if (isStreamingRef.current) return prev;
+            return incomingMessages;
+          });
+          setCachedMessages(nextActiveId, incomingMessages);
         } else {
           // Fallback if messages were not returned directly
           const fresh = await getChatMessages(nextActiveId, controller.signal);
           if (!controller.signal.aborted && taskRef.current.id === currentTaskId) {
             lastLoadedActiveChatRef.current = nextActiveId;
-            setMessages(fresh);
+            setMessages((prev) => {
+              if (prev.length > 0 && fresh.length === 0) return prev;
+              if (isStreamingRef.current) return prev;
+              return fresh;
+            });
             setCachedMessages(nextActiveId, fresh);
           }
         }
@@ -461,7 +470,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     getChatMessages(activeChatId, controller.signal)
       .then((fresh) => {
         if (controller.signal.aborted) return;
-        setMessages(fresh);
+        setMessages((prev) => {
+          if (prev.length > 0 && fresh.length === 0) return prev;
+          if (isStreamingRef.current) return prev;
+          return fresh;
+        });
         setCachedMessages(activeChatId, fresh);
       })
       .catch((err) => {
@@ -1252,22 +1265,32 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   useEffect(() => {
     const initPrompt = (location.state as any)?.initialPrompt;
     if (
-      initPrompt &&
-      typeof initPrompt === 'string' &&
-      initPrompt.trim() &&
-      activeChatId &&
-      ws &&
-      ws.readyState === WebSocket.OPEN &&
-      !initialPromptProcessedRef.current
+      !initPrompt ||
+      typeof initPrompt !== 'string' ||
+      !initPrompt.trim() ||
+      !activeChatId ||
+      initialPromptProcessedRef.current
     ) {
+      return;
+    }
+
+    const sendInitialPrompt = () => {
+      if (initialPromptProcessedRef.current) return;
       initialPromptProcessedRef.current = true;
       const promptToSend = initPrompt.trim();
+      dispatchMessage(promptToSend, [], tabCli, tabModel, tabEffort, activeChatId);
+      chatListRef.current?.scrollToBottom();
       navigate(location.pathname, { replace: true, state: { ...location.state, initialPrompt: undefined } });
-      const timer = setTimeout(() => {
-        dispatchMessage(promptToSend, [], tabCli, tabModel, tabEffort, activeChatId);
-        chatListRef.current?.scrollToBottom();
-      }, 150);
-      return () => clearTimeout(timer);
+    };
+
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      sendInitialPrompt();
+    } else if (ws) {
+      const handleOpen = () => {
+        sendInitialPrompt();
+      };
+      ws.addEventListener('open', handleOpen);
+      return () => ws.removeEventListener('open', handleOpen);
     }
   }, [location.state, activeChatId, ws, tabCli, tabModel, tabEffort, dispatchMessage, navigate, location.pathname]);
 

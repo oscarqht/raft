@@ -2,7 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Project, Settings, CliInfo, ProjectCustomScript } from '../types';
 import { getTask, getProject, createTask, validateProjectPath, getDevServerState } from '../api';
-import { getCachedTask, setCachedTask, getCachedProject, setCachedProject } from '../cache';
+import {
+  getCachedTask,
+  setCachedTask,
+  getCachedProject,
+  setCachedProject,
+  setCachedChats,
+  setCachedActiveChatId,
+  setCachedMessages,
+} from '../cache';
 import { DraggableSplit } from '../components/DraggableSplit';
 import { ChatPane } from '../components/ChatPane';
 import { PreviewPane } from '../components/PreviewPane';
@@ -223,7 +231,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
         setCachedTask(t);
         // Canonicalize URL to /projects/:projectId/tasks/:taskId if reached via /tasks/:taskId
         if (!routeProjectId && t.project_id) {
-          navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true, state: { task: t } });
+          navigate(`/projects/${t.project_id}/tasks/${taskId}`, { replace: true, state: { ...location.state, task: t } });
         }
       })
       .catch((err) => {
@@ -275,6 +283,16 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     setNewTaskError(null);
     try {
       const newTask = await createTask(routeProjectId, taskName, selectedBaseBranch);
+      const rawTask = newTask as any;
+      if (rawTask.chats && rawTask.chats.length > 0) {
+        setCachedChats(rawTask.id, rawTask.chats);
+        setCachedActiveChatId(rawTask.id, rawTask.chats[0].id);
+        setCachedMessages(rawTask.chats[0].id, []);
+      } else if (rawTask.initialChat) {
+        setCachedChats(rawTask.id, [rawTask.initialChat]);
+        setCachedActiveChatId(rawTask.id, rawTask.initialChat.id);
+        setCachedMessages(rawTask.initialChat.id, []);
+      }
       setCachedTask(newTask);
       window.dispatchEvent(new CustomEvent('task-updated', { detail: newTask }));
       window.dispatchEvent(new CustomEvent('projects-updated'));
