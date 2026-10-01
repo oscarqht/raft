@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Task, Project, Settings, CliInfo, ProjectCustomScript, TaskGitStatus } from '../types';
-import { getTask, getProject, createTask, validateProjectPath, getDevServerState } from '../api';
+import { getTask, getProject, createTask, validateProjectPath, getDevServerState, getTaskGitStatus } from '../api';
 import {
   getCachedTask,
   getCachedTaskGitStatus,
+  setCachedTaskGitStatus,
   setCachedTask,
   getCachedProject,
   setCachedProject,
@@ -63,7 +64,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [loading, setLoading] = useState(Boolean(taskId && !task));
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
-  const { openSubmit, quickSubmit } = useSubmit();
+  const { jobs: submitJobs, openSubmit, quickSubmit } = useSubmit();
   const [isRunScriptOpen, setIsRunScriptOpen] = useState(false);
   const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
@@ -297,7 +298,26 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       if (detail?.taskId === taskId && detail.status) setGitStatus(detail.status);
     };
     window.addEventListener('task-git-status-cached', handleCached);
-    return () => window.removeEventListener('task-git-status-cached', handleCached);
+
+    // Keep the Submit button in sync with file changes made after a previous submit
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      getTaskGitStatus(taskId)
+        .then((s) => setCachedTaskGitStatus(taskId, s))
+        .catch(() => {});
+    };
+    const handleAgentStatus = (e: Event) => {
+      if ((e as CustomEvent).detail?.taskId === taskId) refresh();
+    };
+    window.addEventListener('task-agent-status-updated', handleAgentStatus);
+    window.addEventListener('focus', refresh);
+    const interval = setInterval(refresh, 10000);
+    return () => {
+      window.removeEventListener('task-git-status-cached', handleCached);
+      window.removeEventListener('task-agent-status-updated', handleAgentStatus);
+      window.removeEventListener('focus', refresh);
+      clearInterval(interval);
+    };
   }, [taskId]);
   const hasNothingToSubmit = Boolean(
     gitStatus &&
@@ -305,6 +325,9 @@ export const TaskPage: React.FC<TaskPageProps> = ({
       (gitStatus.staged?.length || 0) + (gitStatus.unstaged?.length || 0) + (gitStatus.untracked?.length || 0) === 0 &&
       (gitStatus.unpushedCount || 0) === 0
   );
+
+  const submitJobStatus = task ? submitJobs[task.id]?.status : undefined;
+  const isSubmitInProgress = submitJobStatus === 'preparing' || submitJobStatus === 'submitting';
 
   useEffect(() => {
     const handleOpenSubmit = () => {
@@ -546,7 +569,8 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 ws={ws}
                 onOpenRebase={() => setIsRebaseOpen(true)}
                 onOpenSubmit={() => task && quickSubmit(task)}
-                submitDisabled={hasNothingToSubmit}
+                submitDisabled={hasNothingToSubmit || isSubmitInProgress}
+                submitInProgress={isSubmitInProgress}
                 onOpenScripts={() => setIsRunScriptOpen(true)}
                 onDeleteTask={onDeleteTask}
                 isDeletingTask={isDeletingTask}
