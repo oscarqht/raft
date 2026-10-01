@@ -497,19 +497,6 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
         {/* Main Workspace Area (Chat + Preview) */}
         <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-          {/* Collapsed sidebar toggle button (desktop) */}
-          {isSidebarCollapsed && (
-            <button
-              type="button"
-              onClick={() => setIsSidebarCollapsed(false)}
-              className="hidden min-[1200px]:flex absolute top-2 left-2 z-30 w-7 h-7 rounded-md bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text items-center justify-center transition-colors cursor-pointer"
-              title="Expand projects & tasks sidebar"
-              aria-label="Expand sidebar"
-            >
-              <PanelLeftOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-            </button>
-          )}
-
           {/* Mobile Header Tabs */}
           <div className="min-[1200px]:hidden flex items-center border-b border-cozy-border/60 bg-cozy-surface shrink-0 select-none">
             <button
@@ -572,6 +559,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                   }
                 }}
                 isDevRunning={isDevRunning}
+                onExpandSidebar={isSidebarCollapsed ? () => setIsSidebarCollapsed(false) : undefined}
               />
             }
             right={

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Plus, X, Send, Square, UploadCloud, Sliders, ChevronDown, ChevronUp, Pencil,
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
-  Paperclip, Loader2, AlertCircle, Trash2, ArrowUp, RotateCcw
+  Paperclip, Loader2, AlertCircle, Trash2, ArrowUp, RotateCcw, PanelLeftOpen
 } from 'lucide-react';
 import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage } from '../types';
 import { ChatMessageList, ChatMessageListHandle } from './ChatMessageList';
@@ -54,6 +54,7 @@ interface ChatPaneProps {
   isPreviewOpen?: boolean;
   onTogglePreview?: () => void;
   isDevRunning?: boolean;
+  onExpandSidebar?: () => void;
 }
 
 export const ChatPane: React.FC<ChatPaneProps> = ({
@@ -70,6 +71,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   isPreviewOpen = false,
   onTogglePreview,
   isDevRunning = false,
+  onExpandSidebar,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1728,6 +1730,18 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     <div className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden">
       {/* Top Header: Tabs + Quick Action Buttons */}
       <div className="h-11 px-3 border-b border-cozy-border bg-cozy-surface flex items-center justify-between shrink-0 select-none gap-2">
+        {onExpandSidebar && (
+          <button
+            type="button"
+            onClick={onExpandSidebar}
+            className="hidden min-[1200px]:flex shrink-0 w-7 h-7 rounded-md bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-cozy-muted hover:text-cozy-text items-center justify-center transition-colors cursor-pointer"
+            title="Expand projects & tasks sidebar"
+            aria-label="Expand sidebar"
+          >
+            <PanelLeftOpen className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+          </button>
+        )}
+
         {/* Chat Tabs */}
         <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar flex-1 mr-2 touch-pan-x">
           {chats.length === 0 && loadingChats ? (

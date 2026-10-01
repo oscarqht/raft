@@ -1647,17 +1647,13 @@ const MessageItem: React.FC<{
                         }
                       }}
                       className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-all shadow-soft-sm select-none ${
-                        isUser
-                          ? isExpanded
-                            ? 'bg-white/30 text-white border border-white/40 ring-1 ring-white/30'
-                            : 'bg-white/15 hover:bg-white/25 text-white border border-white/25'
-                          : isExpanded
-                          ? 'bg-teal-500/20 text-teal-600 dark:text-teal-300 border border-teal-400/50'
-                          : 'bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-text border border-cozy-border/70 hover:border-teal-400/40'
+                        isExpanded
+                          ? 'bg-teal-500/10 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-600/40 dark:border-teal-400/50'
+                          : 'bg-cozy-surface hover:bg-cozy-subtle text-cozy-text border border-cozy-border hover:border-teal-600/40 dark:hover:border-teal-400/40'
                       } ${hasDetails ? 'cursor-pointer' : 'cursor-default'}`}
                       title={hasDetails ? `Click to ${isExpanded ? 'collapse' : 'inspect'} /${skill.name} instructions` : `/${skill.name}`}
                     >
-                      <Zap className={`w-3 h-3 ${isUser ? 'text-amber-300' : 'text-amber-500'} shrink-0`} />
+                      <Zap className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                       <span>/{skill.name}</span>
                       {hasDetails && (
                         isExpanded ? (
