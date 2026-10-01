@@ -4,6 +4,7 @@ import {
   Settings as SettingsIcon,
   Check,
   Cpu,
+  Coins,
   BrainCircuit,
   Sliders,
   CheckCircle2,
@@ -105,16 +106,16 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [copiedOs, setCopiedOs] = useState<'win' | 'mac' | null>(null);
   const [savedToast, setSavedToast] = useState(false);
 
-  // Tabs state: 'agents' | 'alpha' | 'skills' | 'git'
-  type SettingsTab = 'agents' | 'alpha' | 'skills' | 'git';
+  // Tabs state: 'agents' | 'budgets' | 'alpha' | 'skills' | 'git'
+  type SettingsTab = 'agents' | 'budgets' | 'alpha' | 'skills' | 'git';
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const initialTab: SettingsTab =
-    tabParam === 'alpha' ? 'alpha' : tabParam === 'skills' ? 'skills' : tabParam === 'git' ? 'git' : 'agents';
+    tabParam === 'budgets' ? 'budgets' : tabParam === 'alpha' ? 'alpha' : tabParam === 'skills' ? 'skills' : tabParam === 'git' ? 'git' : 'agents';
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
 
   useEffect(() => {
-    if (tabParam === 'alpha' || tabParam === 'skills' || tabParam === 'git' || tabParam === 'agents') {
+    if (tabParam === 'budgets' || tabParam === 'alpha' || tabParam === 'skills' || tabParam === 'git' || tabParam === 'agents') {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
@@ -819,7 +820,7 @@ You have access to terminal commands via your connected local desktop device.
               </h1>
             </div>
             <p className="text-sm text-cozy-muted ml-13">
-              Configure default AI agent CLIs, models, skills, and git integrations.
+              Configure AI agents, review provider budgets, and manage skills and git integrations.
             </p>
           </div>
 
@@ -831,7 +832,7 @@ You have access to terminal commands via your connected local desktop device.
           )}
         </div>
 
-        {/* 4 Navigation Tabs: AI Agents, Alpha Intelligence, Skills, Git Integration */}
+        {/* Navigation Tabs: AI Agents, Budgets, Alpha Intelligence, Skills, Git Integration */}
         <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-cozy-surface/80 border border-cozy-border/80 shadow-soft-sm w-full max-w-4xl overflow-x-auto">
           <button
             type="button"
@@ -844,6 +845,19 @@ You have access to terminal commands via your connected local desktop device.
           >
             <Bot className="w-4 h-4 shrink-0" />
             <span className="whitespace-nowrap">AI Agents</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('budgets')}
+            className={`flex-1 min-w-fit flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+              activeTab === 'budgets'
+                ? 'bg-teal-500 text-white shadow-soft-sm'
+                : 'text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle/60'
+            }`}
+          >
+            <Coins className="w-4 h-4 shrink-0" />
+            <span className="whitespace-nowrap">Budgets</span>
           </button>
 
           <button
@@ -998,16 +1012,6 @@ You have access to terminal commands via your connected local desktop device.
             })}
               </div>
 
-              {/* AI Agent Usage & Remaining Quotas (CodexBar) - Excluded for Alpha */}
-              {agentCli.toLowerCase() !== 'alpha' && (
-                <div className="pt-2 border-t border-cozy-border/60">
-                  <AgentUsageCard
-                    activeCli={agentCli}
-                    clis={localClis}
-                    onSelectCli={handleSelectCli}
-                  />
-                </div>
-              )}
             </div>
 
         {/* 3. Provider Configuration / Installation */}
@@ -1642,6 +1646,22 @@ You have access to terminal commands via your connected local desktop device.
             </label>
           </div>
         </div>
+      </div>
+    )}
+
+    {/* Provider Budgets */}
+    {activeTab === 'budgets' && (
+      <div className="p-6 sm:p-7 rounded-squircle glass-card border border-white/80 dark:border-white/10 shadow-soft space-y-5 animate-in fade-in duration-150">
+        <div>
+          <h2 className="text-base font-bold text-cozy-text flex items-center gap-2">
+            <Coins className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            AI Provider Budgets
+          </h2>
+          <p className="text-xs text-cozy-muted mt-1">
+            Review usage quotas, spend allowances, and remaining credits for all AI providers except Alpha Intelligence.
+          </p>
+        </div>
+        <AgentUsageCard clis={localClis} />
       </div>
     )}
 
