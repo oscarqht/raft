@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AgentUsageSnapshot, CliInfo } from '../types';
 import { getAllAgentUsages } from '../api';
+import { formatResetDate } from '../utils/time';
 import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
 
 interface AgentUsageCardProps {
@@ -204,6 +205,9 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
 
       {/* Usage Snapshots for all non-Alpha providers */}
       {snapshots.map((currentSnapshot) => {
+        const costResetDescription = (currentSnapshot.cli === 'claude'
+          ? formatResetDate(currentSnapshot.costLimit?.resetsAt)
+          : null) || currentSnapshot.costLimit?.resetDescription;
         const isCliReady = clis.some(
           (c) => c.name.toLowerCase() === currentSnapshot.cli.toLowerCase() && c.available
         );
@@ -276,8 +280,8 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
                 <div className="space-y-0.5">
                   <div className="text-xs font-bold">{currentSnapshot.statusMessage}</div>
                   <div className="text-[11px] opacity-90">
-                    {currentSnapshot.costLimit?.resetDescription
-                      ? `Quota will replenish automatically (${currentSnapshot.costLimit.resetDescription}).`
+                    {costResetDescription
+                      ? `Quota will replenish automatically (${costResetDescription}).`
                       : 'You have reached your allocated quota window for this cycle.'}
                   </div>
                 </div>
@@ -367,7 +371,7 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
                       </span>
                     )}
                   </div>
-                  <span>{currentSnapshot.costLimit.resetDescription || 'Resets soon'}</span>
+                  <span>{costResetDescription || 'Reset date unavailable'}</span>
                 </div>
               </div>
             )}
