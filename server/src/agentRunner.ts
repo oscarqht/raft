@@ -2852,7 +2852,7 @@ export function runSubmitAgent(
         gitAccount = findGitAccountForRemote(remoteUrl, detectedUser);
       } catch {}
 
-      const pushArgs = ['push'];
+      const pushArgs = ['push', '--progress'];
       let tokenToMask = '';
 
       if (gitAccount && gitAccount.token) {
@@ -2891,6 +2891,8 @@ export function runSubmitAgent(
       };
 
       let pushErrOutput = '';
+      const PUSH_IDLE_TIMEOUT_MS = 180_000;
+      const PUSH_EXIT_GRACE_MS = 1_500;
       const executePush = (args: string[]) => {
         return new Promise<void>((resolve, reject) => {
           pushErrOutput = '';
@@ -2903,25 +2905,63 @@ export function runSubmitAgent(
             shell: false,
           });
           currentChild = proc;
-          const pushTimeout = setTimeout(() => {
-            pushErrOutput += 'git push timed out after 180s';
-            proc.kill('SIGKILL');
-          }, 180_000);
-          proc.stdout?.on('data', (d) => emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) }));
+
+          let settled = false;
+          let idleTimer: NodeJS.Timeout | undefined;
+          let graceTimer: NodeJS.Timeout | undefined;
+          let lastProgressAt = 0;
+
+          const settle = (err?: Error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(idleTimer);
+            clearTimeout(graceTimer);
+            // A lingering child (gc, helper) may keep the pipes open; don't wait for them.
+            proc.stdout?.destroy();
+            proc.stderr?.destroy();
+            if (err) reject(err); else resolve();
+          };
+          // Idle (not absolute) timeout: slow but progressing pushes are left alone.
+          const armIdle = () => {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              pushErrOutput += `git push timed out (no output for ${PUSH_IDLE_TIMEOUT_MS / 1000}s)`;
+              proc.kill('SIGKILL');
+            }, PUSH_IDLE_TIMEOUT_MS);
+          };
+          armIdle();
+
+          proc.stdout?.on('data', (d) => {
+            armIdle();
+            emit({ type: 'chunk', content: sanitize(d.toString('utf-8')) });
+          });
           proc.stderr?.on('data', (d) => {
+            armIdle();
             const str = d.toString('utf-8');
             pushErrOutput += str;
-            emit({ type: 'chunk', content: sanitize(str) });
+            // Progress frames are \r-separated; surface at most one every 2s.
+            const lines = str.split(/\r|\n/).filter((l: string) => l.trim());
+            const out: string[] = [];
+            for (const line of lines) {
+              if (/\d+%/.test(line) && !/done\.?$/.test(line.trim())) {
+                const now = Date.now();
+                if (now - lastProgressAt < 2000) continue;
+                lastProgressAt = now;
+              }
+              out.push(line);
+            }
+            if (out.length > 0) emit({ type: 'chunk', content: sanitize(out.join('\n') + '\n') });
           });
-          proc.on('close', (code) => {
-            clearTimeout(pushTimeout);
-            if (code === 0) resolve();
-            else reject(new Error(`git push failed with exit code ${code}:\n${pushErrOutput}`));
+          const finish = (code: number | null) => {
+            if (code === 0) settle();
+            else settle(new Error(`git push failed with exit code ${code}:\n${pushErrOutput}`));
+          };
+          proc.on('close', finish);
+          // 'close' waits for every inherited pipe to close; 'exit' does not.
+          proc.on('exit', (code) => {
+            graceTimer = setTimeout(() => finish(code), PUSH_EXIT_GRACE_MS);
           });
-          proc.on('error', (e) => {
-            clearTimeout(pushTimeout);
-            reject(e);
-          });
+          proc.on('error', (e) => settle(e));
         });
       };
 

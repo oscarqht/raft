@@ -35,6 +35,21 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
     setJobs((prev) => (prev[taskId] ? { ...prev, [taskId]: { ...prev[taskId], ...patch(prev[taskId]) } } : prev));
   }, []);
 
+  const markDone = useCallback((taskId: string) => {
+    const job = jobsRef.current[taskId];
+    if (!job || job.status === 'done') return;
+    updateJob(taskId, () => ({ status: 'done' }));
+    getTaskGitStatus(taskId, true)
+      .then((s) => {
+        updateJob(taskId, () => ({ gitStatus: s }));
+        setCachedTaskGitStatus(taskId, s, job.task.project_id);
+        window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId, status: s } }));
+      })
+      .catch(() => {
+        window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId } }));
+      });
+  }, [updateJob]);
+
   useEffect(() => {
     if (!ws) return;
     const handleMessage = (event: MessageEvent) => {
@@ -44,21 +59,12 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
         const taskId: string = msg.taskId;
         const ev = msg.event;
         const job = jobsRef.current[taskId];
-        if (!job) return;
+        if (!job || job.status === 'done' || job.status === 'error') return;
         if (ev.content) {
           updateJob(taskId, (j) => ({ logs: [...j.logs, ev.content] }));
         }
         if (ev.type === 'done') {
-          updateJob(taskId, () => ({ status: 'done' }));
-          getTaskGitStatus(taskId, true)
-            .then((s) => {
-              updateJob(taskId, () => ({ gitStatus: s }));
-              setCachedTaskGitStatus(taskId, s, job.task.project_id);
-              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId, status: s } }));
-            })
-            .catch(() => {
-              window.dispatchEvent(new CustomEvent('task-status-updated', { detail: { taskId } }));
-            });
+          markDone(taskId);
         } else if (ev.type === 'error') {
           updateJob(taskId, () => ({ status: 'error' }));
         }
@@ -66,7 +72,44 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
     };
     ws.addEventListener('message', handleMessage);
     return () => ws.removeEventListener('message', handleMessage);
-  }, [ws, updateJob]);
+  }, [ws, updateJob, markDone]);
+
+  // After a reconnect, ask the server to re-attach to (or replay the result of) in-flight submits.
+  useEffect(() => {
+    if (!ws) return;
+    const resume = () => {
+      for (const job of Object.values(jobsRef.current)) {
+        if (job.status === 'submitting') {
+          ws.send(JSON.stringify({ type: 'submit_resume', taskId: job.task.id }));
+        }
+      }
+    };
+    if (ws.readyState === WebSocket.OPEN) resume();
+    ws.addEventListener('open', resume);
+    return () => ws.removeEventListener('open', resume);
+  }, [ws]);
+
+  // Safety net: if the completion event never arrives (socket dropped, server restarted),
+  // infer success from the actual repo state so the job can't stay "submitting" forever.
+  const hasSubmitting = Object.values(jobs).some((j) => j.status === 'submitting');
+  useEffect(() => {
+    if (!hasSubmitting) return;
+    const timer = setInterval(() => {
+      for (const job of Object.values(jobsRef.current)) {
+        if (job.status !== 'submitting' || Date.now() - job.createdAt < 10_000) continue;
+        const taskId = job.task.id;
+        getTaskGitStatus(taskId, true)
+          .then((s) => {
+            const current = jobsRef.current[taskId];
+            if (!current || current.status !== 'submitting') return;
+            const dirty = s.staged.length + s.unstaged.length + s.untracked.length;
+            if (dirty === 0 && (s.unpushedCount || 0) === 0) markDone(taskId);
+          })
+          .catch(() => {});
+      }
+    }, 8_000);
+    return () => clearInterval(timer);
+  }, [hasSubmitting, markDone]);
 
   const startSubmit = useCallback(
     (task: Task, commitMessage: string) => {

@@ -2461,6 +2461,15 @@ app.get('/api/chats/:id/messages', (req: Request, res: Response) => {
 
 // ===================== WEBSOCKETS =====================
 
+// Submit (commit & push) runs outlive the websocket that started them: a dropped socket must
+// not kill an in-flight push, and the final result is kept so a reconnecting client can get it.
+interface SubmitRun {
+  kill: (signal?: any) => void;
+  final: any | null;
+  subscriber: ((ev: any) => void) | null;
+}
+const submitRuns = new Map<string, SubmitRun>();
+
 wss.on('connection', (ws: WebSocket) => {
   let activeProc: any = null;
   let devLogListener: ((log: string) => void) | null = null;
@@ -2631,7 +2640,17 @@ wss.on('connection', (ws: WebSocket) => {
         const defaultModel = getSetting<string>('default_model', '');
         const defaultEffort = getSetting<string>('thinking_effort', 'medium');
 
-        activeProc = runSubmitAgent(
+        const existing = submitRuns.get(taskId);
+        if (existing && !existing.final) {
+          // Already running (e.g. client reconnected): just re-attach to it.
+          existing.subscriber = (ev) => send({ type: 'submit_event', taskId, event: ev });
+          return;
+        }
+
+        const run: SubmitRun = { kill: () => {}, final: null, subscriber: null };
+        run.subscriber = (ev) => send({ type: 'submit_event', taskId, event: ev });
+        submitRuns.set(taskId, run);
+        const runner = runSubmitAgent(
           task.worktree_path,
           task.branch,
           commitMessage,
@@ -2642,7 +2661,10 @@ wss.on('connection', (ws: WebSocket) => {
             if (ev.type === 'done') {
               GitService.invalidateTaskStatus(task.worktree_path);
             }
-            send({ type: 'submit_event', taskId, event: ev });
+            if (ev.type === 'done' || ev.type === 'error') {
+              run.final = ev;
+            }
+            run.subscriber?.(ev);
           },
           task.base_branch,
           {
@@ -2651,6 +2673,23 @@ wss.on('connection', (ws: WebSocket) => {
             systemPrompt: project?.system_prompt,
           }
         );
+        run.kill = runner.kill;
+        ws.once('close', () => {
+          // Detach only; the push keeps running. (Subscriber may already belong to a newer socket.)
+          if (submitRuns.get(taskId) === run) run.subscriber = null;
+        });
+      }
+
+      // Client reconnected while a submit was in flight: re-attach, or replay the final result
+      else if (msg.type === 'submit_resume') {
+        const { taskId } = msg;
+        const run = submitRuns.get(taskId);
+        if (!run) return;
+        if (run.final) {
+          send({ type: 'submit_event', taskId, event: run.final });
+        } else {
+          run.subscriber = (ev) => send({ type: 'submit_event', taskId, event: ev });
+        }
       }
 
       // Generate Commit Message Agent

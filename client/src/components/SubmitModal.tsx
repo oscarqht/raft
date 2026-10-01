@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink, Loader2 } from 'lucide-react';
+import { X, UploadCloud, CheckCircle2, AlertTriangle, FileCode, Terminal, GitCommit, GitPullRequest, ExternalLink, Loader2, Minimize2 } from 'lucide-react';
 import { Task, GitStatus } from '../types';
 import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 import { useSubmit } from '../contexts/SubmitContext';
@@ -18,7 +18,7 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  const { jobs, startSubmit, dismissJob } = useSubmit();
+  const { jobs, startSubmit, quickSubmit, dismissJob } = useSubmit();
   const job = jobs[task.id];
   const [localGitStatus, setGitStatus] = useState<GitStatus>({ staged: [], unstaged: [], untracked: [] });
   const [commitMessage, setCommitMessage] = useState(() => getDefaultCommitMessage(task));
@@ -126,6 +126,18 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
     onClose();
   };
 
+  // Minimize to the bottom-right dock. With no job yet, this submits in the background.
+  const handleMinimize = () => {
+    if (job || hasNothingToSubmit) {
+      onClose();
+    } else if (isGenerating || (totalChanges > 0 && !commitMessage.trim())) {
+      onClose();
+      quickSubmit(task);
+    } else {
+      handleSubmit();
+    }
+  };
+
   const handleDone = () => {
     dismissJob(task.id);
     onClose();
@@ -149,12 +161,24 @@ export const SubmitModal: React.FC<SubmitModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleMinimize}
+              title="Minimize to bottom right"
+              aria-label="Minimize"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
+            >
+              <Minimize2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={onClose}
+              title="Close"
+              aria-label="Close"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-cozy-muted hover:text-teal-500 hover:bg-cozy-subtle transition-all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
