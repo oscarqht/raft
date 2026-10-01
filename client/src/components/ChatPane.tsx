@@ -173,6 +173,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const userSelectedCliRef = useRef<string | null>(null);
   const userSelectedModelRef = useRef<string | null>(null);
   const userSelectedEffortRef = useRef<string | null>(null);
+  const userSelectedChatIdRef = useRef<string | null>(null);
   const lastSyncedChatIdRef = useRef<string | null>(null);
 
   // Tab rename state
@@ -360,12 +361,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       let nextChats = data;
 
       if (data.length > 0) {
-        const nextActiveChat = (targetActiveId && data.find((c) => c.id === targetActiveId)) || data[0];
+        const latestActiveId = activeChatIdRef.current || targetActiveId;
+        const nextActiveChat = (latestActiveId && data.find((c) => c.id === latestActiveId)) || data[0];
         const nextActiveId = nextActiveChat.id;
 
         // If the user made a manual selection (e.g. right after task creation while chats were loading),
         // apply it to the active chat session instead of falling back to the server's default!
-        if (userSelectedCliRef.current || userSelectedModelRef.current || userSelectedEffortRef.current) {
+        if (
+          (userSelectedCliRef.current || userSelectedModelRef.current || userSelectedEffortRef.current) &&
+          (userSelectedChatIdRef.current === null || userSelectedChatIdRef.current === nextActiveId)
+        ) {
+          userSelectedChatIdRef.current = nextActiveId;
           const cliToApply = userSelectedCliRef.current || tabCli;
           const modelToApply = userSelectedModelRef.current || tabModel;
           const effortToApply = userSelectedEffortRef.current || tabEffort;
@@ -453,10 +459,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     if (lastSyncedChatIdRef.current !== activeChatId) {
       lastSyncedChatIdRef.current = activeChatId;
 
-      // If user had pending manual selection for this newly active chat, keep it!
-      if (userSelectedCliRef.current || userSelectedModelRef.current) {
+      // A manual choice belongs only to the chat where it was made.
+      if (
+        userSelectedChatIdRef.current === activeChatId &&
+        (userSelectedCliRef.current || userSelectedModelRef.current || userSelectedEffortRef.current)
+      ) {
         return;
       }
+      userSelectedCliRef.current = null;
+      userSelectedModelRef.current = null;
+      userSelectedEffortRef.current = null;
+      userSelectedChatIdRef.current = null;
 
       const cli = currentChat.agent_cli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
       setTabCli(cli);
@@ -547,12 +560,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   // Load models when tab CLI changes
   useEffect(() => {
     const cli = tabCli || settings?.agent_cli || task.project?.default_agent_cli || 'agy';
+    const activeChat = chatsRef.current.find((c) => c.id === activeChatId);
+    // The tab's provider state may still belong to the previous chat for one render.
+    if (activeChat && activeChat.agent_cli !== cli) return;
     let isCurrent = true;
 
     // Immediately show cached models for this CLI if available
     const cached = getCachedModels(cli);
     if (cached.length > 0) {
       setAvailableModels(cached);
+    } else {
+      setAvailableModels([]);
     }
 
     getModels(cli)
@@ -561,42 +579,35 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         setAvailableModels(data);
         setCachedModels(cli, data);
 
-        // Reconcile tabModel and tabEffort
-        setTabModel((currModel) => {
-          // If the user's current selection is already valid in data, PRESERVE IT!
-          const isCurrValid = currModel && data.some((m) => m.id === currModel);
-          const candidateModel = isCurrValid ? currModel : undefined;
-
-          const resolved = resolveModelAndEffort(cli, data, candidateModel, tabEffort);
-
-          setTabEffort(resolved.effort);
-          if (resolved.modelId) {
-            setCachedProviderPreference(cli, resolved.modelId, resolved.effort);
-          }
-
-          if (activeChatId) {
-            setChats((prevChats) => {
-              const currentChat = prevChats.find((c) => c.id === activeChatId);
-              if (!currentChat) return prevChats;
-              if (currentChat.model === resolved.modelId && currentChat.thinking_effort === resolved.effort) {
-                return prevChats;
-              }
-              const nextChats = prevChats.map((c) =>
-                c.id === activeChatId
-                  ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
-                  : c
-              );
-              setCachedChats(task.id, nextChats);
-              return nextChats;
-            });
-            updateChatSession(activeChatId, {
-              model: resolved.modelId,
-              thinking_effort: resolved.effort,
-            }).catch(() => {});
-          }
-
-          return resolved.modelId;
-        });
+        const currentChat = chatsRef.current.find((c) => c.id === activeChatId);
+        if (currentChat && currentChat.agent_cli !== cli) return;
+        const resolved = resolveModelAndEffort(
+          cli,
+          data,
+          currentChat?.model || tabModel,
+          currentChat?.thinking_effort || tabEffort
+        );
+        setTabModel(resolved.modelId);
+        setTabEffort(resolved.effort);
+        if (resolved.modelId) {
+          setCachedProviderPreference(cli, resolved.modelId, resolved.effort);
+        }
+        if (
+          currentChat &&
+          (currentChat.model !== resolved.modelId || currentChat.thinking_effort !== resolved.effort)
+        ) {
+          const nextChats = chatsRef.current.map((c) =>
+            c.id === activeChatId
+              ? { ...c, model: resolved.modelId, thinking_effort: resolved.effort }
+              : c
+          );
+          setChats(nextChats);
+          setCachedChats(task.id, nextChats);
+          updateChatSession(activeChatId!, {
+            model: resolved.modelId,
+            thinking_effort: resolved.effort,
+          }).catch(() => {});
+        }
       })
       .catch(() => {});
 
@@ -922,6 +933,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     userSelectedCliRef.current = null;
     userSelectedModelRef.current = null;
     userSelectedEffortRef.current = null;
+    userSelectedChatIdRef.current = null;
     lastSyncedChatIdRef.current = newId;
     pendingChatIdsRef.current.add(newId);
 
@@ -1010,6 +1022,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   };
 
   const handleCliChange = (newCli: string) => {
+    userSelectedChatIdRef.current = activeChatId;
     userSelectedCliRef.current = newCli;
     setTabCli(newCli);
 
@@ -1055,6 +1068,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   };
 
   const handleModelChange = (newModel: string) => {
+    userSelectedChatIdRef.current = activeChatId;
     userSelectedModelRef.current = newModel;
     setTabModel(newModel);
     const found = availableModels.find((m) => m.id === newModel);
@@ -1080,6 +1094,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   };
 
   const handleEffortChange = (newEffort: string) => {
+    userSelectedChatIdRef.current = activeChatId;
     userSelectedEffortRef.current = newEffort;
     setTabEffort(newEffort);
     if (tabModel) {
@@ -1110,6 +1125,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   const handleResetToGlobal = () => {
     if (!globalCli) return;
+    userSelectedChatIdRef.current = activeChatId;
     const nextModel = globalModel;
     const nextEffort = globalEffort || tabEffort;
 
