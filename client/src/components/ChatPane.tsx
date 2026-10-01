@@ -47,6 +47,7 @@ interface ChatPaneProps {
   ws: WebSocket | null;
   onOpenSubmit: () => void;
   submitDisabled?: boolean;
+  submitInProgress?: boolean;
   onOpenScripts?: () => void;
   onOpenRebase?: () => void;
   onDeleteTask?: () => void;
@@ -64,6 +65,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   ws,
   onOpenSubmit,
   submitDisabled = false,
+  submitInProgress = false,
   onOpenScripts,
   onOpenRebase,
   onDeleteTask,
@@ -1833,9 +1835,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             onClick={onOpenSubmit}
             disabled={submitDisabled}
             className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-teal-500"
-            title={submitDisabled ? 'No changes to commit or push' : 'Submit changes: commit and push'}
+            title={submitInProgress ? 'A submit is in progress' : submitDisabled ? 'No changes to commit or push' : 'Submit changes: commit and push'}
           >
-            <UploadCloud className="w-3.5 h-3.5" />
+            {submitInProgress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
             <span>Submit</span>
           </button>
 
@@ -1899,7 +1901,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 disabled={submitDisabled}
                 className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-sky-400 transition-colors font-medium border-t border-cozy-border/40 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <UploadCloud className="w-3.5 h-3.5" />
+                {submitInProgress ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
                 <span>Submit Changes</span>
               </button>
               {onDeleteTask && (

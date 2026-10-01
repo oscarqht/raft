@@ -101,7 +101,8 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
   // automatically unless the user restored the dialog in the meantime.
   const quickSubmit = useCallback(
     (task: Task) => {
-      if (!ws || jobsRef.current[task.id]) return;
+      const existing = jobsRef.current[task.id];
+      if (!ws || existing?.status === 'preparing' || existing?.status === 'submitting') return;
       cancelledPrepRef.current.delete(task.id);
       setJobs((prev) => ({ ...prev, [task.id]: { task, status: 'preparing', logs: [], createdAt: Date.now() } }));
       const isCancelled = () => cancelledPrepRef.current.has(task.id) || modalTaskRef.current?.id === task.id;
