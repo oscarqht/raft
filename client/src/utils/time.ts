@@ -90,3 +90,18 @@ export function formatShortRelativeTime(
   if (diffDay < 365) return `${Math.max(1, Math.round(diffDay / 30))}mo`;
   return `${Math.max(1, Math.round(diffDay / 365))}y`;
 }
+
+/** Formats a budget reset date in the user's local timezone. */
+export function formatResetDate(dateInput?: string | null): string | null {
+  if (!dateInput) return null;
+  const date = new Date(dateInput);
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return null;
+
+  const day = date.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+  });
+  const time = date.toLocaleTimeString('en-US', {
+    hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'shortOffset',
+  });
+  return `Resets ${day}, ${time}`;
+}

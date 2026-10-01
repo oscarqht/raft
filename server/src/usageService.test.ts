@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { getAgentUsage, getAllAgentUsages } from './usageService.js';
+import { getAgentUsage, getAllAgentUsages, parseClaudeData } from './usageService.js';
 
 test('getAgentUsage returns a structured snapshot for codex', async () => {
   const snapshot = await getAgentUsage('codex', true);
@@ -57,4 +57,39 @@ test('getAllAgentUsages aggregates all known providers', async () => {
   assert.ok('codex' in all);
   assert.ok('agy' in all);
   assert.ok('claude' in all);
+});
+
+const monthlyCost = { currencyCode: 'USD', limit: 200, used: 26.44, period: 'Monthly cap' };
+
+test('Claude monthly cap without a reset timestamp resets at the next UTC month', () => {
+  const now = Date.parse('2026-10-01T09:24:18Z');
+  const snapshot = parseClaudeData({ usage: { providerCost: monthlyCost } }, now);
+  assert.strictEqual(snapshot.costLimit?.resetsAt, '2026-11-01T00:00:00.000Z');
+  assert.ok(snapshot.costLimit?.resetDescription);
+  assert.notStrictEqual(snapshot.costLimit?.resetDescription, 'Resets soon');
+});
+
+test('Claude monthly reset handles year rollover, leap years, and UTC boundaries', () => {
+  for (const [now, expected] of [
+    ['2026-12-15T00:00:00Z', '2027-01-01T00:00:00.000Z'],
+    ['2028-02-29T12:00:00Z', '2028-03-01T00:00:00.000Z'],
+    ['2026-11-01T07:59:59+08:00', '2026-11-01T00:00:00.000Z'],
+    ['2026-11-01T08:00:00+08:00', '2026-12-01T00:00:00.000Z'],
+  ]) {
+    const snapshot = parseClaudeData({ usage: { providerCost: monthlyCost } }, Date.parse(now));
+    assert.strictEqual(snapshot.costLimit?.resetsAt, expected);
+  }
+});
+
+test('Claude keeps explicit provider reset dates and does not infer non-monthly resets', () => {
+  const now = Date.parse('2026-10-01T00:00:00Z');
+  const resetsAt = '2026-10-20T12:00:00Z';
+  const explicit = parseClaudeData({ usage: { providerCost: { ...monthlyCost, resetsAt } } }, now);
+  assert.strictEqual(explicit.costLimit?.resetsAt, resetsAt);
+  const weekly = parseClaudeData({ usage: { providerCost: { ...monthlyCost, period: 'Weekly cap' } } }, now);
+  assert.strictEqual(weekly.costLimit?.resetsAt, null);
+  assert.strictEqual(weekly.costLimit?.resetDescription, null);
+  const defaultMonthly = parseClaudeData({ usage: { providerCost: { limit: 200, used: 10 } } }, now);
+  assert.strictEqual(defaultMonthly.costLimit?.resetsAt, '2026-11-01T00:00:00.000Z');
+  assert.strictEqual(parseClaudeData({ usage: {} }, now).costLimit, null);
 });

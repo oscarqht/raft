@@ -253,7 +253,7 @@ function parseCodexData(item: any, now: number): AgentUsageSnapshot {
   };
 }
 
-function parseClaudeData(item: any, now: number): AgentUsageSnapshot {
+export function parseClaudeData(item: any, now: number): AgentUsageSnapshot {
   const claudePath = resolveCliPath('claude');
   const accountEmail =
     item.usage?.accountEmail ||
@@ -291,7 +291,15 @@ function parseClaudeData(item: any, now: number): AgentUsageSnapshot {
       usedPercent = Math.min(100, Math.max(0, Math.round((used / limit) * 100)));
     }
 
-    const resetsAt = rawCost.resetsAt || null;
+    const period = rawCost.period || 'Monthly cap';
+    let resetsAt = rawCost.resetsAt || null;
+    if (!resetsAt && /^monthly\b/i.test(period)) {
+      // CodexBar can omit Claude's monthly cap reset. The cycle resets at midnight UTC.
+      const currentDate = new Date(now);
+      resetsAt = new Date(Date.UTC(
+        currentDate.getUTCFullYear(), currentDate.getUTCMonth() + 1, 1,
+      )).toISOString();
+    }
 
     costLimit = {
       limit,
@@ -300,7 +308,7 @@ function parseClaudeData(item: any, now: number): AgentUsageSnapshot {
       remainingPercent,
       usedPercent,
       currency: rawCost.currencyCode || 'USD',
-      period: rawCost.period || 'Monthly cap',
+      period,
       resetsAt,
       resetDescription: formatRelativeTime(resetsAt),
     };
