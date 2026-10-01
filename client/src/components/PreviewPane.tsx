@@ -306,21 +306,6 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
         }
       } catch {}
 
-      // 2. Direct browser fetch fallback probe
-      if (!ready) {
-        try {
-          const controller = new AbortController();
-          const abortTimer = setTimeout(() => controller.abort(), 800);
-          await fetch(`http://localhost:${activeDevPort}/`, {
-            mode: 'no-cors',
-            cache: 'no-store',
-            signal: controller.signal,
-          });
-          clearTimeout(abortTimer);
-          ready = true;
-        } catch {}
-      }
-
       if (!isMounted) return;
 
       if (ready) {

@@ -163,6 +163,7 @@ export function startDevServerProxy(
       return targetHost;
     };
 
+    const sockets = new Set<net.Socket>();
     const proxyServer = http.createServer(async (req, res) => {
       const activeHost = await getOrDetectTargetHost();
 
@@ -263,6 +264,11 @@ export function startDevServerProxy(
       forwardRequest(activeHost);
     });
 
+    proxyServer.on('connection', (socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+    });
+
     // Handle WebSocket upgrade (essential for Vite/Webpack HMR)
     proxyServer.on('upgrade', async (req, clientSocket, head) => {
       const activeHost = await getOrDetectTargetHost();
@@ -300,6 +306,7 @@ export function startDevServerProxy(
           clientSocket.destroy();
         });
 
+        clientSocket.once('close', () => upstreamSocket.destroy());
         clientSocket.on('error', () => {
           upstreamSocket.destroy();
         });
@@ -318,6 +325,7 @@ export function startDevServerProxy(
         },
         close: () => {
           try {
+            for (const socket of sockets) socket.destroy();
             proxyServer.close();
           } catch {}
         },

@@ -588,6 +588,19 @@ pub fn stop_server() {
     let mut proc_guard = SERVER_PROCESS.lock().unwrap();
     if let Some(mut proc) = proc_guard.take() {
         println!("[raft] Stopping server process (PID: {})...", proc.pid);
+        // Give Node time to terminate its detached preview process groups.
+        #[cfg(unix)]
+        {
+            let _ = std::process::Command::new("kill")
+                .args(["-TERM", &proc.pid.to_string()])
+                .status();
+            for _ in 0..60 {
+                if matches!(proc.child.try_wait(), Ok(Some(_))) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        }
         let _ = proc.child.kill();
         let _ = proc.child.wait();
     }

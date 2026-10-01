@@ -1388,20 +1388,24 @@ app.post('/api/scripts/:executionId/dismiss', (req: Request, res: Response) => {
   res.json({ success: ok });
 });
 
-app.delete('/api/projects/:id', (req: Request, res: Response) => {
-  // Also clean up any associated task worktrees
-  const tasks = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(req.params.id) as any[];
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any;
-  if (project) {
-    for (const task of tasks) {
-      try {
-        GitService.removeWorktree(project.path, task.worktree_path, task.branch);
-        devServerManager.stopServer(task.id);
-      } catch {}
+app.delete('/api/projects/:id', async (req: Request, res: Response) => {
+  try {
+    // Also clean up any associated task worktrees
+    const tasks = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(req.params.id) as any[];
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any;
+    if (project) {
+      for (const task of tasks) {
+        await devServerManager.stopServer(task.id);
+        try {
+          GitService.removeWorktree(project.path, task.worktree_path, task.branch);
+        } catch {}
+      }
     }
+    db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to manage task preview' });
   }
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
 });
 
 // Tasks
@@ -1600,17 +1604,21 @@ app.get('/api/tasks/:id', (req: Request, res: Response) => {
   res.json({ ...task, project: formatProject(project) });
 });
 
-app.delete('/api/tasks/:id', (req: Request, res: Response) => {
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
-  if (task) {
-    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
-    if (project) {
-      GitService.removeWorktree(project.path, task.worktree_path, task.branch);
+app.delete('/api/tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+    if (task) {
+      await devServerManager.stopServer(task.id);
+      const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+      if (project) {
+        GitService.removeWorktree(project.path, task.worktree_path, task.branch);
+      }
     }
-    devServerManager.stopServer(task.id);
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to manage task preview' });
   }
-  db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
 });
 
 app.patch('/api/tasks/:id', (req: Request, res: Response) => {
@@ -1779,24 +1787,32 @@ app.get('/api/tasks/:id/dev-server/ping', async (req: Request, res: Response) =>
   res.json(result);
 });
 
-app.post('/api/tasks/:id/dev-server/start', (req: Request, res: Response) => {
-  const taskId = req.params.id as string;
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+app.post('/api/tasks/:id/dev-server/start', async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as any;
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
 
-  const devCmd = project?.dev_cmd || 'npm run dev';
-  const port = project?.dev_port || 5173;
-  db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
-  const state = devServerManager.startServer(task.id, task.worktree_path, devCmd, port);
-  res.json(state);
+    const devCmd = project?.dev_cmd || 'npm run dev';
+    const port = project?.dev_port || 5173;
+    db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(Date.now(), taskId);
+    const state = await devServerManager.startServer(task.id, task.worktree_path, devCmd, port);
+    res.json(state);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to manage task preview' });
+  }
 });
 
-app.post('/api/tasks/:id/dev-server/stop', (req: Request, res: Response) => {
-  const taskId = req.params.id as string;
-  const onlyIfNoSubscribers = req.query.onlyIfNoSubscribers === 'true' || req.body?.onlyIfNoSubscribers === true;
-  const wasRunning = devServerManager.stopServer(taskId, { onlyIfNoSubscribers });
-  res.json({ success: true, wasRunning });
+app.post('/api/tasks/:id/dev-server/stop', async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+    const onlyIfNoSubscribers = req.query.onlyIfNoSubscribers === 'true' || req.body?.onlyIfNoSubscribers === true;
+    const wasRunning = await devServerManager.stopServer(taskId, { onlyIfNoSubscribers });
+    res.json({ success: true, wasRunning });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to manage task preview' });
+  }
 });
 
 app.post('/api/tasks/:id/dev-server/schedule-stop', (req: Request, res: Response) => {
@@ -1813,10 +1829,14 @@ app.post('/api/tasks/:id/dev-server/cancel-stop', (req: Request, res: Response) 
   res.json({ cancelled });
 });
 
-app.post('/api/tasks/:id/dev-server/restart', (req: Request, res: Response) => {
-  const taskId = req.params.id as string;
-  const state = devServerManager.restartServer(taskId);
-  res.json(state);
+app.post('/api/tasks/:id/dev-server/restart', async (req: Request, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+    const state = await devServerManager.restartServer(taskId);
+    res.json(state);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to manage task preview' });
+  }
 });
 
 // Attachments
@@ -3335,6 +3355,18 @@ const isTestEnv =
   process.argv.some((arg) => arg.includes('test'));
 
 if (!isTestEnv) {
+  devServerManager.initializeRecovery(path.join(path.dirname(db.name), 'preview-processes'));
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try { await devServerManager.stopAll(); }
+    catch (err) { console.error('[raft-server] Preview shutdown failed:', err); }
+    finally { process.exit(0); }
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  process.once('exit', () => devServerManager.forceStopAll());
   const listenHost = isTailscale ? '0.0.0.0' : HOST;
   server.listen(PORT, listenHost, () => {
     const networkType = isTailscale ? 'Tailscale network' : 'local interface';

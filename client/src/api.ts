@@ -354,7 +354,9 @@ export async function pingDevServer(taskId: string): Promise<{ ready: boolean; p
 
 export async function startDevServer(taskId: string): Promise<DevServerState> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/start`, { method: 'POST' });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Failed to start dev server');
+  return result;
 }
 
 export async function stopDevServer(
@@ -363,7 +365,9 @@ export async function stopDevServer(
 ): Promise<{ success: boolean; wasRunning?: boolean }> {
   const query = options?.onlyIfNoSubscribers ? '?onlyIfNoSubscribers=true' : '';
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/stop${query}`, { method: 'POST' });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Failed to stop dev server');
+  return result;
 }
 
 export function scheduleDevServerStop(taskId: string, graceMs: number = 3000): void {
@@ -388,7 +392,9 @@ export async function cancelDevServerStop(taskId: string): Promise<{ cancelled: 
 
 export async function restartDevServer(taskId: string): Promise<DevServerState> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/restart`, { method: 'POST' });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok) throw new Error(result.error || 'Failed to restart dev server');
+  return result;
 }
 
 export interface GetTaskChatsOptions {
