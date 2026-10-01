@@ -162,6 +162,25 @@ pub fn run() {
                                         }
                                     }
                                 }
+
+                                // 3. Check for pending system desktop notifications
+                                let notify_url = format!("http://127.0.0.1:{}/api/internal/pending-notifications", port);
+                                if let Ok(resp) = client
+                                    .get(&notify_url)
+                                    .header("X-Raft-Token", &sync_token)
+                                    .send()
+                                    .await
+                                {
+                                    if let Ok(val) = resp.json::<serde_json::Value>().await {
+                                        if let Some(arr) = val.get("notifications").and_then(|v| v.as_array()) {
+                                            for n in arr {
+                                                let title = n.get("title").and_then(|v| v.as_str()).unwrap_or("Alpha Bro");
+                                                let body = n.get("body").and_then(|v| v.as_str()).unwrap_or("");
+                                                notify::show_notification(&sync_app_handle, title, body);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         });
 

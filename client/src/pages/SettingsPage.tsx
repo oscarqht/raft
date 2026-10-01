@@ -175,18 +175,15 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
     };
   }, []);
 
+  const [testSent, setTestSent] = useState(false);
+
   const handleToggleNotifications = async (enabled: boolean) => {
     if (enabled && notifPermission === 'default') {
       const perm = await requestNotificationPermission();
       setNotifPermission(perm);
-      if (perm === 'granted') {
-        setNotificationEnabled(true);
-        setNotifsEnabled(true);
-      }
-    } else {
-      setNotificationEnabled(enabled);
-      setNotifsEnabled(enabled);
     }
+    setNotificationEnabled(enabled);
+    setNotifsEnabled(enabled);
   };
 
   const handleRequestPermission = async () => {
@@ -200,6 +197,8 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
 
   const handleSendTestNotif = () => {
     sendTestNotification();
+    setTestSent(true);
+    setTimeout(() => setTestSent(false), 2000);
   };
 
   const loadGitAccounts = async (showLoading = false) => {
@@ -1584,34 +1583,38 @@ You have access to terminal commands via your connected local desktop device.
             </div>
 
             <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
-              {notifPermission === 'granted' && notifsEnabled && (
+              {notifsEnabled && (
                 <button
                   type="button"
                   onClick={handleSendTestNotif}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-cozy-subtle hover:bg-cozy-surface border border-cozy-border text-cozy-muted hover:text-cozy-text transition-all shadow-soft-sm cursor-pointer"
                   title="Send a sample notification to verify system permissions"
                 >
-                  <BellRing className="w-3.5 h-3.5 text-teal-500" />
-                  <span>Send Test</span>
+                  <BellRing className={`w-3.5 h-3.5 ${testSent ? 'text-emerald-500' : 'text-teal-500'}`} />
+                  <span>{testSent ? 'Test Sent!' : 'Send Test'}</span>
                 </button>
               )}
 
               {notifPermission === 'granted' ? (
                 <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-400/30">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  Permission Granted
+                  Browser & Native Active
                 </span>
               ) : notifPermission === 'denied' ? (
                 <span
-                  className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-red-500/15 text-red-600 dark:text-red-400 border border-red-400/30"
-                  title="Notifications are blocked in your browser site settings"
+                  className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30"
+                  title="Browser notifications are blocked in site settings. System native notifications will be used instead."
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                  Blocked in Browser
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  Native Alerts Active
                 </span>
               ) : notifPermission === 'unsupported' ? (
-                <span className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-400/30">
-                  Not Supported
+                <span
+                  className="text-[11px] px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1.5 font-semibold bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-400/30"
+                  title="Web Notifications restricted on this origin. Native OS notifications are active."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                  Native Alerts Active
                 </span>
               ) : (
                 <button
@@ -1620,7 +1623,7 @@ You have access to terminal commands via your connected local desktop device.
                   className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-teal-500 hover:bg-teal-600 text-white transition-all shadow-soft-sm cursor-pointer"
                 >
                   <BellRing className="w-3.5 h-3.5" />
-                  <span>Enable Notifications</span>
+                  <span>Enable Browser Notifications</span>
                 </button>
               )}
             </div>
@@ -1639,10 +1642,9 @@ You have access to terminal commands via your connected local desktop device.
                 type="checkbox"
                 checked={notifsEnabled}
                 onChange={(e) => handleToggleNotifications(e.target.checked)}
-                disabled={notifPermission === 'denied' || notifPermission === 'unsupported'}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-cozy-subtle border border-cozy-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500 peer-disabled:opacity-40 peer-disabled:cursor-not-allowed"></div>
+              <div className="w-11 h-6 bg-cozy-subtle border border-cozy-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
             </label>
           </div>
         </div>

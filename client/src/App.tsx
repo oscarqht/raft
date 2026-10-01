@@ -72,6 +72,8 @@ export default function App() {
 
   const currentProjectIdRef = useRef<string | null>(currentProjectId);
   const currentTaskIdRef = useRef<string | null>(currentTaskId);
+  currentProjectIdRef.current = currentProjectId;
+  currentTaskIdRef.current = currentTaskId;
 
   useEffect(() => {
     currentProjectIdRef.current = currentProjectId;

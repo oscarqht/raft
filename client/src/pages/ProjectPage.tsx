@@ -38,6 +38,7 @@ import { EditTaskModal } from '../components/EditTaskModal';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
 import { TaskStatusBadges } from '../components/TaskStatusBadges';
 import { formatRelativeTime } from '../utils/time';
+import { requestNotificationPermissionOnUserGesture } from '../utils/notifications';
 
 interface ProjectPageProps {
   projectId?: string;
@@ -285,6 +286,7 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
 
   const handleCreateTask = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    requestNotificationPermissionOnUserGesture();
     if (!taskName.trim() || isCreating) return;
     setIsCreating(true);
     try {

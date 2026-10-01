@@ -20,16 +20,36 @@ export function getNotificationPermission(): NotificationPermission | 'unsupport
 }
 
 /**
- * Check if notifications are enabled by user setting and granted by browser.
+ * Check if notifications are enabled by user setting.
  */
 export function isNotificationEnabled(): boolean {
-  if (!isNotificationSupported()) return false;
-  if (Notification.permission !== 'granted') return false;
   try {
     const setting = localStorage.getItem(STORAGE_KEY_NOTIFICATIONS_ENABLED);
     return setting !== 'false';
   } catch {
     return true;
+  }
+}
+
+/**
+ * Dispatch system notification via server fallback endpoint.
+ */
+export async function sendServerNotification(payload: {
+  title: string;
+  body: string;
+  taskId?: string;
+  projectId?: string;
+}): Promise<boolean> {
+  try {
+    const res = await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Failed to dispatch server notification:', err);
+    return false;
   }
 }
 
@@ -167,38 +187,57 @@ export function sendTaskNotification(options: TaskNotificationOptions): Notifica
     }
   }
 
-  try {
-    const notification = new Notification(title, {
-      body,
-      tag: `raft-task-${taskId}`, // OS deduplication tag
-      silent: false, // Play OS default sound
-      icon: '/favicon.ico',
-    });
+  let browserNotif: Notification | null = null;
+  let browserNotifSuccess = false;
 
-    notification.onclick = (e) => {
-      e.preventDefault();
-      try {
-        window.focus();
-      } catch {}
+  // 1. Try browser Notification if supported and granted
+  if (isNotificationSupported() && Notification.permission === 'granted') {
+    try {
+      browserNotif = new Notification(title, {
+        body,
+        tag: `raft-task-${taskId}`, // OS deduplication tag
+        silent: false, // Play OS default sound
+        icon: '/favicon.ico',
+      });
 
-      if (onNavigate) {
-        onNavigate();
-      } else {
-        window.dispatchEvent(
-          new CustomEvent('navigate-to-task', {
-            detail: { taskId, projectId },
-          })
-        );
-      }
+      browserNotif.onclick = (e) => {
+        e.preventDefault();
+        try {
+          window.focus();
+        } catch {}
 
-      notification.close();
-    };
+        if (onNavigate) {
+          onNavigate();
+        } else {
+          window.dispatchEvent(
+            new CustomEvent('navigate-to-task', {
+              detail: { taskId, projectId },
+            })
+          );
+        }
 
-    return notification;
-  } catch (err) {
-    console.error('Failed to display desktop notification:', err);
-    return null;
+        browserNotif?.close();
+      };
+
+      browserNotifSuccess = true;
+    } catch (err) {
+      console.warn('Browser Notification failed, falling back to server notification:', err);
+      browserNotif = null;
+    }
   }
+
+  // 2. If browser Notification was not shown (not supported, permission not granted, insecure context, or threw error),
+  // send via server endpoint to guarantee native OS notification!
+  if (!browserNotifSuccess) {
+    sendServerNotification({
+      title,
+      body,
+      taskId,
+      projectId,
+    }).catch(() => {});
+  }
+
+  return browserNotif;
 }
 
 /**
@@ -207,25 +246,42 @@ export function sendTaskNotification(options: TaskNotificationOptions): Notifica
 export function sendTestNotification(): Notification | null {
   if (!isNotificationEnabled()) return null;
 
-  try {
-    const notification = new Notification('[Alpha Bro] Test Notification', {
-      body: 'Agent finished: Desktop notifications are working properly!',
-      tag: 'raft-test-notification',
-      silent: false,
-      icon: '/favicon.ico',
-    });
+  const title = '[Alpha Bro] Test Notification';
+  const body = 'Agent finished: Desktop notifications are working properly!';
 
-    notification.onclick = (e) => {
-      e.preventDefault();
-      try {
-        window.focus();
-      } catch {}
-      notification.close();
-    };
+  let browserNotif: Notification | null = null;
+  let browserNotifSuccess = false;
 
-    return notification;
-  } catch (err) {
-    console.error('Failed to send test notification:', err);
-    return null;
+  if (isNotificationSupported() && Notification.permission === 'granted') {
+    try {
+      browserNotif = new Notification(title, {
+        body,
+        tag: 'raft-test-notification',
+        silent: false,
+        icon: '/favicon.ico',
+      });
+
+      browserNotif.onclick = (e) => {
+        e.preventDefault();
+        try {
+          window.focus();
+        } catch {}
+        browserNotif?.close();
+      };
+
+      browserNotifSuccess = true;
+    } catch (err) {
+      console.warn('Browser test notification failed, falling back to server notification:', err);
+    }
   }
+
+  // Always also send via server notification if browser notification was not shown
+  if (!browserNotifSuccess) {
+    sendServerNotification({
+      title,
+      body,
+    }).catch(() => {});
+  }
+
+  return browserNotif;
 }
