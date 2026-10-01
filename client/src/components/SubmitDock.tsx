@@ -13,7 +13,8 @@ export const SubmitDock: React.FC = () => {
   return (
     <>
       {docked.map(({ task, status, createdAt }) => {
-        const isRunning = status === 'submitting';
+        const isPreparing = status === 'preparing';
+        const isRunning = status === 'submitting' || isPreparing;
         const isFailed = status === 'error';
         return (
           <DockItem key={task.id} createdAt={createdAt}>
@@ -53,7 +54,7 @@ export const SubmitDock: React.FC = () => {
                   {isRunning && <Loader2 className="w-2.5 h-2.5 animate-spin mr-1" />}
                   {status === 'done' && <Check className="w-2.5 h-2.5 mr-1" />}
                   {isFailed && <AlertTriangle className="w-2.5 h-2.5 mr-1" />}
-                  {isRunning ? 'submitting' : isFailed ? 'failed' : 'pushed'}
+                  {isPreparing ? 'summarizing' : isRunning ? 'submitting' : isFailed ? 'failed' : 'pushed'}
                 </span>
                 <button
                   type="button"

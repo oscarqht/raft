@@ -1643,12 +1643,8 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
   res.json({ ...updated, project: formatProject(project) });
 });
 
-// Git status & diff for task
-app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
-  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-  const force = req.query.force === '1' || req.query.force === 'true';
-
+// Shared by the single-task and batch status endpoints so both report identical status
+async function computeTaskGitStatus(task: any, force: boolean): Promise<any> {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
   const effectiveWorktreePath = project?.path
     ? GitService.ensureWorktree(
@@ -1677,10 +1673,15 @@ app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
   const isAgentRunning = Boolean(
     db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
   );
-  res.json({
-    ...status,
-    agent_status: isAgentRunning ? 'WIP' : 'idle',
-  });
+  return { ...status, agent_status: isAgentRunning ? 'WIP' : 'idle' };
+}
+
+// Git status & diff for task
+app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id) as any;
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  const force = req.query.force === '1' || req.query.force === 'true';
+  res.json(await computeTaskGitStatus(task, force));
 });
 
 // Batch Git status for all tasks in a project
@@ -1691,23 +1692,12 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
 
   await Promise.all(
     tasks.map(async (task) => {
-      const isAgentRunning = Boolean(
-        db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
-      );
       try {
-        const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
-        const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
-        const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
-          token: account?.token,
-          provider: account?.provider as any,
-          forceRefresh: force,
-          taskCreatedAt: task.created_at,
-        });
-        results[task.id] = {
-          ...status,
-          agent_status: isAgentRunning ? 'WIP' : 'idle',
-        };
+        results[task.id] = await computeTaskGitStatus(task, force);
       } catch {
+        const isAgentRunning = Boolean(
+          db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
+        );
         results[task.id] = {
           staged: [],
           unstaged: [],

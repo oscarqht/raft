@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Task, GitStatus } from '../types';
-import { getTaskGitStatus } from '../api';
+import { getTaskGitStatus, generateTaskCommitMessage } from '../api';
 import { setCachedTaskGitStatus } from '../cache';
 import { SubmitModal } from '../components/SubmitModal';
 import { SubmitDock } from '../components/SubmitDock';
 
 export interface SubmitJob {
   task: Task;
-  status: 'submitting' | 'done' | 'error';
+  status: 'preparing' | 'submitting' | 'done' | 'error';
   logs: string[];
   createdAt: number;
   gitStatus?: GitStatus;
@@ -17,6 +17,7 @@ interface SubmitContextType {
   jobs: Record<string, SubmitJob>;
   modalTask: Task | null;
   openSubmit: (task: Task) => void;
+  quickSubmit: (task: Task) => void;
   closeSubmit: () => void;
   startSubmit: (task: Task, commitMessage: string) => void;
   dismissJob: (taskId: string) => void;
@@ -83,11 +84,60 @@ export const SubmitProvider: React.FC<{ ws: WebSocket | null; children: React.Re
     });
   }, []);
 
-  const openSubmit = useCallback((task: Task) => setModalTask(task), []);
+  // Tasks whose background "preparing" run must not auto-commit (user restored the dialog)
+  const cancelledPrepRef = useRef<Set<string>>(new Set());
+  const modalTaskRef = useRef(modalTask);
+  modalTaskRef.current = modalTask;
+
+  const openSubmit = useCallback((task: Task) => {
+    if (jobsRef.current[task.id]?.status === 'preparing') {
+      cancelledPrepRef.current.add(task.id);
+      dismissJob(task.id);
+    }
+    setModalTask(task);
+  }, [dismissJob]);
+
+  // Minimized submit: generate the commit message in the background, then commit & push
+  // automatically unless the user restored the dialog in the meantime.
+  const quickSubmit = useCallback(
+    (task: Task) => {
+      if (!ws || jobsRef.current[task.id]) return;
+      cancelledPrepRef.current.delete(task.id);
+      setJobs((prev) => ({ ...prev, [task.id]: { task, status: 'preparing', logs: [], createdAt: Date.now() } }));
+      const isCancelled = () => cancelledPrepRef.current.has(task.id) || modalTaskRef.current?.id === task.id;
+      const abort = () => {
+        if (!cancelledPrepRef.current.has(task.id)) dismissJob(task.id);
+        cancelledPrepRef.current.delete(task.id);
+      };
+      (async () => {
+        try {
+          const status = await getTaskGitStatus(task.id, true);
+          if (isCancelled()) return abort();
+          const total = status.staged.length + status.unstaged.length + status.untracked.length;
+          let message = '';
+          if (total > 0) {
+            const res = await generateTaskCommitMessage(task.id);
+            if (isCancelled()) return abort();
+            const title = res.title?.trim();
+            const details = res.details?.trim();
+            message = title ? (details ? `${title}\n\n${details}` : title) : '';
+            if (!message) message = task.name ? `feat(${task.name}): implement updates` : `feat(${task.branch || 'task'}): implement updates`;
+          } else if ((status.unpushedCount || 0) === 0) {
+            return abort();
+          }
+          startSubmit(task, message);
+        } catch (err) {
+          console.error('Quick submit failed:', err);
+          updateJob(task.id, () => ({ status: 'error', logs: [String((err as Error)?.message || err)] }));
+        }
+      })();
+    },
+    [ws, startSubmit, dismissJob, updateJob]
+  );
   const closeSubmit = useCallback(() => setModalTask(null), []);
 
   return (
-    <SubmitContext.Provider value={{ jobs, modalTask, openSubmit, closeSubmit, startSubmit, dismissJob }}>
+    <SubmitContext.Provider value={{ jobs, modalTask, openSubmit, quickSubmit, closeSubmit, startSubmit, dismissJob }}>
       {children}
       <SubmitDock />
       {modalTask && (

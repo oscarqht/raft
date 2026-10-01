@@ -410,6 +410,12 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         fetchGitStatuses(tasks, true);
       }
     };
+    // Keep the sidebar in sync with statuses fetched elsewhere (e.g. the main header)
+    const handleGitStatusCached = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.taskId || !detail?.status) return;
+      setTasksGitStatus((prev) => ({ ...prev, [detail.taskId]: detail.status }));
+    };
     const handleTaskDeleted = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
       const targetId = detail?.taskId;
@@ -430,8 +436,10 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
     window.addEventListener('task-deleted', handleTaskDeleted);
     window.addEventListener('task-restored', handleTaskRestored);
     window.addEventListener('task-status-updated', handleStatusUpdate);
+    window.addEventListener('task-git-status-cached', handleGitStatusCached);
     window.addEventListener('projects-updated', handleUpdate);
     return () => {
+      window.removeEventListener('task-git-status-cached', handleGitStatusCached);
       window.removeEventListener('task-updated', handleUpdate);
       window.removeEventListener('task-deleted', handleTaskDeleted);
       window.removeEventListener('task-restored', handleTaskRestored);
