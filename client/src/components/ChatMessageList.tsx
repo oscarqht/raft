@@ -1911,7 +1911,7 @@ const MessageItem: React.FC<{
 
           {/* File & Image Attachments Preview */}
           {attachments.length > 0 && (
-            <div className={`space-y-2.5 ${displayContent ? 'mt-3 pt-3 border-t ' + (isUser ? 'border-white/20' : 'border-cozy-border/60') : ''}`}>
+            <div className={`space-y-2.5 ${displayContent ? 'mt-3 pt-3 border-t ' + (isUser ? 'border-black/10 dark:border-white/15' : 'border-cozy-border/60') : ''}`}>
               {/* Image Previews */}
               {imageAttachments.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -1921,7 +1921,7 @@ const MessageItem: React.FC<{
                       onClick={() => onPreviewImage(att)}
                       className={`group/img relative overflow-hidden rounded-xl border cursor-pointer transition-all hover:scale-[1.02] shadow-soft-sm max-h-48 flex flex-col ${
                         isUser
-                          ? 'border-white/30 bg-black/25 hover:border-white/60'
+                          ? 'border-black/10 dark:border-white/20 bg-white/60 dark:bg-black/25 hover:border-teal-400/60'
                           : 'border-cozy-border bg-cozy-subtle/70 hover:border-teal-400/50'
                       }`}
                       title={`Click to preview ${att.name}`}
@@ -1936,7 +1936,7 @@ const MessageItem: React.FC<{
                       </div>
                       <div
                         className={`px-2.5 py-1.5 text-[11px] truncate flex items-center justify-between gap-1.5 ${
-                          isUser ? 'bg-black/30 text-white/95' : 'bg-cozy-subtle/90 text-cozy-text'
+                          isUser ? 'bg-white/70 dark:bg-black/30 text-cozy-text' : 'bg-cozy-subtle/90 text-cozy-text'
                         }`}
                       >
                         <span className="truncate font-medium">{att.name}</span>
@@ -1971,14 +1971,14 @@ const MessageItem: React.FC<{
                           isCodeOrText ? 'cursor-pointer' : ''
                         } ${
                           isUser
-                            ? 'bg-white/15 hover:bg-white/25 border-white/25 text-white shadow-soft-sm'
+                            ? 'bg-white hover:bg-white/80 dark:bg-white/10 dark:hover:bg-white/15 border-black/10 dark:border-white/15 text-cozy-text shadow-soft-sm'
                             : 'bg-cozy-subtle/90 hover:bg-cozy-surface border-cozy-border/80 text-cozy-text shadow-soft-sm'
                         }`}
                         title={isCodeOrText ? `Preview ${att.name}` : att.name}
                       >
                         <div
                           className={`p-1.5 rounded-lg shrink-0 ${
-                            isUser ? 'bg-white/20 text-white' : 'bg-cozy-surface border border-cozy-border text-teal-500 shadow-soft-sm'
+                            isUser ? 'bg-black/5 dark:bg-white/10 text-teal-600 dark:text-teal-400' : 'bg-cozy-surface border border-cozy-border text-teal-500 shadow-soft-sm'
                           }`}
                         >
                           {getFileIcon(att, 'w-4 h-4')}
@@ -1987,7 +1987,7 @@ const MessageItem: React.FC<{
                           <span className="font-semibold truncate max-w-[140px] sm:max-w-[200px] leading-tight">
                             {att.name}
                           </span>
-                          <span className={`text-[10px] font-mono leading-tight ${isUser ? 'text-white/75' : 'text-cozy-muted'}`}>
+                          <span className={`text-[10px] font-mono leading-tight ${'text-cozy-muted'}`}>
                             {formatFileSize(att.size)}
                           </span>
                         </div>
@@ -1997,7 +1997,7 @@ const MessageItem: React.FC<{
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 ${
                                 isUser
-                                  ? 'bg-white/20 text-white hover:bg-white/30'
+                                  ? 'bg-teal-500/10 text-teal-700 dark:text-teal-300 hover:bg-teal-500/20'
                                   : 'bg-teal-500/10 text-teal-600 dark:text-teal-400 hover:bg-teal-500/20'
                               }`}
                             >
@@ -2010,7 +2010,7 @@ const MessageItem: React.FC<{
                               download={att.name}
                               onClick={(e) => e.stopPropagation()}
                               className={`p-1 rounded-lg transition-colors ${
-                                isUser ? 'hover:bg-white/20 text-white' : 'hover:bg-cozy-border/60 text-cozy-muted hover:text-cozy-text'
+                                'hover:bg-cozy-border/60 text-cozy-muted hover:text-cozy-text'
                               }`}
                               title="Download file"
                             >
