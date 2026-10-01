@@ -165,13 +165,6 @@ pub fn run() {
                             }
                         });
 
-                        // Automatically open browser on initial interactive launch (using localhost for secure context)
-                        let is_autostart = std::env::args().any(|a| a == "--autostart" || a == "--silent");
-                        if !is_autostart {
-                            let local_url = format!("http://localhost:{port}");
-                            let _ = open::that(&local_url);
-                        }
-
                         #[cfg(target_os = "macos")]
                         {
                             if !tray::check_full_disk_access() {
