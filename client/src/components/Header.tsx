@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2, Pin, Sliders, PanelLeft } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Trash2, Loader2, Pin, Sliders, PanelLeft } from 'lucide-react';
 import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
@@ -25,7 +25,6 @@ interface HeaderProps {
   isTaskPinned?: boolean;
   onDeleteTask?: () => void;
   isDeletingTask?: boolean;
-  onNewTask?: () => void;
   onConfigureProject?: () => void;
   onToggleMobileSidebar?: () => void;
 }
@@ -38,7 +37,6 @@ export const Header: React.FC<HeaderProps> = ({
   isTaskPinned,
   onDeleteTask,
   isDeletingTask,
-  onNewTask,
   onConfigureProject,
   onToggleMobileSidebar,
 }) => {
@@ -265,19 +263,6 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex-nowrap shrink-0"
             />
           </div>
-        )}
-
-        {onNewTask && (
-          <button
-            type="button"
-            onClick={onNewTask}
-            className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors cursor-pointer shrink-0"
-            title="Start a new task in this project"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">New Task</span>
-            <span className="sm:hidden">New</span>
-          </button>
         )}
 
         {currentPath?.taskId && onTogglePinTask && (
