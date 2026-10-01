@@ -56,6 +56,8 @@ interface ProjectsTasksSidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   ws: WebSocket | null;
+  isMobile?: boolean;
+  onClose?: () => void;
 }
 
 interface ProjectGroup {
@@ -95,6 +97,8 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
   ws,
+  isMobile = false,
+  onClose,
 }) => {
   const navigate = useNavigate();
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -798,6 +802,9 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   const handleCreateTaskInProject = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
     navigate(`/projects/${projectId}`);
+    if (isMobile) {
+      onClose?.();
+    }
   };
 
   const renderTaskItem = (task: Task, isPinnedSection = false) => {
@@ -818,11 +825,19 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         key={task.id}
         role="button"
         tabIndex={0}
-        onClick={() => onSelectTask(task.id, task.project_id, task)}
+        onClick={() => {
+          onSelectTask(task.id, task.project_id, task);
+          if (isMobile) {
+            onClose?.();
+          }
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             onSelectTask(task.id, task.project_id, task);
+            if (isMobile) {
+              onClose?.();
+            }
           }
         }}
         onMouseEnter={() => handleTaskMouseEnter(task.id)}
@@ -922,16 +937,16 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   return (
     <aside
       aria-label="Projects and Tasks Sidebar"
-      style={{ width: isCollapsed ? 0 : sidebarWidth }}
+      style={{ width: isMobile ? '100%' : (isCollapsed ? 0 : sidebarWidth) }}
       className={`relative h-full shrink-0 flex flex-col select-none overflow-hidden ${
-        isResizing ? '' : 'transition-all duration-200 ease-in-out'
+        isMobile ? 'w-full' : (isResizing ? '' : 'transition-all duration-200 ease-in-out')
       } ${
-        isCollapsed
+        !isMobile && isCollapsed
           ? 'opacity-0 pointer-events-none'
           : 'border-r border-cozy-border bg-cozy-subtle/30 dark:bg-[#171717]'
       }`}
     >
-      {!isCollapsed && (
+      {!isMobile && !isCollapsed && (
         <div
           role="separator"
           aria-orientation="vertical"
@@ -946,7 +961,7 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
           }`}
         />
       )}
-      <div className="h-full flex flex-col overflow-hidden" style={{ width: sidebarWidth }}>
+      <div className="h-full flex flex-col overflow-hidden w-full" style={{ width: isMobile ? '100%' : sidebarWidth }}>
         {/* Sidebar Header */}
         <div className="h-11 px-3 border-b border-cozy-border flex items-center justify-between shrink-0 bg-transparent">
           <div className="flex items-center gap-2 text-xs font-semibold text-cozy-text min-w-0">
@@ -958,15 +973,27 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="w-6 h-6 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors cursor-pointer"
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
-          >
-            <PanelLeftClose className="w-3.5 h-3.5" />
-          </button>
+          {isMobile ? (
+            <button
+              type="button"
+              onClick={onClose || onToggleCollapse}
+              className="w-6 h-6 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors cursor-pointer"
+              title="Close sidebar"
+              aria-label="Close sidebar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="w-6 h-6 rounded-md text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle flex items-center justify-center transition-colors cursor-pointer"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Search Input */}
@@ -1053,7 +1080,12 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                     >
                       <button
                         type="button"
-                        onClick={() => navigate(`/projects/${group.projectId}`)}
+                        onClick={() => {
+                          navigate(`/projects/${group.projectId}`);
+                          if (isMobile) {
+                            onClose?.();
+                          }
+                        }}
                         className="flex items-center gap-2 min-w-0 flex-1 text-left transition-colors cursor-pointer"
                         title={`Select project: ${group.projectName}`}
                       >
@@ -1079,6 +1111,9 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
                             onClick={(e) => {
                               e.stopPropagation();
                               onConfigureProject(group.projectId);
+                              if (isMobile) {
+                                onClose?.();
+                              }
                             }}
                             className="w-5 h-5 rounded-md text-cozy-muted hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-500/10 flex items-center justify-center transition-all opacity-0 group-hover/project:opacity-100"
                             title="Project settings"
