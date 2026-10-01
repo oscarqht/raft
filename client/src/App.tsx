@@ -451,13 +451,9 @@ export default function App() {
         onDeleteTask={currentTaskId && activeTask ? handleDeleteActiveTask : undefined}
         isDeletingTask={isDeletingTask}
         onNewTask={
-          currentProjectId
+          currentProjectId && !currentTaskId
             ? () => {
-                if (currentTaskId) {
-                  navigate(`/projects/${currentProjectId}`);
-                } else {
-                  window.dispatchEvent(new CustomEvent('reset-new-task-form'));
-                }
+                window.dispatchEvent(new CustomEvent('reset-new-task-form'));
               }
             : undefined
         }
