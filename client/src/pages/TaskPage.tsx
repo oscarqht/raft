@@ -111,6 +111,18 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     } catch {}
   }, [isSidebarCollapsed]);
 
+  // Cmd/Ctrl+B toggles the left sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsSidebarCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const [isDevRunning, setIsDevRunning] = useState(false);
   const isDevRunningRef = useRef(false);
   const taskRef = useRef(task);
