@@ -34,7 +34,8 @@ console.log('✓ Server code bundled to resources/server/index.mjs');
 console.log('--- 3. Preparing production node_modules (better-sqlite3) ---');
 // Verify better-sqlite3 native binary compatibility with the Node version we are bundling/staging
 try {
-  execSync(`"${process.execPath}" -e "require('better-sqlite3')"`, { cwd: root, stdio: 'pipe' });
+  // require() alone does not load the native addon; opening a database does
+  execSync(`"${process.execPath}" -e "new (require('better-sqlite3'))(':memory:').close()"`, { cwd: root, stdio: 'pipe' });
   console.log(`✓ better-sqlite3 native addon is compatible with Node.js ${process.version}`);
 } catch (err) {
   console.log(`⚠️ better-sqlite3 is incompatible with current Node.js ${process.version}. Rebuilding native addon...`);
