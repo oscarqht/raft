@@ -222,6 +222,136 @@ app.get('/api/internal/updater-action', (req: Request, res: Response) => {
   res.json({ action });
 });
 
+// Desktop Notifications
+export interface PendingSystemNotification {
+  id: string;
+  title: string;
+  body: string;
+  taskId?: string;
+  projectId?: string;
+}
+
+let pendingSystemNotifications: PendingSystemNotification[] = [];
+let lastTauriNotificationPollTime = 0;
+
+export function cleanNotificationContent(raw: string): string {
+  if (!raw) return 'Task completed';
+  let clean = raw.replace(/<thought>[\s\S]*?<\/thought>/gi, '').trim();
+  clean = clean.replace(/```[\s\S]*?```/g, '[Code snippet]').trim();
+  clean = clean.replace(/^[#>\-\*\s]+/gm, '').trim();
+
+  const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
+  const firstLine = lines[0] || 'Task completed';
+  if (firstLine.length > 120) {
+    return firstLine.slice(0, 117) + '...';
+  }
+  return firstLine;
+}
+
+export function formatNotificationTitle(projectName?: string, taskName?: string): string {
+  const cleanTaskName = (taskName || 'Task').trim();
+  return projectName?.trim() ? `[${projectName.trim()}] ${cleanTaskName}` : cleanTaskName;
+}
+
+export function formatNotificationBody(type: 'done' | 'hitl' | 'error' | 'question', detail?: string): string {
+  switch (type) {
+    case 'done': {
+      const summary = cleanNotificationContent(detail || '');
+      return `Agent finished: ${summary}`;
+    }
+    case 'hitl': {
+      return 'Attention needed: Agent requested user confirmation / input';
+    }
+    case 'error': {
+      const snippet = (detail || '').trim();
+      return snippet
+        ? `Attention needed: Agent encountered an error (${snippet.length > 90 ? snippet.slice(0, 87) + '...' : snippet})`
+        : 'Attention needed: Agent encountered an error';
+    }
+    case 'question': {
+      return 'Attention needed: Agent asked a question';
+    }
+  }
+}
+
+export function dispatchSystemNotification(title: string, body: string) {
+  try {
+    if (process.platform === 'darwin') {
+      const script = `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)} sound name "default"`;
+      spawn('osascript', ['-e', script], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'win32') {
+      const psCommand = `
+        [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
+        $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);
+        $textNodes = $template.GetElementsByTagName('text');
+        $textNodes.Item(0).AppendChild($template.CreateTextNode(${JSON.stringify(title)})) > $null;
+        $textNodes.Item(1).AppendChild($template.CreateTextNode(${JSON.stringify(body)})) > $null;
+        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Alpha Bro');
+        $notification = [Windows.UI.Notifications.ToastNotification]::new($template);
+        $notifier.Show($notification);
+      `;
+      spawn('powershell', ['-NoProfile', '-Command', psCommand], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'linux') {
+      spawn('notify-send', [title, body], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (err) {
+    console.error('Failed to dispatch system notification:', err);
+  }
+}
+
+export function queueSystemNotification(title: string, body: string, taskId?: string, projectId?: string) {
+  const cleanTitle = String(title || 'Alpha Bro');
+  const cleanBody = String(body || '');
+
+  const notif: PendingSystemNotification = {
+    id: uuidv4(),
+    title: cleanTitle,
+    body: cleanBody,
+    taskId,
+    projectId,
+  };
+  pendingSystemNotifications.push(notif);
+
+  const isTauriActive = Date.now() - lastTauriNotificationPollTime < 4000;
+  if (!isTauriActive) {
+    dispatchSystemNotification(cleanTitle, cleanBody);
+  }
+}
+
+export function notifyTaskCompletionIfNoWebClients(
+  taskId: string,
+  projectId: string | null | undefined,
+  taskName: string | undefined,
+  projectName: string | undefined,
+  type: 'done' | 'hitl' | 'error' | 'question',
+  detail?: string
+) {
+  if (wss.clients.size === 0) {
+    const title = formatNotificationTitle(projectName, taskName);
+    const body = formatNotificationBody(type, detail);
+    queueSystemNotification(title, body, taskId, projectId || undefined);
+  }
+}
+
+app.post('/api/notify', (req: Request, res: Response) => {
+  const { title, body, taskId, projectId } = req.body || {};
+  if (!title && !body) {
+    return res.status(400).json({ error: 'title or body required' });
+  }
+  queueSystemNotification(title, body, taskId, projectId);
+  res.json({ success: true });
+});
+
+app.get('/api/internal/pending-notifications', (req: Request, res: Response) => {
+  if (internalAuthToken && req.headers['x-raft-token'] !== internalAuthToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  lastTauriNotificationPollTime = Date.now();
+  const notifs = [...pendingSystemNotifications];
+  pendingSystemNotifications = [];
+  res.json({ notifications: notifs });
+});
+
 // Settings
 app.get('/api/settings', async (_req: Request, res: Response) => {
   const agent_cli = getEffectiveAgentCli();
@@ -2889,6 +3019,10 @@ wss.on('connection', (ws: WebSocket) => {
             broadcastWs({
               type: 'chat_turn_complete',
               sessionId,
+              taskId: task.id,
+              projectId: task.project_id,
+              taskName: task.name,
+              projectName: project?.name,
               messageId: assistantMsgId,
               message: {
                 id: assistantMsgId,
@@ -2900,6 +3034,7 @@ wss.on('connection', (ws: WebSocket) => {
               },
               steps: [],
             });
+            notifyTaskCompletionIfNoWebClients(task.id, task.project_id, task.name, project?.name, 'error', assistantResponse);
             activeChatSessions.delete(sessionId);
             setChatSessionStatus(sessionId, 'idle', Date.now());
             return;
@@ -2996,6 +3131,15 @@ wss.on('connection', (ws: WebSocket) => {
                 },
                 steps: assistantSteps,
               });
+
+              notifyTaskCompletionIfNoWebClients(
+                task.id,
+                task.project_id,
+                task.name,
+                project?.name,
+                ev.type === 'error' ? 'error' : 'done',
+                assistantContent || ev.content
+              );
             }
           };
 
@@ -3049,6 +3193,7 @@ wss.on('connection', (ws: WebSocket) => {
                 messageId: assistantMsgId,
                 hitl,
               });
+              notifyTaskCompletionIfNoWebClients(task.id, task.project_id, task.name, project?.name, 'hitl');
             },
             onConversationId: (convId) => {
               try {
@@ -3233,6 +3378,17 @@ wss.on('connection', (ws: WebSocket) => {
               },
               steps: assistantSteps,
             });
+
+            const isAuthReq = Boolean((metaObj as any)?.isAuthRequired);
+            const isErr = Boolean((metaObj as any)?.error || ev.type === 'error');
+            notifyTaskCompletionIfNoWebClients(
+              task.id,
+              task.project_id,
+              task.name,
+              project?.name,
+              isAuthReq || isErr ? 'error' : 'done',
+              isAuthReq ? (assistantResponse || 'Authentication required') : (assistantContent || ev.content)
+            );
           }
         });
 

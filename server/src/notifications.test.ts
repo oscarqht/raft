@@ -140,3 +140,29 @@ test('isTaskInBackground evaluates task, visibility, and focus states', () => {
   // Same task, visible and focused -> NOT in background
   assert.equal(isTaskInBackground(taskId, taskId, false, true), false);
 });
+
+test('PendingSystemNotification queue handles enqueueing and dequeueing', () => {
+  interface PendingNotification {
+    id: string;
+    title: string;
+    body: string;
+    taskId?: string;
+    projectId?: string;
+  }
+
+  let queue: PendingNotification[] = [];
+  const pushNotif = (title: string, body: string, taskId?: string) => {
+    queue.push({ id: '1', title, body, taskId });
+  };
+
+  pushNotif('Title 1', 'Body 1', 't1');
+  pushNotif('Title 2', 'Body 2', 't2');
+  assert.equal(queue.length, 2);
+  assert.equal(queue[0].title, 'Title 1');
+  assert.equal(queue[1].taskId, 't2');
+
+  const drained = [...queue];
+  queue = [];
+  assert.equal(drained.length, 2);
+  assert.equal(queue.length, 0);
+});

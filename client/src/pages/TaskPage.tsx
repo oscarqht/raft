@@ -27,6 +27,7 @@ import { ProjectsTasksSidebar } from '../components/ProjectsTasksSidebar';
 import { NewTaskPane } from '../components/NewTaskPane';
 import { ProjectConfigModal } from '../components/ProjectConfigModal';
 import { ArrowLeft, MessageSquare, Globe, PanelLeftOpen, Loader2 } from 'lucide-react';
+import { requestNotificationPermissionOnUserGesture } from '../utils/notifications';
 
 interface TaskPageProps {
   taskId?: string;
@@ -341,6 +342,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
 
   const handleCreateTask = async (taskName: string, selectedBaseBranch: string, initialPrompt: string) => {
     if (!routeProjectId) return;
+    requestNotificationPermissionOnUserGesture();
     setIsCreatingTask(true);
     setNewTaskError(null);
     try {

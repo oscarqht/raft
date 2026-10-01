@@ -3,6 +3,7 @@ import { GitBranch, Sparkles, Sliders, Loader2, ArrowRight, FolderGit2 } from 'l
 import { Project } from '../types';
 import { ProjectIcon } from './ProjectIcon';
 import { getNewTaskDraft, setNewTaskDraft, clearNewTaskDraft } from '../cache';
+import { requestNotificationPermissionOnUserGesture } from '../utils/notifications';
 
 interface NewTaskPaneProps {
   project: Project;
@@ -76,6 +77,7 @@ export const NewTaskPane: React.FC<NewTaskPaneProps> = ({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    requestNotificationPermissionOnUserGesture();
     const trimmedName = taskName.trim();
     if (!trimmedName) {
       setLocalError('Please provide a task name or feature slug');
