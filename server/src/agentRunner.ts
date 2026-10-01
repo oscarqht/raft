@@ -1498,7 +1498,23 @@ export function spawnAgentCli(
               });
             } else {
               const finalResponse = parsed.result?.response || (typeof parsed.result === 'string' ? parsed.result : undefined);
-              if (finalResponse) {
+              const agyError = parsed.result?.status === 'ERROR' ? parsed.result.error : undefined;
+              if (agyError && !finalResponse?.trim()) {
+                const cleanMsg = stripAnsi(typeof agyError === 'string' ? agyError : (agyError.message || JSON.stringify(agyError))).trim();
+                const isSpendCap = SPEND_CAP_REGEX.test(cleanMsg);
+                const isAuthRequired = AUTH_REQUIRED_REGEX.test(cleanMsg);
+                onEvent({
+                  type: 'error',
+                  content: cleanMsg,
+                  metadata: {
+                    ...parsed,
+                    isSpendCap,
+                    isAuthRequired,
+                    errorType: isSpendCap ? 'spend_cap' : (isAuthRequired ? 'auth_required' : 'agent_error'),
+                  },
+                  conversationId: detectedConversationId,
+                });
+              } else if (finalResponse) {
                 onEvent({
                   type: 'chunk',
                   content: finalResponse,
@@ -1703,7 +1719,7 @@ export function spawnAgentCli(
                   detail: cmd,
                   status: isErr ? 'failed' : 'completed',
                   duration: item.duration_ms ? Math.round((item.duration_ms / 1000) * 10) / 10 : undefined,
-                  output: truncateOutput(item.output || ''),
+                  output: truncateOutput(item.aggregated_output ?? item.output ?? ''),
                   endTime: Date.now(),
                 };
                 onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
@@ -1734,7 +1750,7 @@ export function spawnAgentCli(
                   endTime: Date.now(),
                 };
                 onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
-              } else if (item.type === 'message' && item.text) {
+              } else if ((item.type === 'agent_message' || item.type === 'message') && item.text) {
                 onEvent({
                   type: 'chunk',
                   content: item.text,
