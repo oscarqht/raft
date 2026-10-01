@@ -46,6 +46,7 @@ interface ChatPaneProps {
   clis: CliInfo[];
   ws: WebSocket | null;
   onOpenSubmit: () => void;
+  submitDisabled?: boolean;
   onOpenScripts?: () => void;
   onOpenRebase?: () => void;
   onDeleteTask?: () => void;
@@ -61,6 +62,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   clis,
   ws,
   onOpenSubmit,
+  submitDisabled = false,
   onOpenScripts,
   onOpenRebase,
   onDeleteTask,
@@ -1804,8 +1806,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
           <button
             onClick={onOpenSubmit}
-            className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors"
-            title="Submit changes: commit and push"
+            disabled={submitDisabled}
+            className="h-7 flex items-center gap-1.5 px-3 rounded-lg text-xs font-medium bg-teal-500 hover:bg-teal-600 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-teal-500"
+            title={submitDisabled ? 'No changes to commit or push' : 'Submit changes: commit and push'}
           >
             <UploadCloud className="w-3.5 h-3.5" />
             <span>Submit</span>
@@ -1868,7 +1871,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   setShowMobileActionsMenu(false);
                   onOpenSubmit();
                 }}
-                className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-sky-400 transition-colors font-medium border-t border-cozy-border/40"
+                disabled={submitDisabled}
+                className="flex items-center gap-2.5 px-3 py-2 text-left hover:bg-cozy-subtle text-sky-400 transition-colors font-medium border-t border-cozy-border/40 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <UploadCloud className="w-3.5 h-3.5" />
                 <span>Submit Changes</span>

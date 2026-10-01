@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { Task, Project, Settings, CliInfo, ProjectCustomScript } from '../types';
+import { Task, Project, Settings, CliInfo, ProjectCustomScript, TaskGitStatus } from '../types';
 import { getTask, getProject, createTask, validateProjectPath, getDevServerState } from '../api';
 import {
   getCachedTask,
+  getCachedTaskGitStatus,
   setCachedTask,
   getCachedProject,
   setCachedProject,
@@ -62,7 +63,7 @@ export const TaskPage: React.FC<TaskPageProps> = ({
   const [loading, setLoading] = useState(Boolean(taskId && !task));
   const [error, setError] = useState<string | null>(null);
   const [isRebaseOpen, setIsRebaseOpen] = useState(false);
-  const { openSubmit } = useSubmit();
+  const { openSubmit, quickSubmit } = useSubmit();
   const [isRunScriptOpen, setIsRunScriptOpen] = useState(false);
   const [isManageScriptsOpen, setIsManageScriptsOpen] = useState(false);
   const [scripts, setScripts] = useState<ProjectCustomScript[]>(() => task?.project?.custom_scripts || []);
@@ -284,6 +285,26 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     setIsRunScriptOpen(false);
     setIsManageScriptsOpen(false);
   }, [taskId]);
+
+  const [gitStatus, setGitStatus] = useState<TaskGitStatus | null>(() =>
+    taskId ? getCachedTaskGitStatus(taskId) : null
+  );
+  useEffect(() => {
+    setGitStatus(taskId ? getCachedTaskGitStatus(taskId) : null);
+    if (!taskId) return;
+    const handleCached = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.taskId === taskId && detail.status) setGitStatus(detail.status);
+    };
+    window.addEventListener('task-git-status-cached', handleCached);
+    return () => window.removeEventListener('task-git-status-cached', handleCached);
+  }, [taskId]);
+  const hasNothingToSubmit = Boolean(
+    gitStatus &&
+      !gitStatus.hasLocalChanges &&
+      (gitStatus.staged?.length || 0) + (gitStatus.unstaged?.length || 0) + (gitStatus.untracked?.length || 0) === 0 &&
+      (gitStatus.unpushedCount || 0) === 0
+  );
 
   useEffect(() => {
     const handleOpenSubmit = () => {
@@ -537,7 +558,8 @@ export const TaskPage: React.FC<TaskPageProps> = ({
                 clis={clis}
                 ws={ws}
                 onOpenRebase={() => setIsRebaseOpen(true)}
-                onOpenSubmit={() => task && openSubmit(task)}
+                onOpenSubmit={() => task && quickSubmit(task)}
+                submitDisabled={hasNothingToSubmit}
                 onOpenScripts={() => setIsRunScriptOpen(true)}
                 onDeleteTask={onDeleteTask}
                 isDeletingTask={isDeletingTask}

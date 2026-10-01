@@ -309,6 +309,10 @@ export function setCachedTaskGitStatus(taskId: string, status: TaskGitStatus, pr
     projectStatuses[taskId] = status;
     setCachedProjectTasksGitStatus(projectId, projectStatuses);
   }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('task-git-status-cached', { detail: { taskId, status } }));
+  }
 }
 
 // Active Dev Servers Cache
