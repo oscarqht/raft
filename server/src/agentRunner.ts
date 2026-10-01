@@ -1261,6 +1261,7 @@ export function spawnAgentCli(
   let hasStreamedDeltas = false;
   let lastReportedConversationId: string | null = null;
   let activeClaudeThinkingStepId: string | null = null;
+  const claudeToolSteps = new Map<string, AgentStep>();
   let accumulatedClaudeThinking = '';
 
   proc.stdout?.on('data', (data: Buffer) => {
@@ -1588,6 +1589,7 @@ export function spawnAgentCli(
                     status: 'running',
                     startTime: Date.now(),
                   };
+                  claudeToolSteps.set(agentStep.id, agentStep);
                   onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
                   onEvent({ type: 'thought', content: `→ ${title}\n`, metadata: parsed, conversationId: detectedConversationId });
                 } else if (block.type === 'thinking') {
@@ -1629,11 +1631,15 @@ export function spawnAgentCli(
                     const rawErr = parsed.tool_use_result?.stderr || block.content || 'Tool execution failed';
                     cleanErr = truncateOutput(typeof rawErr === 'string' ? rawErr : JSON.stringify(rawErr));
                   }
+                  const started = block.tool_use_id ? claudeToolSteps.get(block.tool_use_id) : undefined;
                   const agentStep: AgentStep = {
                     id: block.tool_use_id || `claude-tool-${Date.now()}`,
                     type: 'tool',
-                    category: 'other',
-                    title: 'Tool execution',
+                    toolName: started?.toolName,
+                    category: started?.category ?? 'other',
+                    title: started?.title ?? 'Tool execution',
+                    detail: started?.detail,
+                    startTime: started?.startTime,
                     status: isErr ? 'failed' : 'completed',
                     output: cleanOut,
                     error: cleanErr,
@@ -1760,14 +1766,20 @@ export function spawnAgentCli(
                 status: 'running',
                 startTime: Date.now(),
               };
+              claudeToolSteps.set(agentStep.id, agentStep);
               onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
               onEvent({ type: 'thought', content: `→ ${title}\n`, metadata: parsed, conversationId: detectedConversationId });
             } else if (parsed.type === 'tool_result') {
+              const resultId = parsed.tool_use_id || parsed.id;
+              const started = resultId ? claudeToolSteps.get(resultId) : undefined;
               const agentStep: AgentStep = {
-                id: parsed.tool_use_id || parsed.id || `claude-tool-${Date.now()}`,
+                id: resultId || `claude-tool-${Date.now()}`,
                 type: 'tool',
-                category: 'other',
-                title: 'Tool execution',
+                toolName: started?.toolName,
+                category: started?.category ?? 'other',
+                title: started?.title ?? 'Tool execution',
+                detail: started?.detail,
+                startTime: started?.startTime,
                 status: parsed.is_error ? 'failed' : 'completed',
                 output: truncateOutput(parsed.content || parsed.output || ''),
                 endTime: Date.now(),
