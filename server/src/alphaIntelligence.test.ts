@@ -2,8 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from './index.js';
 import { db, setSetting } from './db.js';
-import { normalizeAlphaApiUrl, isDeviceSelectionInput, buildAlphaPromptWithContext, executeAlphaAuxiliaryJob } from './alphaAgentRunner.js';
-import { getAvailableClis, getModelsForCli } from './agentRunner.js';
+import {
+  normalizeAlphaApiUrl,
+  isDeviceSelectionInput,
+  buildAlphaPromptWithContext,
+  executeAlphaAuxiliaryJob,
+  runAlphaIntelligenceTurn,
+  AlphaConversationExpiredError,
+  isAlphaConversationExpiredError,
+} from './alphaAgentRunner.js';
+import { getAvailableClis, getModelsForCli, formatConversationHistory } from './agentRunner.js';
 import { alphaDeviceService, isTokenExpiring } from './alphaDeviceService.js';
 
 test('normalizes Alpha Intelligence API URLs correctly', () => {
@@ -312,6 +320,210 @@ test('alphaDeviceService refreshes token via refresh endpoint', async () => {
   } finally {
     server.close();
     (alphaDeviceService as any).baseUrl = '';
+  }
+});
+
+test('isAlphaConversationExpiredError accurately detects 410 and CONVERSATION_EXPIRED', () => {
+  // Direct AlphaConversationExpiredError instance
+  const errInstance = new AlphaConversationExpiredError('conversation is expired', 'conv_123', 410);
+  assert.equal(isAlphaConversationExpiredError(errInstance), true);
+
+  // Exact user error string: HTTP 410 with CONVERSATION_EXPIRED json
+  const exactErrorStr = 'Alpha Intelligence API returned HTTP 410: {"error":{"code":"CONVERSATION_EXPIRED","message":"conversation is expired"},"request_id":"3f34cb54eff34812"}';
+  assert.equal(isAlphaConversationExpiredError(exactErrorStr), true);
+  assert.equal(isAlphaConversationExpiredError(new Error(exactErrorStr)), true);
+
+  // Partial match variations
+  assert.equal(isAlphaConversationExpiredError('Error: CONVERSATION_EXPIRED'), true);
+  assert.equal(isAlphaConversationExpiredError('Error: conversation is expired on remote server'), true);
+
+  // Non-expired errors should be false
+  assert.equal(isAlphaConversationExpiredError(new Error('Alpha Intelligence API returned HTTP 500: internal server error')), false);
+  assert.equal(isAlphaConversationExpiredError(new Error('Alpha Intelligence API returned HTTP 401: Unauthorized')), false);
+  assert.equal(isAlphaConversationExpiredError(new Error('getaddrinfo ENOTFOUND alpha.example.com')), false);
+  assert.equal(isAlphaConversationExpiredError(null), false);
+  assert.equal(isAlphaConversationExpiredError(undefined), false);
+});
+
+test('formatConversationHistory extracts turns and strips thoughts', () => {
+  const history = formatConversationHistory([
+    { role: 'user', content: 'Can you implement authentication?' },
+    { role: 'assistant', content: '<thought>\nChecking code...\n</thought>\nSure, I will create the auth module.' },
+    { role: 'user', content: 'Also add JWT verification' },
+  ], 5);
+
+  assert.ok(history.includes('User: Can you implement authentication?'));
+  assert.ok(history.includes('Assistant: Sure, I will create the auth module.'));
+  assert.ok(history.includes('User: Also add JWT verification'));
+  assert.ok(!history.includes('<thought>'));
+  assert.ok(!history.includes('Checking code...'));
+});
+
+test('buildAlphaPromptWithContext formats complete recovery context with history and recovery notice', () => {
+  const historyText = 'User: Implement login\n\nAssistant: Login implemented.';
+  const prompt = buildAlphaPromptWithContext('Now add unit tests for login', {
+    projectName: 'alpha-bro',
+    taskName: 'Task #100 - Auth',
+    worktreePath: '/Users/test/alpha-bro',
+    branch: 'feature/auth',
+    baseBranch: 'main',
+    systemPrompt: 'Follow strict TypeScript conventions.',
+    isAlpha: true,
+    isSubsequentTurn: false,
+    recoveryNotice: 'The previous Alpha Intelligence cloud session expired due to timeout. The dialogue history below summarizes recent progress in this task.',
+    conversationHistory: historyText,
+  });
+
+  assert.ok(prompt.includes('[Project & Task Context]'));
+  assert.ok(prompt.includes('- Project: alpha-bro'));
+  assert.ok(prompt.includes('- Task: Task #100 - Auth'));
+  assert.ok(prompt.includes('[Project Instructions]\nFollow strict TypeScript conventions.'));
+  assert.ok(prompt.includes('[Workspace Execution Guidance]'));
+  assert.ok(prompt.includes('[Session Recovery]\nThe previous Alpha Intelligence cloud session expired due to timeout.'));
+  assert.ok(prompt.includes('[Previous Conversation History]\nUser: Implement login\n\nAssistant: Login implemented.'));
+  assert.ok(prompt.includes('[User Request]\nNow add unit tests for login'));
+});
+
+test('runAlphaIntelligenceTurn throws AlphaConversationExpiredError on HTTP 410 response', async () => {
+  const http = await import('node:http');
+  const server = http.createServer((req, res) => {
+    res.writeHead(410, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      error: { code: 'CONVERSATION_EXPIRED', message: 'conversation is expired' },
+      request_id: 'test-req-expired-123',
+    }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as any).port;
+  const mockApiUrl = `http://localhost:${port}/api/superagents/agent-1/run?stream=true`;
+
+  try {
+    await assert.rejects(
+      () => runAlphaIntelligenceTurn({
+        apiUrl: mockApiUrl,
+        apiKey: 'test-api-key',
+        prompt: 'Hello again',
+        conversationId: 'expired-conv-999',
+        sessionId: 'session-123',
+        messageId: 'msg-123',
+        onEvent: () => {},
+      }),
+      (err: any) => {
+        assert.ok(err instanceof AlphaConversationExpiredError);
+        assert.equal(err.status, 410);
+        assert.equal(err.conversationId, 'expired-conv-999');
+        assert.ok(isAlphaConversationExpiredError(err));
+        return true;
+      }
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test('auto-recovery pattern on expired conversation recovers and establishes new conversation', async () => {
+  const http = await import('node:http');
+  let requestCount = 0;
+  const receivedBodies: any[] = [];
+
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      requestCount++;
+      const parsed = body ? JSON.parse(body) : {};
+      receivedBodies.push(parsed);
+
+      if (parsed.conversation_id === 'expired-session-id') {
+        // First attempt with expired conversation_id: returns 410 CONVERSATION_EXPIRED
+        res.writeHead(410, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: { code: 'CONVERSATION_EXPIRED', message: 'conversation is expired' },
+          request_id: 'req-expired-test',
+        }));
+        return;
+      }
+
+      // Second attempt without conversation_id (recovered session): succeeds with SSE stream
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+      });
+      res.write('event: message.start\n');
+      res.write('data: {"conversation_id": "new-cloud-session-555"}\n\n');
+      res.write('event: message\n');
+      res.write('data: {"message": {"type": "text", "text": "I remember the context! Continuing your task."}}\n\n');
+      res.write('event: message.end\n');
+      res.write('data: {}\n\n');
+      res.end();
+    });
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, resolve));
+  const port = (server.address() as any).port;
+  const mockApiUrl = `http://localhost:${port}/api/superagents/agent-1/run?stream=true`;
+
+  let activeConvId: string | undefined = 'expired-session-id';
+  let capturedNewConvId: string | undefined;
+  let receivedChunks = '';
+  const eventsReceived: string[] = [];
+
+  // Emulate the executeAlphaWithRecovery loop
+  let retried = false;
+  let currentPrompt = 'Fix the bug';
+
+  while (true) {
+    try {
+      await runAlphaIntelligenceTurn({
+        apiUrl: mockApiUrl,
+        apiKey: 'test-key',
+        prompt: currentPrompt,
+        conversationId: activeConvId,
+        sessionId: 'test-session',
+        messageId: 'test-msg',
+        onEvent: (ev) => {
+          eventsReceived.push(ev.type);
+          if (ev.type === 'chunk') {
+            receivedChunks += ev.content;
+          }
+        },
+        onConversationId: (convId) => {
+          capturedNewConvId = convId;
+          activeConvId = convId;
+        },
+      });
+      break;
+    } catch (err: any) {
+      if (!retried && activeConvId && isAlphaConversationExpiredError(err)) {
+        retried = true;
+        // Invalidate dead ID
+        activeConvId = undefined;
+        // Rebuild recovery prompt
+        currentPrompt = buildAlphaPromptWithContext('Fix the bug', {
+          projectName: 'test-project',
+          isAlpha: true,
+          recoveryNotice: 'Previous session timed out.',
+          conversationHistory: 'User: Start task\nAssistant: Started.',
+        });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  try {
+    assert.equal(requestCount, 2, 'Should have made 2 requests: 1 failed expired, 1 recovered');
+    assert.equal(receivedBodies[0].conversation_id, 'expired-session-id');
+    assert.equal(receivedBodies[1].conversation_id, undefined);
+    assert.ok(receivedBodies[1].query.includes('[Session Recovery]'));
+    assert.ok(receivedBodies[1].query.includes('[Previous Conversation History]'));
+    assert.equal(capturedNewConvId, 'new-cloud-session-555');
+    assert.equal(receivedChunks, 'I remember the context! Continuing your task.');
+    assert.ok(eventsReceived.includes('chunk'));
+    assert.ok(eventsReceived.includes('done'));
+  } finally {
+    server.close();
   }
 });
 
