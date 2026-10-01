@@ -30,6 +30,7 @@ import { TaskPage } from './pages/TaskPage';
 import { SubmitProvider } from './contexts/SubmitContext';
 import { SettingsPage } from './pages/SettingsPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { DockItem } from './components/DockStack';
 import { Loader2, Square, X, AlertCircle, RotateCw } from 'lucide-react';
 
 export default function App() {
@@ -590,50 +591,52 @@ export default function App() {
         />
       )}
 
-      {/* Floating Bottom Toast */}
+      {/* Floating Top-Right Toast */}
       {toastMessage && (
-        <div
-          className={`fixed bottom-5 right-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl ${
-            toastMessage.type === 'error'
-              ? 'bg-rose-950/95 dark:bg-rose-950/95 border-rose-500/40 text-rose-100 shadow-rose-950/30'
-              : 'bg-cozy-surface/95 dark:bg-zinc-900/95 border-cozy-border/80 text-cozy-text shadow-soft-xl'
-          } border text-xs backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-200 select-none max-w-md`}
-        >
+        <DockItem createdAt={toastMessage.id}>
           <div
-            className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${
+            className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-2xl ${
               toastMessage.type === 'error'
-                ? 'bg-rose-500/20 text-rose-400'
-                : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
-            }`}
+                ? 'bg-rose-950/95 dark:bg-rose-950/95 border-rose-500/40 text-rose-100 shadow-rose-950/30'
+                : 'bg-cozy-surface/95 dark:bg-zinc-900/95 border-cozy-border/80 text-cozy-text shadow-soft-xl'
+            } border text-xs backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200 select-none w-full sm:w-84`}
           >
-            {toastMessage.type === 'error' ? (
-              <AlertCircle className="w-3.5 h-3.5" />
-            ) : (
-              <Square className="w-3 h-3 fill-current" />
+            <div
+              className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 ${
+                toastMessage.type === 'error'
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : 'bg-teal-500/10 text-teal-600 dark:text-teal-400'
+              }`}
+            >
+              {toastMessage.type === 'error' ? (
+                <AlertCircle className="w-3.5 h-3.5" />
+              ) : (
+                <Square className="w-3 h-3 fill-current" />
+              )}
+            </div>
+            <span className="font-medium flex-1 truncate" title={toastMessage.text}>
+              {toastMessage.text}
+            </span>
+            {toastMessage.onRetry && (
+              <button
+                type="button"
+                onClick={toastMessage.onRetry}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors shrink-0 cursor-pointer shadow-xs"
+              >
+                <RotateCw className="w-3 h-3" />
+                <span>Retry</span>
+              </button>
             )}
-          </div>
-          <span className="font-medium flex-1 truncate" title={toastMessage.text}>
-            {toastMessage.text}
-          </span>
-          {toastMessage.onRetry && (
             <button
               type="button"
-              onClick={toastMessage.onRetry}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs transition-colors shrink-0 cursor-pointer shadow-xs"
+              onClick={() => setToastMessage(null)}
+              className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40 transition-colors ml-1 shrink-0 cursor-pointer"
+              title="Dismiss"
             >
-              <RotateCw className="w-3 h-3" />
-              <span>Retry</span>
+              <X className="w-3.5 h-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setToastMessage(null)}
-            className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-border/40 transition-colors ml-1 shrink-0 cursor-pointer"
-            title="Dismiss"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+          </div>
+        </DockItem>
       )}
     </div>
     </SubmitProvider>
