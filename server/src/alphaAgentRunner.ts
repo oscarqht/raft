@@ -65,6 +65,29 @@ export function normalizeAlphaApiUrl(rawUrl: string): string {
   }
 }
 
+export class AlphaConversationExpiredError extends Error {
+  public conversationId?: string;
+  public status: number;
+
+  constructor(message: string, conversationId?: string, status: number = 410) {
+    super(message);
+    this.name = 'AlphaConversationExpiredError';
+    this.conversationId = conversationId;
+    this.status = status;
+  }
+}
+
+export function isAlphaConversationExpiredError(error: any): boolean {
+  if (!error) return false;
+  if (error instanceof AlphaConversationExpiredError) return true;
+  const msg = typeof error === 'string' ? error : error.message || '';
+  return (
+    (/410/i.test(msg) && /CONVERSATION_EXPIRED|conversation is expired/i.test(msg)) ||
+    /CONVERSATION_EXPIRED/i.test(msg) ||
+    /conversation is expired/i.test(msg)
+  );
+}
+
 export interface ProjectTaskContext {
   projectName?: string;
   taskName?: string;
@@ -75,6 +98,8 @@ export interface ProjectTaskContext {
   isAlpha?: boolean;
   isSubsequentTurn?: boolean;
   jobRequirementTitle?: string;
+  conversationHistory?: string;
+  recoveryNotice?: string;
 }
 
 /**
@@ -133,7 +158,17 @@ export function buildAlphaPromptWithContext(
     );
   }
 
-  // 4. [Job Requirement / User Request]
+  // 4. [Session Recovery Guidance] (if recovered after cloud conversation expiration)
+  if (context.recoveryNotice && context.recoveryNotice.trim().length > 0) {
+    sections.push(`[Session Recovery]\n${context.recoveryNotice.trim()}`);
+  }
+
+  // 5. [Previous Conversation History] (if provided for conversation context restoration)
+  if (context.conversationHistory && context.conversationHistory.trim().length > 0) {
+    sections.push(`[Previous Conversation History]\n${context.conversationHistory.trim()}`);
+  }
+
+  // 6. [Job Requirement / User Request]
   const reqTitle = context.jobRequirementTitle || 'User Request';
   sections.push(`[${reqTitle}]\n${userPrompt.trim()}`);
 
@@ -269,6 +304,16 @@ export async function runAlphaIntelligenceTurn(options: RunAlphaOptions): Promis
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
+    if (
+      response.status === 410 ||
+      /CONVERSATION_EXPIRED|conversation is expired/i.test(errorText)
+    ) {
+      throw new AlphaConversationExpiredError(
+        `Alpha Intelligence API returned HTTP ${response.status}: ${errorText || response.statusText}`,
+        conversationId,
+        response.status
+      );
+    }
     throw new Error(`Alpha Intelligence API returned HTTP ${response.status}: ${errorText || response.statusText}`);
   }
 

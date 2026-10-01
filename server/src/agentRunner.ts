@@ -1180,27 +1180,26 @@ export interface StreamEvent {
   step?: AgentStep;
 }
 
-// Builds a clean previous conversation context block when no native CLI session can be resumed
-export function buildConversationContextFallback(
+// Formats recent dialogue history into clean speaker turns (stripping <thought> blocks)
+export function formatConversationHistory(
   messages: Array<{ role: string; content: string }>,
-  currentPrompt: string,
   maxTurns: number = 8
 ): string {
   if (!messages || messages.length === 0) {
-    return currentPrompt;
+    return '';
   }
 
   // Filter out any empty messages
   const relevant = messages.filter((m) => m.content && m.content.trim().length > 0);
   if (relevant.length === 0) {
-    return currentPrompt;
+    return '';
   }
 
   // Take the last N messages
   const recent = relevant.slice(-maxTurns);
 
   // Strip large <thought> blocks from previous turns to keep prompt clean
-  const formattedTurns = recent
+  return recent
     .map((m) => {
       let text = m.content;
       text = text.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
@@ -1209,7 +1208,15 @@ export function buildConversationContextFallback(
     })
     .filter((line) => line.length > 0)
     .join('\n\n');
+}
 
+// Builds a clean previous conversation context block when no native CLI session can be resumed
+export function buildConversationContextFallback(
+  messages: Array<{ role: string; content: string }>,
+  currentPrompt: string,
+  maxTurns: number = 8
+): string {
+  const formattedTurns = formatConversationHistory(messages, maxTurns);
   if (!formattedTurns.trim()) {
     return currentPrompt;
   }

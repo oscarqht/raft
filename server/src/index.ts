@@ -39,6 +39,7 @@ import {
   runRebaseAgent,
   runSubmitAgent,
   spawnAgentCli,
+  formatConversationHistory,
   buildConversationContextFallback,
   parseLegacyThoughtToSteps,
   AUTH_REQUIRED_REGEX,
@@ -49,7 +50,7 @@ import {
 } from './agentRunner.js';
 import { devServerManager } from './devServerManager.js';
 import { alphaDeviceService } from './alphaDeviceService.js';
-import { runAlphaIntelligenceTurn, buildAlphaPromptWithContext } from './alphaAgentRunner.js';
+import { runAlphaIntelligenceTurn, buildAlphaPromptWithContext, isAlphaConversationExpiredError } from './alphaAgentRunner.js';
 import { scriptManager } from './scriptManager.js';
 import { getSkillsForCli, resolveSkillPrompt, extractMatchedSkills, installSkillWithNpxProcess } from './skillService.js';
 import { resolveHost, setupTailscaleServe, TailscaleServeResult } from './tailscale.js';
@@ -2836,6 +2837,7 @@ wss.on('connection', (ws: WebSocket) => {
           });
           effectiveAgentPrompt = `${prompt}\n\n[Attached files in workspace:\n${attachmentLines.join('\n')}\nYou can inspect, read, or process these files directly in the repository workspace.]`;
         }
+        const rawUserPromptWithAttachments = effectiveAgentPrompt;
 
         const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
         const effectiveWorktreePath = project?.path
@@ -3210,40 +3212,115 @@ wss.on('connection', (ws: WebSocket) => {
             abort: abortAlphaSession,
           });
 
-          runAlphaIntelligenceTurn({
-            apiUrl,
-            apiKey,
-            userEmail: getSetting<string>('alpha_intelligence_email', '') || undefined,
-            prompt: effectivePrompt,
-            conversationId: cliSessionIdToResume || undefined,
-            worktreePath: effectiveWorktreePath,
-            sessionId,
-            messageId: assistantMsgId,
-            signal: abortController.signal,
-            onEvent: handleAlphaEvent,
-            onHitlRequired: (hitl) => {
-              broadcastWs({
-                type: 'hitl_input_required',
-                sessionId,
-                taskId: task.id,
-                projectId: task.project_id,
-                taskName: task.name,
-                projectName: project?.name,
-                messageId: assistantMsgId,
-                hitl,
-              });
-              notifyTaskCompletionIfNoWebClients(task.id, task.project_id, task.name, project?.name, 'hitl');
-            },
-            onConversationId: (convId) => {
+          const executeAlphaWithRecovery = async () => {
+            let activeConvIdToUse = cliSessionIdToResume || undefined;
+            let currentPromptToUse = effectivePrompt;
+            let retried = false;
+
+            while (true) {
               try {
-                db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
-                  .run(convId, 'alpha', sessionId);
-              } catch {}
-            },
-          }).catch((runErr) => {
-            console.error('[AlphaRunner] Execution error:', runErr);
-            handleAlphaEvent({ type: 'error', content: runErr.message || 'Alpha Intelligence error' });
-          });
+                await runAlphaIntelligenceTurn({
+                  apiUrl,
+                  apiKey,
+                  userEmail: getSetting<string>('alpha_intelligence_email', '') || undefined,
+                  prompt: currentPromptToUse,
+                  conversationId: activeConvIdToUse,
+                  worktreePath: effectiveWorktreePath,
+                  sessionId,
+                  messageId: assistantMsgId,
+                  signal: abortController.signal,
+                  onEvent: handleAlphaEvent,
+                  onHitlRequired: (hitl) => {
+                    broadcastWs({
+                      type: 'hitl_input_required',
+                      sessionId,
+                      taskId: task.id,
+                      projectId: task.project_id,
+                      taskName: task.name,
+                      projectName: project?.name,
+                      messageId: assistantMsgId,
+                      hitl,
+                    });
+                    notifyTaskCompletionIfNoWebClients(task.id, task.project_id, task.name, project?.name, 'hitl');
+                  },
+                  onConversationId: (convId) => {
+                    try {
+                      db.prepare('UPDATE chat_sessions SET cli_session_id = ?, cli_session_agent = ? WHERE id = ?')
+                        .run(convId, 'alpha', sessionId);
+                    } catch {}
+                  },
+                });
+                return;
+              } catch (runErr: any) {
+                if (abortController.signal.aborted) {
+                  return;
+                }
+
+                // If conversation expired on Alpha Intelligence cloud side and we haven't retried yet, auto-recover
+                if (!retried && activeConvIdToUse && isAlphaConversationExpiredError(runErr)) {
+                  retried = true;
+                  console.warn(`[AlphaRunner] Conversation ${activeConvIdToUse} expired on Alpha Intelligence cloud. Auto-recovering session ${sessionId}...`);
+
+                  // 1. Invalidate dead conversation ID in DB
+                  try {
+                    db.prepare('UPDATE chat_sessions SET cli_session_id = NULL, cli_session_agent = NULL WHERE id = ?')
+                      .run(sessionId);
+                  } catch (dbErr) {
+                    console.warn('[AlphaRunner] Failed to clear expired cli_session_id:', dbErr);
+                  }
+
+                  // 2. Fetch conversation history for full context reconstruction
+                  const prevMessages = db.prepare(`
+                    SELECT role, content FROM chat_messages
+                    WHERE session_id = ? AND id != ?
+                    ORDER BY timestamp ASC
+                  `).all(sessionId, userMsgId) as Array<{ role: string; content: string }>;
+
+                  const historyText = formatConversationHistory(prevMessages, 10);
+
+                  // 3. Rebuild full prompt with project context + dialogue history + recovery notice
+                  const recoveryPrompt = buildAlphaPromptWithContext(rawUserPromptWithAttachments, {
+                    projectName: project?.name,
+                    taskName: task?.name,
+                    worktreePath: effectiveWorktreePath || project?.path,
+                    branch: task?.branch,
+                    baseBranch: task?.base_branch || project?.branch_convention || 'main',
+                    systemPrompt: project?.system_prompt,
+                    isAlpha: true,
+                    isSubsequentTurn: false,
+                    recoveryNotice: 'The previous Alpha Intelligence cloud session expired due to timeout. The dialogue history below summarizes recent progress in this task. Please seamlessly continue from this context. You can inspect git status or diff if you need to review active workspace modifications.',
+                    conversationHistory: historyText,
+                  });
+
+                  currentPromptToUse = resolveSkillPrompt(cliToUse, recoveryPrompt, effectiveWorktreePath);
+                  activeConvIdToUse = undefined;
+
+                  // 4. Notify UI via status thought
+                  handleAlphaEvent({
+                    type: 'thought',
+                    content: '\n[Previous Alpha Intelligence cloud session expired. Seamlessly reconnecting and restoring conversation context...]\n\n',
+                  });
+
+                  // Loop and retry fresh turn
+                  continue;
+                }
+
+                // If unrecoverable or already retried, clear expired session ID if applicable and emit error
+                if (isAlphaConversationExpiredError(runErr)) {
+                  try {
+                    db.prepare('UPDATE chat_sessions SET cli_session_id = NULL, cli_session_agent = NULL WHERE id = ?')
+                      .run(sessionId);
+                  } catch {}
+                }
+
+                console.error('[AlphaRunner] Execution error:', runErr);
+                handleAlphaEvent({ type: 'error', content: runErr.message || 'Alpha Intelligence error' });
+                return;
+              }
+            }
+          };
+
+          executeAlphaWithRecovery();
 
           return;
         }
