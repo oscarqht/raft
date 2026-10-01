@@ -1,6 +1,6 @@
 {
   "name": "raft",
-  "version": "0.40.0",
+  "version": "0.41.0",
   "description": "A cozy, distraction-free AI coding workspace with git worktree isolation",
   "private": true,
   "type": "module",
