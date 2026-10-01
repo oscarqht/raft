@@ -143,13 +143,25 @@ def generate():
         (512, 2, 'icon_512x512@2x.png'),
     ]
 
-    # macOS icon: opaque white background, artwork fills the whole canvas (no padding)
-    mac_master = Image.new('RGBA', (master_size, master_size), (255, 255, 255, 255))
+    # macOS icon: Apple icon grid -- 824px white rounded tile centered on a transparent
+    # 1024 canvas (macOS does not mask .icns files itself), artwork inset inside the tile.
+    from PIL import ImageDraw
+    tile = 824
+    ss = 4  # supersample for smooth tile edges
+    mask = Image.new('L', (tile * ss, tile * ss), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        (0, 0, tile * ss - 1, tile * ss - 1), radius=int(tile * 0.2237) * ss, fill=255)
+    mask = mask.resize((tile, tile), Image.Resampling.LANCZOS)
+    tile_img = Image.new('RGBA', (tile, tile), (255, 255, 255, 255))
     mac_src = src.crop(src.getchannel('A').point(lambda p: 255 if p > 32 else 0).getbbox())
-    mac_scale = master_size / max(mac_src.size)
+    art_dim = int(tile * 0.72)
+    mac_scale = art_dim / max(mac_src.size)
     mw, mh = int(round(mac_src.width * mac_scale)), int(round(mac_src.height * mac_scale))
     mac_art = mac_src.resize((mw, mh), Image.Resampling.LANCZOS)
-    mac_master.paste(mac_art, ((master_size - mw) // 2, (master_size - mh) // 2), mac_art)
+    tile_img.paste(mac_art, ((tile - mw) // 2, (tile - mh) // 2), mac_art)
+    tile_img.putalpha(mask)
+    mac_master = Image.new('RGBA', (master_size, master_size), (0, 0, 0, 0))
+    mac_master.paste(tile_img, ((master_size - tile) // 2, (master_size - tile) // 2), tile_img)
 
     for size, factor, filename in icns_sizes:
         dim = size * factor
