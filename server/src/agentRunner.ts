@@ -1263,6 +1263,17 @@ export function spawnAgentCli(
   let activeClaudeThinkingStepId: string | null = null;
   const claudeToolSteps = new Map<string, AgentStep>();
   let accumulatedClaudeThinking = '';
+  // Codex emits several agent_message items per turn: progress commentary between tool calls, then the final answer.
+  // Hold the latest one back so it can be routed once we know whether more work follows it.
+  let pendingCodexMessage: { text: string; conversationId?: string } | null = null;
+  const flushCodexMessage = (asFinal: boolean) => {
+    if (!pendingCodexMessage) return;
+    const { text, conversationId } = pendingCodexMessage;
+    pendingCodexMessage = null;
+    onEvent(asFinal
+      ? { type: 'chunk', content: text, conversationId }
+      : { type: 'thought', content: text + '\n\n', conversationId });
+  };
 
   proc.stdout?.on('data', (data: Buffer) => {
     lineBuffer += data.toString('utf-8');
@@ -1680,6 +1691,7 @@ export function spawnAgentCli(
               }
             } else if (parsed.type === 'item.started' && parsed.item) {
               const item = parsed.item;
+              flushCodexMessage(false);
               if (item.type === 'command_execution') {
                 const cmd = item.command || '';
                 const agentStep: AgentStep = {
@@ -1707,6 +1719,9 @@ export function spawnAgentCli(
               }
             } else if (parsed.type === 'item.completed' && parsed.item) {
               const item = parsed.item;
+              if (item.type !== 'agent_message' && item.type !== 'message' && item.type !== 'error' && item.type !== 'warning') {
+                flushCodexMessage(false);
+              }
               if (item.type === 'command_execution') {
                 const cmd = item.command || '';
                 const isErr = item.exit_code !== undefined && item.exit_code !== 0;
@@ -1751,13 +1766,11 @@ export function spawnAgentCli(
                 };
                 onEvent({ type: 'step', step: agentStep, metadata: parsed, conversationId: detectedConversationId });
               } else if ((item.type === 'agent_message' || item.type === 'message') && item.text) {
-                onEvent({
-                  type: 'chunk',
-                  content: item.text,
-                  metadata: parsed,
-                  conversationId: detectedConversationId,
-                });
+                flushCodexMessage(false);
+                pendingCodexMessage = { text: item.text.trim(), conversationId: detectedConversationId };
               }
+            } else if (parsed.type === 'turn.completed') {
+              flushCodexMessage(true);
             } else if (parsed.type === 'item.delta' && parsed.delta) {
               const text = parsed.delta.text;
               if (text) {
@@ -1968,6 +1981,7 @@ export function spawnAgentCli(
   });
 
   proc.on('close', (code) => {
+    flushCodexMessage(true);
     onEvent({ type: 'done', content: `\nProcess completed (exit code ${code ?? 0})\n`, metadata: { code } });
   });
 
