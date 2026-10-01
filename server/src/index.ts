@@ -2949,9 +2949,9 @@ wss.on('connection', (ws: WebSocket) => {
         } else {
           // codex
           if (cliSessionIdToResume) {
-            args.push('exec', 'resume', '--json', cliSessionIdToResume, effectivePrompt);
+            args.push('exec', 'resume', '--json', '--dangerously-bypass-approvals-and-sandbox', cliSessionIdToResume, effectivePrompt);
           } else {
-            args.push('exec', '--json', effectivePrompt);
+            args.push('exec', '--json', '--dangerously-bypass-approvals-and-sandbox', effectivePrompt);
           }
           if (modelToUse) args.push('--model', modelToUse);
           if (effortToUse && effortToUse !== 'none') {

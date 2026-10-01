@@ -2116,6 +2116,7 @@ Important instructions:
     } else {
       // codex
       args.push('exec', enrichedDiscoveryPrompt);
+      args.push('--dangerously-bypass-approvals-and-sandbox');
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') {
         args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
@@ -2286,6 +2287,7 @@ Output a clear summary of which conflicts were resolved and confirm the rebase i
       args.push('--dangerously-skip-permissions');
     } else {
       args.push('exec', enrichedConflictPrompt);
+      args.push('--dangerously-bypass-approvals-and-sandbox');
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') {
         args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
@@ -3150,6 +3152,7 @@ Output ONLY a JSON block enclosed in \`\`\`json ... \`\`\` matching this schema:
     } else {
       // codex
       args.push('exec', enrichedCommitPrompt);
+      args.push('--dangerously-bypass-approvals-and-sandbox');
       if (model) args.push('--model', model);
       if (thinkingEffort && thinkingEffort !== 'none') {
         args.push('-c', `model_reasoning_effort="${thinkingEffort}"`);
