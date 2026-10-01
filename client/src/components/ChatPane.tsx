@@ -93,6 +93,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     return targetId ? (getCachedMessages(targetId) || []) : [];
   });
   const [loadingChats, setLoadingChats] = useState(() => !(getCachedChats(task.id)?.length));
+  // True while a background revalidation of the active chat's messages is in flight
+  const [syncingChats, setSyncingChats] = useState(true);
+  const [syncingActiveChat, setSyncingActiveChat] = useState(false);
 
   const [inputPrompt, setInputPrompt] = useState(() => {
     const draft = getTaskDraft(task.id);
@@ -339,6 +342,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     chatsAbortControllerRef.current = controller;
     const currentTaskId = task.id;
     const targetActiveId = activeChatId || getCachedActiveChatId(currentTaskId);
+    setSyncingChats(true);
 
     try {
       const data = await getTaskChats(currentTaskId, {
@@ -416,6 +420,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     } finally {
       if (!controller.signal.aborted && taskRef.current.id === currentTaskId) {
         setLoadingChats(false);
+        setSyncingChats(false);
       }
     }
   };
@@ -495,12 +500,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
     if (pendingChatIdsRef.current.has(activeChatId)) {
       // Brand-new chat: nothing to fetch, and the server may not have it yet
+      setSyncingActiveChat(false);
       return;
     }
 
     if (lastLoadedActiveChatRef.current === activeChatId) {
       // Already freshly populated by loadChats in the same cycle!
       lastLoadedActiveChatRef.current = null;
+      setSyncingActiveChat(false);
       return;
     }
 
@@ -510,6 +517,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const controller = new AbortController();
     activeChatAbortControllerRef.current = controller;
 
+    setSyncingActiveChat(true);
     getChatMessages(activeChatId, controller.signal)
       .then((fresh) => {
         if (controller.signal.aborted) return;
@@ -522,6 +530,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       })
       .catch((err) => {
         if (err.name === 'AbortError') return;
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSyncingActiveChat(false);
       });
 
     return () => {
@@ -1931,6 +1942,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         <ChatMessageList
           ref={chatListRef}
           messages={messages}
+          isSyncing={(syncingChats || syncingActiveChat) && messages.length > 0}
           liveStreamingChunk={streamingChunk}
           isStreaming={isStreaming}
           taskId={task.id}

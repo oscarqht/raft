@@ -894,6 +894,8 @@ export interface ChatMessageListProps {
   messages: ChatMessage[];
   liveStreamingChunk?: string;
   isStreaming?: boolean;
+  /** Show a spinner at the bottom while the latest messages are being fetched */
+  isSyncing?: boolean;
   taskId?: string;
   sessionId?: string;
   clis?: CliInfo[];
@@ -911,6 +913,7 @@ export const ChatMessageList = React.memo(
     messages,
     liveStreamingChunk,
     isStreaming,
+    isSyncing,
     taskId,
     sessionId,
     clis,
@@ -1229,6 +1232,12 @@ export const ChatMessageList = React.memo(
                     Thinking and exploring codebase...
                   </span>
                 </div>
+              </div>
+            )}
+
+            {isSyncing && !isStreaming && (
+              <div className="flex items-center justify-center py-2 text-cozy-muted" role="status" aria-label="Loading latest messages">
+                <Loader2 className="w-4 h-4 animate-spin" />
               </div>
             )}
 
