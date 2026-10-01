@@ -431,8 +431,6 @@ export default function App() {
     performDeleteTask(taskToDelete, targetProjectId);
   };
 
-  const isProjectPage = Boolean(projectMatch && !projectTaskMatch);
-
   return (
     <SubmitProvider ws={ws}>
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-cozy-bg text-cozy-text font-sans">
@@ -452,13 +450,6 @@ export default function App() {
         isTaskPinned={Boolean(activeTask?.is_pinned)}
         onDeleteTask={currentTaskId && activeTask ? handleDeleteActiveTask : undefined}
         isDeletingTask={isDeletingTask}
-        onNewTask={
-          currentProjectId && !currentTaskId
-            ? () => {
-                window.dispatchEvent(new CustomEvent('reset-new-task-form'));
-              }
-            : undefined
-        }
         onConfigureProject={
           currentProjectId
             ? () => {
