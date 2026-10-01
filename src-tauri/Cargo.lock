@@ -3065,14 +3065,17 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "raft"
-version = "0.30.0"
+version = "0.36.0"
 dependencies = [
  "dirs 6.0.0",
  "libc",
  "local-ip-address",
  "mac-notification-sys",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "reqwest 0.12.28",
+ "rfd",
  "serde",
  "serde_json",
  "tauri",

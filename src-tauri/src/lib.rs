@@ -1,3 +1,4 @@
+mod instance_guard;
 mod notify;
 mod server;
 mod tray;
@@ -37,6 +38,9 @@ pub fn run() {
         server::stop_server();
         default_hook(info);
     }));
+
+    let context = tauri::generate_context!();
+    instance_guard::check(&context.config().identifier);
 
     let builder = tauri::Builder::default()
         .manage(updater::init_state())
@@ -292,7 +296,7 @@ pub fn run() {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     app.run(|_app_handle, event| {
