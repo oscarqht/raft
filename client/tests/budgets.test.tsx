@@ -4,6 +4,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { AgentUsageCard } from '../src/components/AgentUsageCard';
+import { HeaderBudgets } from '../src/components/HeaderBudgets';
 import { SettingsPage } from '../src/pages/SettingsPage';
 import { setCachedAgentUsages } from '../src/cache';
 import type { AgentUsageSnapshot, CliInfo } from '../src/types';
@@ -72,4 +73,17 @@ test('AI Agents tab no longer contains provider budgets', () => {
   assert.ok(html.includes('Default AI Agent Provider'));
   assert.ok(!html.includes('codex budget account'));
   assert.ok(!html.includes('Refresh Quotas'));
+});
+
+test('header shows one-line budget summary linking to budgets tab', () => {
+  cacheSnapshots();
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <HeaderBudgets />
+    </MemoryRouter>
+  );
+  assert.ok(html.includes('href="/settings?tab=budgets"'));
+  assert.equal(html.match(/>90%</g)?.length, 3);
+  assert.equal(html.match(/>\|</g)?.length, 2);
+  assert.ok(!html.includes('alpha budget account'));
 });

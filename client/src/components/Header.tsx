@@ -5,6 +5,7 @@ import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
 import { HeaderUpdater } from './HeaderUpdater';
+import { HeaderBudgets } from './HeaderBudgets';
 import { ProjectIcon } from './ProjectIcon';
 import { getCachedTaskGitStatus, setCachedTaskGitStatus } from '../cache';
 
@@ -32,7 +33,6 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentPath,
   onNavigate,
-  settings,
   onEditTask,
   onTogglePinTask,
   isTaskPinned,
@@ -312,22 +312,9 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        {settings && (
-          <Link
-            to="/settings"
-            className="hidden min-[1200px]:flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-xs font-medium bg-cozy-subtle hover:bg-cozy-subtle/80 text-cozy-muted hover:text-cozy-text transition-colors shrink-0"
-            title="Active AI Agent CLI"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
-            <span className="font-medium text-teal-600 dark:text-teal-400">{settings.agent_cli}</span>
-            {settings.agent_cli?.toLowerCase() !== 'alpha' && (
-              <>
-                <span className="text-cozy-border hidden sm:inline">•</span>
-                <span className="text-cozy-muted truncate max-w-[130px] hidden sm:inline">{settings.default_model || 'default'}</span>
-              </>
-            )}
-          </Link>
-        )}
+        <div className="hidden sm:flex items-center">
+          <HeaderBudgets />
+        </div>
 
         <div className="hidden sm:inline-flex items-center">
           <HeaderUpdater />
