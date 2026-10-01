@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 import { AgentUsageSnapshot, CliInfo } from '../types';
 import { getAllAgentUsages } from '../api';
-import { formatResetDate } from '../utils/time';
 import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
 
 interface AgentUsageCardProps {
@@ -205,9 +204,7 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
 
       {/* Usage Snapshots for all non-Alpha providers */}
       {snapshots.map((currentSnapshot) => {
-        const costResetDescription = (currentSnapshot.cli === 'claude'
-          ? formatResetDate(currentSnapshot.costLimit?.resetsAt)
-          : null) || currentSnapshot.costLimit?.resetDescription;
+        const costResetDescription = currentSnapshot.costLimit?.resetDescription;
         const isCliReady = clis.some(
           (c) => c.name.toLowerCase() === currentSnapshot.cli.toLowerCase() && c.available
         );

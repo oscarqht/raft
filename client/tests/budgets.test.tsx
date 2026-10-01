@@ -7,7 +7,6 @@ import { AgentUsageCard } from '../src/components/AgentUsageCard';
 import { HeaderBudgets } from '../src/components/HeaderBudgets';
 import { SettingsPage } from '../src/pages/SettingsPage';
 import { setCachedAgentUsages } from '../src/cache';
-import { formatResetDate } from '../src/utils/time';
 import type { AgentUsageSnapshot, CliInfo } from '../src/types';
 
 const clis: CliInfo[] = [
@@ -89,26 +88,18 @@ test('header shows one-line budget summary linking to budgets tab', () => {
   assert.ok(!html.includes('alpha budget account'));
 });
 
-test('Claude budget and spend warning show the local reset date instead of a relative fallback', () => {
-  const previousTZ = process.env.TZ;
-  process.env.TZ = 'Asia/Singapore';
-  try {
-    setCachedAgentUsages({ claude: {
-      cli: 'claude', providerName: 'Claude Code', isAvailable: true, updatedAt: Date.now(),
-      statusMessage: 'Monthly spend cap reached',
-      costLimit: {
-        used: 200, limit: 200, currency: 'USD', remainingPercent: 0,
-        resetsAt: '2026-11-01T00:00:00.000Z', resetDescription: 'Resets in 30d',
-      },
-    } });
-    const html = renderSettings('budgets');
-    assert.equal(html.match(/Resets Sun, Nov 1, 8:00 AM GMT\+8/g)?.length, 2);
-    assert.ok(!html.includes('Resets soon'));
-    assert.ok(!html.includes('Resets in 30d'));
-  } finally {
-    if (previousTZ === undefined) delete process.env.TZ;
-    else process.env.TZ = previousTZ;
-  }
+test('Claude budget and spend warning show the relative reset description like Codex', () => {
+  setCachedAgentUsages({ claude: {
+    cli: 'claude', providerName: 'Claude Code', isAvailable: true, updatedAt: Date.now(),
+    statusMessage: 'Monthly spend cap reached',
+    costLimit: {
+      used: 200, limit: 200, currency: 'USD', remainingPercent: 0,
+      resetsAt: '2026-11-01T00:00:00.000Z', resetDescription: 'Resets in 30d',
+    },
+  } });
+  const html = renderSettings('budgets');
+  assert.equal(html.match(/Resets in 30d/g)?.length, 2);
+  assert.ok(!html.includes('Resets soon'));
 });
 
 test('missing reset dates are not presented as an imminent reset', () => {
@@ -116,18 +107,4 @@ test('missing reset dates are not presented as an imminent reset', () => {
   const html = renderToStaticMarkup(<AgentUsageCard clis={clis} />);
   assert.equal(html.match(/Reset date unavailable/g)?.length, 3);
   assert.ok(!html.includes('Resets soon'));
-  for (const input of [undefined, null, '', 'invalid', '1970-01-01T00:00:00Z']) {
-    assert.equal(formatResetDate(input), null);
-  }
-});
-
-test('reset dates use the viewer timezone rather than a fixed GMT offset', () => {
-  const previousTZ = process.env.TZ;
-  process.env.TZ = 'America/Los_Angeles';
-  try {
-    assert.equal(formatResetDate('2026-11-01T00:00:00Z'), 'Resets Sat, Oct 31, 5:00 PM GMT-7');
-  } finally {
-    if (previousTZ === undefined) delete process.env.TZ;
-    else process.env.TZ = previousTZ;
-  }
 });
