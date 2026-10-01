@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2, Pin, Sliders } from 'lucide-react';
+import { Sparkles, Settings as SettingsIcon, ChevronRight, FolderGit2, Pencil, Plus, Trash2, Loader2, Pin, Sliders, PanelLeft } from 'lucide-react';
 import { Settings, TaskGitStatus } from '../types';
 import { getTaskGitStatus } from '../api';
 import { TaskStatusBadges } from './TaskStatusBadges';
@@ -26,6 +26,7 @@ interface HeaderProps {
   isDeletingTask?: boolean;
   onNewTask?: () => void;
   onConfigureProject?: () => void;
+  onToggleMobileSidebar?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -39,6 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   isDeletingTask,
   onNewTask,
   onConfigureProject,
+  onToggleMobileSidebar,
 }) => {
   const navigate = useNavigate();
 
@@ -135,6 +137,18 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="relative z-40 h-12 border-b border-cozy-border bg-cozy-surface px-3 sm:px-4 flex items-center justify-between shrink-0 select-none gap-3">
       {/* Left: Brand & Breadcrumbs */}
       <div className="flex items-center space-x-1.5 sm:space-x-2 text-sm min-w-0">
+        {onToggleMobileSidebar && (
+          <button
+            type="button"
+            onClick={onToggleMobileSidebar}
+            className="min-[1200px]:hidden w-8 h-8 rounded-lg flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors cursor-pointer shrink-0 -ml-1 mr-0.5"
+            title="Open projects & tasks sidebar"
+            aria-label="Open sidebar"
+          >
+            <PanelLeft className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+          </button>
+        )}
+
         <Link
           to="/"
           className="flex items-center space-x-2 text-cozy-text font-semibold hover:opacity-85 transition-opacity shrink-0 group mr-1"
@@ -142,7 +156,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="w-7 h-7 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center overflow-hidden shrink-0">
             <img src="/logo.png" alt="Alpha Bro logo" className="w-5 h-5 object-contain" />
           </div>
-          <span className="text-sm font-semibold tracking-tight text-cozy-text flex items-center gap-1">
+          <span className="text-sm font-semibold tracking-tight text-cozy-text flex items-center gap-1 truncate max-w-[100px] sm:max-w-none">
             Alpha Bro
           </span>
         </Link>

@@ -24,6 +24,7 @@ import {
 import { isTaskInBackground, sendTaskNotification, NotificationTriggerType } from './utils/notifications';
 import { Header } from './components/Header';
 import { EditTaskModal } from './components/EditTaskModal';
+import { ProjectsTasksSidebar } from './components/ProjectsTasksSidebar';
 import { HomePage } from './pages/HomePage';
 import { TaskPage } from './pages/TaskPage';
 import { SubmitProvider } from './contexts/SubmitContext';
@@ -51,6 +52,23 @@ export default function App() {
   });
   const [isEditTaskOpen, setIsEditTaskOpen] = useState(false);
   const [isDeletingTask, setIsDeletingTask] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Close mobile sidebar on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isMobileSidebarOpen) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileSidebarOpen]);
 
   const currentProjectIdRef = useRef<string | null>(currentProjectId);
   const currentTaskIdRef = useRef<string | null>(currentTaskId);
@@ -450,6 +468,7 @@ export default function App() {
               }
             : undefined
         }
+        onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
       />
 
       <main className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
@@ -522,6 +541,45 @@ export default function App() {
           </Routes>
         </ErrorBoundary>
       </main>
+
+      {/* Mobile Projects & Tasks Slide-over Drawer */}
+      {isMobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 flex min-[1200px]:hidden">
+          {/* Backdrop overlay */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+            onClick={() => setIsMobileSidebarOpen(false)}
+            aria-hidden="true"
+          />
+          {/* Drawer container */}
+          <div className="relative z-10 w-[85vw] max-w-[320px] h-full bg-cozy-surface dark:bg-[#171717] border-r border-cozy-border shadow-2xl flex flex-col animate-in slide-in-from-left duration-200">
+            <ProjectsTasksSidebar
+              currentTaskId={currentTaskId || undefined}
+              currentProjectId={currentProjectId || activeTask?.project_id || undefined}
+              onSelectTask={(selectedTaskId, selectedProjectId, selectedTask) => {
+                if (selectedTask) {
+                  setActiveTask(selectedTask);
+                  setCachedTask(selectedTask);
+                }
+                const route = selectedProjectId
+                  ? `/projects/${selectedProjectId}/tasks/${selectedTaskId}`
+                  : `/tasks/${selectedTaskId}`;
+                navigate(route, { state: { task: selectedTask } });
+                setIsMobileSidebarOpen(false);
+              }}
+              onConfigureProject={(pId) => {
+                window.dispatchEvent(new CustomEvent('open-project-config', { detail: { projectId: pId } }));
+                setIsMobileSidebarOpen(false);
+              }}
+              isCollapsed={false}
+              onToggleCollapse={() => setIsMobileSidebarOpen(false)}
+              isMobile={true}
+              onClose={() => setIsMobileSidebarOpen(false)}
+              ws={ws}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Edit Task Modal triggered from Header breadcrumb */}
       {isEditTaskOpen && activeTask && (
