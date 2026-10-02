@@ -480,6 +480,15 @@ export function getCachedMessages(sessionId: string): ChatMessage[] | null {
     }
   } catch {}
 
+  // Also check memoryChats in case the chat session was loaded with messages included
+  for (const chats of memoryChats.values()) {
+    const found = chats.find((c) => c.id === sessionId && Array.isArray(c.messages) && c.messages.length > 0);
+    if (found && found.messages) {
+      memoryMessages.set(sessionId, found.messages);
+      return found.messages;
+    }
+  }
+
   // Asynchronously backfill from IndexedDB
   idbGet<ChatMessage[]>(`${PREFIX}messages:${sessionId}`).then((msgs) => {
     if (msgs) memoryMessages.set(sessionId, msgs);

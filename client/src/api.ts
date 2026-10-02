@@ -88,9 +88,25 @@ export async function initGitRepository(dirPath: string): Promise<any> {
 }
 
 
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function dedupeInFlight<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inFlightRequests.get(key);
+  if (existing) {
+    return existing as Promise<T>;
+  }
+  const promise = fn().finally(() => {
+    inFlightRequests.delete(key);
+  });
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
 export async function getSettings(): Promise<Settings> {
-  const res = await fetch(`${API_BASE}/settings`);
-  return res.json();
+  return dedupeInFlight('settings', async () => {
+    const res = await fetch(`${API_BASE}/settings`);
+    return res.json();
+  });
 }
 
 export async function updateSettings(settings: Partial<Settings>): Promise<{ success: boolean }> {
@@ -103,22 +119,32 @@ export async function updateSettings(settings: Partial<Settings>): Promise<{ suc
 }
 
 export async function getClis(): Promise<CliInfo[]> {
-  const res = await fetch(`${API_BASE}/clis`);
-  return res.json();
+  return dedupeInFlight('clis', async () => {
+    const res = await fetch(`${API_BASE}/clis`);
+    return res.json();
+  });
 }
 
 export async function getModels(cli?: string, refresh?: boolean): Promise<ModelOption[]> {
-  const params = new URLSearchParams();
-  if (cli) params.set('cli', cli);
-  if (refresh) params.set('refresh', 'true');
-  const url = `${API_BASE}/models?${params.toString()}`;
-  const res = await fetch(url);
-  return res.json();
+  const fetchModels = async () => {
+    const params = new URLSearchParams();
+    if (cli) params.set('cli', cli);
+    if (refresh) params.set('refresh', 'true');
+    const url = `${API_BASE}/models?${params.toString()}`;
+    const res = await fetch(url);
+    return res.json();
+  };
+  if (refresh) {
+    return fetchModels();
+  }
+  return dedupeInFlight(`models:${cli || 'default'}`, fetchModels);
 }
 
 export async function getSkills(_cli?: string, _worktreePath?: string, _taskId?: string): Promise<AgentSkill[]> {
-  const res = await fetch(`${API_BASE}/skills`);
-  return res.json();
+  return dedupeInFlight('skills', async () => {
+    const res = await fetch(`${API_BASE}/skills`);
+    return res.json();
+  });
 }
 
 export async function createSkill(skill: { name: string; description?: string; content: string }): Promise<AgentSkill> {
@@ -203,8 +229,10 @@ export async function validateProjectPath(dirPath: string): Promise<any> {
 }
 
 export async function getProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/projects`);
-  return res.json();
+  return dedupeInFlight('projects', async () => {
+    const res = await fetch(`${API_BASE}/projects`);
+    return res.json();
+  });
 }
 
 export async function createProject(data: Partial<Project>): Promise<Project> {
@@ -239,8 +267,10 @@ export async function deleteProject(id: string): Promise<{ success: boolean }> {
 }
 
 export async function getProject(id: string): Promise<Project> {
-  const res = await fetch(`${API_BASE}/projects/${id}`);
-  return res.json();
+  return dedupeInFlight(`project:${id}`, async () => {
+    const res = await fetch(`${API_BASE}/projects/${id}`);
+    return res.json();
+  });
 }
 
 export async function getProjectTasks(projectId: string): Promise<Task[]> {
@@ -262,16 +292,20 @@ export async function createTask(projectId: string, name: string, baseBranch: st
 }
 
 export async function getTasks(): Promise<Task[]> {
-  const res = await fetch(`${API_BASE}/tasks`);
-  if (!res.ok) {
-    throw new Error('Failed to fetch tasks');
-  }
-  return res.json();
+  return dedupeInFlight('tasks', async () => {
+    const res = await fetch(`${API_BASE}/tasks`);
+    if (!res.ok) {
+      throw new Error('Failed to fetch tasks');
+    }
+    return res.json();
+  });
 }
 
 export async function getTask(id: string): Promise<Task> {
-  const res = await fetch(`${API_BASE}/tasks/${id}`);
-  return res.json();
+  return dedupeInFlight(`task:${id}`, async () => {
+    const res = await fetch(`${API_BASE}/tasks/${id}`);
+    return res.json();
+  });
 }
 
 export async function deleteTask(id: string): Promise<{ success: boolean }> {
@@ -293,13 +327,25 @@ export async function updateTask(id: string, data: Partial<Task>): Promise<Task>
 }
 
 export async function getTaskGitStatus(taskId: string, force = false): Promise<GitStatus> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/git/status${force ? '?force=1' : ''}`);
-  return res.json();
+  const fetchStatus = async () => {
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/git/status${force ? '?force=1' : ''}`);
+    return res.json();
+  };
+  if (force) {
+    return fetchStatus();
+  }
+  return dedupeInFlight(`task-git-status:${taskId}`, fetchStatus);
 }
 
 export async function getProjectTasksGitStatus(projectId: string, force = false): Promise<Record<string, GitStatus>> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/tasks-status${force ? '?force=1' : ''}`);
-  return res.json();
+  const fetchProjectStatus = async () => {
+    const res = await fetch(`${API_BASE}/projects/${projectId}/tasks-status${force ? '?force=1' : ''}`);
+    return res.json();
+  };
+  if (force) {
+    return fetchProjectStatus();
+  }
+  return dedupeInFlight(`project-git-status:${projectId}`, fetchProjectStatus);
 }
 
 export async function getTaskGitDiff(taskId: string): Promise<{ diff: string }> {
@@ -327,19 +373,23 @@ export async function generateTaskCommitMessage(taskId: string): Promise<CommitM
 }
 
 export async function getActiveDevServers(): Promise<string[]> {
-  try {
-    const res = await fetch(`${API_BASE}/dev-servers/active`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.activeTaskIds || [];
-  } catch {
-    return [];
-  }
+  return dedupeInFlight('active-dev-servers', async () => {
+    try {
+      const res = await fetch(`${API_BASE}/dev-servers/active`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.activeTaskIds || [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function getDevServerState(taskId: string): Promise<DevServerState> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server`);
-  return res.json();
+  return dedupeInFlight(`dev-server:${taskId}`, async () => {
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server`);
+    return res.json();
+  });
 }
 
 export async function pingDevServer(taskId: string): Promise<{ ready: boolean; port: number; url?: string }> {
@@ -408,8 +458,11 @@ export async function getTaskChats(taskId: string, options?: GetTaskChatsOptions
   if (options?.includeMessages) params.set('include_messages', 'true');
   if (options?.activeChatId) params.set('active_chat_id', options.activeChatId);
   const qs = params.toString() ? `?${params.toString()}` : '';
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/chats${qs}`, { signal: options?.signal });
-  return res.json();
+  const dedupeKey = `task_chats:${taskId}:${qs}`;
+  return dedupeInFlight(dedupeKey, async () => {
+    const res = await fetch(`${API_BASE}/tasks/${taskId}/chats${qs}`, { signal: options?.signal });
+    return res.json();
+  });
 }
 
 export async function createChatSession(taskId: string, title?: string, agent_cli?: string, model?: string, thinking_effort?: string, id?: string): Promise<ChatSession> {
@@ -441,8 +494,11 @@ export async function deleteChatSession(id: string): Promise<{ success: boolean 
 }
 
 export async function getChatMessages(sessionId: string, signal?: AbortSignal): Promise<ChatMessage[]> {
-  const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`, { signal });
-  return res.json();
+  const dedupeKey = `chat_messages:${sessionId}`;
+  return dedupeInFlight(dedupeKey, async () => {
+    const res = await fetch(`${API_BASE}/chats/${sessionId}/messages`, { signal });
+    return res.json();
+  });
 }
 
 export async function deleteChatMessage(id: string): Promise<{ success: boolean }> {

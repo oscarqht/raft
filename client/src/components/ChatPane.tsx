@@ -355,6 +355,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   const chatsAbortControllerRef = useRef<AbortController | null>(null);
   const activeChatAbortControllerRef = useRef<AbortController | null>(null);
   const lastLoadedActiveChatRef = useRef<string | null>(null);
+  const inFlightChatLoadRef = useRef<string | null>(null);
+  const prevActiveChatIdRef = useRef<string | null>(activeChatId);
   const taskRef = useRef(task);
   taskRef.current = task;
 
@@ -367,6 +369,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     chatsAbortControllerRef.current = controller;
     const currentTaskId = task.id;
     const targetActiveId = activeChatId || getCachedActiveChatId(currentTaskId);
+    inFlightChatLoadRef.current = targetActiveId || '__initial__';
     setSyncingChats(true);
 
     try {
@@ -444,6 +447,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     } catch (err: any) {
       if (err.name === 'AbortError') return;
     } finally {
+      inFlightChatLoadRef.current = null;
       if (!controller.signal.aborted && taskRef.current.id === currentTaskId) {
         setLoadingChats(false);
         setSyncingChats(false);
@@ -512,6 +516,9 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   // Load messages and queued messages when active chat changes (instant cached + revalidate in background)
   useEffect(() => {
     if (!activeChatId) return;
+    const isChatSwitched = prevActiveChatIdRef.current !== activeChatId;
+    prevActiveChatIdRef.current = activeChatId;
+
     setCachedActiveChatId(task.id, activeChatId);
     const cachedQueue = getCachedQueuedMessages(activeChatId);
     setQueuedMessages(cachedQueue);
@@ -522,7 +529,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     if (cached && cached.length > 0) {
       setMessages(cached);
       setLastCachedMessageId(cached[cached.length - 1].id);
-    } else {
+    } else if (isChatSwitched) {
       // Never show the previous chat's messages while this one loads
       setMessages([]);
       setLastCachedMessageId(null);
@@ -545,8 +552,12 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       return;
     }
 
-    if (lastLoadedActiveChatRef.current === activeChatId) {
-      // Already freshly populated by loadChats in the same cycle!
+    if (
+      lastLoadedActiveChatRef.current === activeChatId ||
+      inFlightChatLoadRef.current === activeChatId ||
+      (inFlightChatLoadRef.current === '__initial__' && chats.length > 0 && chats[0].id === activeChatId)
+    ) {
+      // Already being fetched or freshly populated by loadChats in the same cycle!
       lastLoadedActiveChatRef.current = null;
       setSyncingActiveChat(false);
       return;
