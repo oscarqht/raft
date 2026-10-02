@@ -337,7 +337,7 @@ export function normalizeStepOutput(val: unknown): string {
 const StepOutputDrawer: React.FC<{
   output?: unknown;
   error?: unknown;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
 }> = ({ output, error, status }) => {
   const [copied, setCopied] = useState(false);
   const [expandedFull, setExpandedFull] = useState(false);
@@ -378,20 +378,25 @@ const StepOutputDrawer: React.FC<{
     );
   }
 
-  const isFailed = status === 'failed';
+  const isInterrupted = status === 'interrupted' || error === 'Interrupted by steer';
+  const isFailed = status === 'failed' && !isInterrupted;
 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
       className={`mt-2 rounded-xl overflow-hidden border text-left shadow-soft-inner transition-all ${
-        isFailed
+        isInterrupted
+          ? 'border-amber-500/40 bg-[#161208] dark:bg-[#120d04]'
+          : isFailed
           ? 'border-rose-500/40 bg-[#140b0e] dark:bg-[#11070a]'
           : 'border-cozy-border/60 bg-[#090d16] dark:bg-[#070b12]'
       }`}
     >
       <div
         className={`flex items-center justify-between px-3 py-1.5 border-b text-[10px] select-none ${
-          isFailed
+          isInterrupted
+            ? 'bg-amber-950/40 border-amber-500/20 text-amber-300'
+            : isFailed
             ? 'bg-rose-950/40 border-rose-500/20 text-rose-300'
             : 'bg-black/40 border-white/5 text-cozy-muted'
         }`}
@@ -411,7 +416,9 @@ const StepOutputDrawer: React.FC<{
       </div>
       <div
         className={`p-3 text-[11px] font-mono leading-relaxed overflow-x-auto max-h-60 overflow-y-auto select-text ${
-          isFailed
+          isInterrupted
+            ? 'text-amber-100 selection:bg-amber-500/40'
+            : isFailed
             ? 'text-rose-100 selection:bg-rose-500/40'
             : 'text-slate-300 selection:bg-teal-500/30'
         }`}
@@ -422,14 +429,16 @@ const StepOutputDrawer: React.FC<{
         {isTruncated && !expandedFull && (
           <div
             className={`mt-2 pt-2 border-t flex justify-center ${
-              isFailed ? 'border-rose-500/20' : 'border-white/10'
+              isInterrupted ? 'border-amber-500/20' : isFailed ? 'border-rose-500/20' : 'border-white/10'
             }`}
           >
             <button
               type="button"
               onClick={() => setExpandedFull(true)}
               className={`text-[10px] font-sans font-medium px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                isFailed
+                isInterrupted
+                  ? 'text-amber-300 hover:text-amber-200 hover:bg-amber-500/20'
+                  : isFailed
                   ? 'text-rose-300 hover:text-rose-200 hover:bg-rose-500/20'
                   : 'text-teal-400 hover:text-teal-300 hover:bg-teal-500/10'
               }`}
@@ -450,8 +459,9 @@ const StepCard: React.FC<{
   onAbort?: () => void;
 }> = ({ step, isExpanded, onToggleExpand, onAbort }) => {
   const isRunning = step.status === 'running';
-  const isFailed = step.status === 'failed';
-  const hasDetails = Boolean(step.output || step.error || isFailed);
+  const isInterrupted = step.status === 'interrupted' || step.error === 'Interrupted by steer';
+  const isFailed = step.status === 'failed' && !isInterrupted;
+  const hasDetails = Boolean(step.output || step.error || isFailed || isInterrupted);
 
   const getCategoryIcon = () => {
     switch (step.category) {
@@ -490,6 +500,8 @@ const StepCard: React.FC<{
       className={`group rounded-xl border p-2.5 transition-all text-xs cv-auto-card ${
         isRunning
           ? 'border-teal-500/40 bg-teal-500/5 dark:bg-teal-950/20 shadow-glow-sm ring-1 ring-teal-500/30'
+          : isInterrupted
+          ? 'border-amber-500/30 bg-amber-500/5 hover:border-amber-500/50 cursor-pointer'
           : isFailed
           ? 'border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50 cursor-pointer'
           : hasDetails
@@ -535,7 +547,11 @@ const StepCard: React.FC<{
                 {step.duration}s
               </span>
             )}
-            {isFailed ? (
+            {isInterrupted ? (
+              <span title="Step interrupted by steer" className="flex items-center">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              </span>
+            ) : isFailed ? (
               <span title="Step failed" className="flex items-center">
                 <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
               </span>
@@ -1048,16 +1064,38 @@ export const ChatMessageList = React.memo(
       };
     }, [clearScrollTimers]);
 
-    // O(N) pre-pass to map each message to its preceding user prompt
-    const previousUserPrompts = useMemo(() => {
+    // O(N) pre-pass to map each message to its preceding user prompt and user message
+    const { previousUserPrompts, previousUserMessages } = useMemo(() => {
       let lastPrompt = '';
-      return messages.map((m) => {
-        const current = lastPrompt;
+      let lastMsg: ChatMessage | null = null;
+      const prompts: string[] = [];
+      const msgs: (ChatMessage | null)[] = [];
+      for (const m of messages) {
+        prompts.push(lastPrompt);
+        msgs.push(lastMsg);
         if (m.role === 'user') {
           lastPrompt = typeof m.content === 'string' ? m.content : '';
+          lastMsg = m;
         }
-        return current;
-      });
+      }
+      return { previousUserPrompts: prompts, previousUserMessages: msgs };
+    }, [messages]);
+
+    const isLastUserMessageSteer = useMemo(() => {
+      let lastUserMsg: ChatMessage | null = null;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          lastUserMsg = messages[i];
+          break;
+        }
+      }
+      if (!lastUserMsg?.metadata) return false;
+      try {
+        const parsed = typeof lastUserMsg.metadata === 'string' ? JSON.parse(lastUserMsg.metadata) : lastUserMsg.metadata;
+        return Boolean(parsed?.is_steer || parsed?.isSteer);
+      } catch {
+        return false;
+      }
     }, [messages]);
 
     const rowVirtualizer = useVirtualizer({
@@ -1323,6 +1361,7 @@ export const ChatMessageList = React.memo(
                         clis={clis}
                         currentCli={currentCli}
                         previousUserPrompt={previousUserPrompts[index] || ''}
+                        previousUserMessage={previousUserMessages[index] || null}
                         onRetryPrompt={onRetryPrompt}
                         onSwitchCliAndRetry={onSwitchCliAndRetry}
                         onOpenSettings={onOpenSettings}
@@ -1349,7 +1388,9 @@ export const ChatMessageList = React.memo(
                 <div className="w-full py-2 text-sm text-cozy-text">
                   <span className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-medium text-xs animate-pulse">
                     <Sparkles className="w-3.5 h-3.5" />
-                    Thinking and exploring codebase...
+                    {isLastUserMessageSteer
+                      ? '⚡ Agent steered — processing new instructions...'
+                      : 'Thinking and exploring codebase...'}
                   </span>
                 </div>
               </div>
@@ -1405,6 +1446,7 @@ const MessageItem: React.FC<{
   clis?: CliInfo[];
   currentCli?: string;
   previousUserPrompt?: string;
+  previousUserMessage?: ChatMessage | null;
   onRetryPrompt?: (userPrompt: string, failedMsgId: string) => void;
   onSwitchCliAndRetry?: (targetCli: string, userPrompt: string, failedMsgId: string) => void;
   onOpenSettings?: () => void;
@@ -1418,6 +1460,7 @@ const MessageItem: React.FC<{
   clis,
   currentCli,
   previousUserPrompt = '',
+  previousUserMessage = null,
   onRetryPrompt,
   onSwitchCliAndRetry,
   onOpenSettings,
@@ -1427,6 +1470,32 @@ const MessageItem: React.FC<{
   const [showThoughts, setShowThoughts] = useState(false);
   const [expandedSkillName, setExpandedSkillName] = useState<string | null>(null);
   const [copiedTarget, setCopiedTarget] = useState<'msg' | 'thought' | 'json' | 'export' | null>(null);
+
+  const { isSteer, interrupted } = useMemo(() => {
+    let steer = false;
+    let intr: 'steer' | 'user' | null = null;
+    if (msg.metadata) {
+      try {
+        const parsed = typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+        if (parsed?.is_steer || parsed?.isSteer) steer = true;
+        if (parsed?.interrupted) intr = parsed.interrupted;
+      } catch {}
+    }
+    return { isSteer: steer, interrupted: intr };
+  }, [msg.metadata]);
+
+  const isSteeredTurn = useMemo(() => {
+    if (!previousUserMessage?.metadata) return false;
+    try {
+      const parsed =
+        typeof previousUserMessage.metadata === 'string'
+          ? JSON.parse(previousUserMessage.metadata)
+          : previousUserMessage.metadata;
+      return Boolean(parsed?.is_steer || parsed?.isSteer);
+    } catch {
+      return false;
+    }
+  }, [previousUserMessage]);
 
   const handleCopyText = useCallback((target: 'msg' | 'thought' | 'json' | 'export', text: string) => {
     onCopy(text);
@@ -1750,6 +1819,16 @@ const MessageItem: React.FC<{
               : 'w-full bg-transparent border-0 text-cozy-text px-0 py-1 break-words [overflow-wrap:anywhere]'
           }`}
         >
+          {/* Steered message badge */}
+          {isUser && isSteer && (
+            <div className="mb-2">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30 select-none">
+                <Zap className="w-3 h-3 fill-current text-teal-600 dark:text-teal-400" />
+                <span>Steered</span>
+              </span>
+            </div>
+          )}
+
           {/* Active Skills Chips */}
           {detectedSkills.length > 0 && (
             <div className="mb-2 w-full">
@@ -2010,6 +2089,8 @@ const MessageItem: React.FC<{
                     ? `Running: ${activeStep.title}`
                     : steps.length > 0
                     ? `Completed ${steps.length} actions, finalizing response...`
+                    : isSteeredTurn
+                    ? '⚡ Agent steered — processing new instructions...'
                     : 'Inspecting workspace and planning actions...'}
                 </span>
               </div>
@@ -2143,6 +2224,20 @@ const MessageItem: React.FC<{
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Interrupted state note for assistant turn */}
+          {!isUser && !isStreaming && interrupted === 'steer' && (
+            <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 select-none">
+              <Zap className="w-3.5 h-3.5 fill-current text-amber-500" />
+              <span>Interrupted by steer</span>
+            </div>
+          )}
+          {!isUser && !isStreaming && interrupted === 'user' && (
+            <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 select-none">
+              <Square className="w-3 h-3 fill-current text-rose-500" />
+              <span>Stopped by user</span>
             </div>
           )}
 

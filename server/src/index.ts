@@ -2196,7 +2196,7 @@ interface ActiveChatSession {
   sessionId: string;
   assistantMsgId: string;
   getContent: () => string;
-  abort: () => void;
+  abort: (options?: { reason?: 'steered' | 'user' }) => void;
 }
 
 const activeChatSessions = new Map<string, ActiveChatSession>();
@@ -2729,7 +2729,7 @@ wss.on('connection', (ws: WebSocket) => {
 
       // 5. Chat message prompt
       else if (msg.type === 'send_chat_message') {
-        const { sessionId, prompt, agentCli, model, thinkingEffort, attachments } = msg;
+        const { sessionId, prompt, agentCli, model, thinkingEffort, attachments, isSteer } = msg;
         const session = db.prepare('SELECT * FROM chat_sessions WHERE id = ?').get(sessionId) as any;
         if (!session) return send({ type: 'error', error: 'Chat session not found' });
         const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(session.task_id) as any;
@@ -2737,7 +2737,7 @@ wss.on('connection', (ws: WebSocket) => {
 
         // If a previous agent run is active for this session, abort it first
         if (activeChatSessions.has(sessionId)) {
-          activeChatSessions.get(sessionId)?.abort();
+          activeChatSessions.get(sessionId)?.abort({ reason: isSteer ? 'steered' : 'user' });
         }
 
         const cliToUse = agentCli || session.agent_cli || getEffectiveAgentCli();
@@ -2745,6 +2745,9 @@ wss.on('connection', (ws: WebSocket) => {
         // Extract any skills or slash commands present in prompt
         const matchedSkills = extractMatchedSkills(cliToUse, prompt, task?.worktree_path);
         const metadataObj: Record<string, any> = {};
+        if (isSteer) {
+          metadataObj.is_steer = true;
+        }
         if (Array.isArray(attachments) && attachments.length > 0) {
           metadataObj.attachments = attachments;
         }
@@ -3031,7 +3034,7 @@ wss.on('connection', (ws: WebSocket) => {
           return r;
         };
 
-        const saveAssistantProgress = (force = false, isSpendCap = false) => {
+        const saveAssistantProgress = (force = false, isSpendCap = false, interrupted?: 'steer' | 'user') => {
           const currentNow = Date.now();
           if (force || currentNow - lastDbSaveTime > 300) {
             lastDbSaveTime = currentNow;
@@ -3041,6 +3044,7 @@ wss.on('connection', (ws: WebSocket) => {
                 model: modelToUse,
                 steps: assistantSteps,
                 ...(isSpendCap ? { error: true, errorType: 'spend_cap', errorMessage: assistantResponse } : {}),
+                ...(interrupted ? { interrupted } : {}),
               };
               db.prepare(`
                 UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?
@@ -3184,7 +3188,8 @@ wss.on('connection', (ws: WebSocket) => {
             }
           };
 
-          const abortAlphaSession = () => {
+          const abortAlphaSession = (options?: { reason?: 'steered' | 'user' }) => {
+            const isSteered = options?.reason === 'steered';
             if (broadcastTimer) {
               clearTimeout(broadcastTimer);
               broadcastTimer = null;
@@ -3193,15 +3198,23 @@ wss.on('connection', (ws: WebSocket) => {
             const currentNow = Date.now();
             for (const s of assistantSteps) {
               if (s.status === 'running') {
-                s.status = 'failed';
-                s.error = 'Canceled by user';
+                s.status = isSteered ? 'interrupted' : 'failed';
+                s.error = isSteered ? 'Interrupted by steer' : 'Canceled by user';
                 s.endTime = currentNow;
               }
             }
-            saveAssistantProgress(true);
+            saveAssistantProgress(true, false, isSteered ? 'steer' : 'user');
             activeChatSessions.delete(sessionId);
-            setChatSessionStatus(sessionId, 'idle', currentNow);
-            broadcastWs({ type: 'aborted', sessionId });
+            if (!isSteered) {
+              setChatSessionStatus(sessionId, 'idle', currentNow);
+            }
+            broadcastWs({
+              type: 'aborted',
+              sessionId,
+              reason: isSteered ? 'steered' : 'user',
+              messageId: assistantMsgId,
+              steps: assistantSteps,
+            });
           };
 
           activeChatSessions.set(sessionId, {
@@ -3508,7 +3521,8 @@ wss.on('connection', (ws: WebSocket) => {
           }
         });
 
-        const abortSession = () => {
+        const abortSession = (options?: { reason?: 'steered' | 'user' }) => {
+          const isSteered = options?.reason === 'steered';
           if (broadcastTimer) {
             clearTimeout(broadcastTimer);
             broadcastTimer = null;
@@ -3519,15 +3533,23 @@ wss.on('connection', (ws: WebSocket) => {
           const currentNow = Date.now();
           for (const s of assistantSteps) {
             if (s.status === 'running') {
-              s.status = 'failed';
-              s.error = 'Canceled by user';
+              s.status = isSteered ? 'interrupted' : 'failed';
+              s.error = isSteered ? 'Interrupted by steer' : 'Canceled by user';
               s.endTime = currentNow;
             }
           }
-          saveAssistantProgress(true);
+          saveAssistantProgress(true, false, isSteered ? 'steer' : 'user');
           activeChatSessions.delete(sessionId);
-          setChatSessionStatus(sessionId, 'idle', currentNow);
-          broadcastWs({ type: 'aborted', sessionId });
+          if (!isSteered) {
+            setChatSessionStatus(sessionId, 'idle', currentNow);
+          }
+          broadcastWs({
+            type: 'aborted',
+            sessionId,
+            reason: isSteered ? 'steered' : 'user',
+            messageId: assistantMsgId,
+            steps: assistantSteps,
+          });
         };
 
         activeChatSessions.set(sessionId, {
