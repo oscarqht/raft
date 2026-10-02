@@ -108,3 +108,38 @@ test('missing reset dates are not presented as an imminent reset', () => {
   assert.equal(html.match(/Reset date unavailable/g)?.length, 3);
   assert.ok(!html.includes('Resets soon'));
 });
+
+test('renders daily speed and remaining daily budget for Codex and Claude', () => {
+  setCachedAgentUsages({
+    codex: {
+      cli: 'codex', providerName: 'OpenAI Codex', isAvailable: true, updatedAt: Date.now(),
+      costLimit: {
+        used: 48.96, limit: 1200, currency: 'Credits', remaining: 1151.04, remainingPercent: 96,
+        resetsAt: '2026-11-01T00:00:00.000Z', resetDescription: 'Resets in 29d 18h',
+        dailySpeed: 39.83, dailyRemainingBudget: 38.66,
+      },
+    },
+    claude: {
+      cli: 'claude', providerName: 'Claude Code', isAvailable: true, updatedAt: Date.now(),
+      costLimit: {
+        used: 29.48, limit: 200, currency: 'USD', remaining: 170.52, remainingPercent: 85,
+        resetsAt: '2026-11-01T00:00:00.000Z', resetDescription: 'Resets in 29d 18h',
+        dailySpeed: 24.04, dailyRemainingBudget: 5.73,
+      },
+    },
+  });
+
+  const html = renderSettings('budgets');
+  // Daily speed labels and values
+  assert.ok(html.includes('Daily speed:'));
+  assert.ok(html.includes('39.83'));
+  assert.ok(html.includes('Credits'));
+  assert.ok(html.includes('$24.04'));
+
+  // Remaining daily budget labels and values
+  assert.ok(html.includes('Remaining daily budget:'));
+  assert.ok(html.includes('38.66'));
+  assert.ok(html.includes('$5.73'));
+  assert.ok(html.includes('/ day'));
+});
+

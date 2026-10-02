@@ -9,10 +9,13 @@ import {
   Layers,
   Copy,
   Check,
+  Gauge,
+  Calendar,
 } from 'lucide-react';
 import { AgentUsageSnapshot, CliInfo } from '../types';
 import { getAllAgentUsages } from '../api';
 import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
+import { calculateDailyBudgetMetrics } from '../utils/budget';
 
 interface AgentUsageCardProps {
   clis: CliInfo[];
@@ -322,56 +325,117 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
             )}
 
             {/* Spend Control / Credit Limit (codexCreditLimit for Codex, providerCost for Claude) */}
-            {currentSnapshot.costLimit && (
-              <div className="p-4 rounded-2xl bg-cozy-surface border border-cozy-border space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Coins className="w-3.5 h-3.5 text-amber-500" />
-                    <span className="text-xs font-bold text-cozy-text">
-                      {currentSnapshot.costLimit.period || 'Credit / Spend Limit'}
-                    </span>
+            {currentSnapshot.costLimit && (() => {
+              const dailyMetrics = calculateDailyBudgetMetrics(currentSnapshot.costLimit);
+              const dailySpeed = currentSnapshot.costLimit.dailySpeed ?? dailyMetrics.dailySpeed;
+              const dailyRemainingBudget = currentSnapshot.costLimit.dailyRemainingBudget ?? dailyMetrics.dailyRemainingBudget;
+
+              return (
+                <div className="p-4 rounded-2xl bg-cozy-surface border border-cozy-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-3.5 h-3.5 text-amber-500" />
+                      <span className="text-xs font-bold text-cozy-text">
+                        {currentSnapshot.costLimit.period || 'Credit / Spend Limit'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {typeof currentSnapshot.costLimit.remainingPercent === 'number' && (
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${getBadgeColorClass(
+                            currentSnapshot.costLimit.remainingPercent
+                          )}`}
+                        >
+                          {currentSnapshot.costLimit.remainingPercent}% remaining
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {typeof currentSnapshot.costLimit.remainingPercent === 'number' && (
-                      <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${getBadgeColorClass(
+
+                  {/* Usage Bar */}
+                  {typeof currentSnapshot.costLimit.remainingPercent === 'number' && (
+                    <div className="h-2.5 w-full bg-cozy-subtle rounded-full overflow-hidden border border-cozy-border/60">
+                      <div
+                        className={`h-full transition-all duration-500 rounded-full ${getMeterColorClass(
                           currentSnapshot.costLimit.remainingPercent
                         )}`}
+                        style={{ width: `${Math.max(3, currentSnapshot.costLimit.remainingPercent)}%` }}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-[11px] text-cozy-muted font-mono">
+                    <div>
+                      {currentSnapshot.costLimit.limit !== null && (
+                        <span>
+                          {formatCostAmount(currentSnapshot.costLimit.used, currentSnapshot.costLimit.currency)} /{' '}
+                          {formatCostAmount(currentSnapshot.costLimit.limit, currentSnapshot.costLimit.currency)}
+                          {(currentSnapshot.costLimit.currency || '').toUpperCase() !== 'USD' && (
+                            <span> {currentSnapshot.costLimit.currency || 'Credits'}</span>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <span>{costResetDescription || 'Reset date unavailable'}</span>
+                  </div>
+
+                  {/* Daily Speed & Remaining Daily Budget */}
+                  {(dailySpeed !== null || dailyRemainingBudget !== null) && (
+                    <div className="pt-2.5 border-t border-cozy-border/60 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                      <div
+                        className="flex items-center justify-between sm:justify-start gap-2 bg-cozy-subtle/40 px-3 py-2 rounded-xl border border-cozy-border/50"
+                        title="Average daily spend speed in this billing cycle"
                       >
-                        {currentSnapshot.costLimit.remainingPercent}% remaining
-                      </span>
-                    )}
-                  </div>
-                </div>
+                        <div className="flex items-center gap-1.5 text-cozy-muted">
+                          <Gauge className="w-3.5 h-3.5 text-amber-500" />
+                          <span className="text-[11px] font-medium">Daily speed:</span>
+                        </div>
+                        <div className="font-mono font-semibold text-cozy-text text-xs ml-auto sm:ml-0">
+                          {dailySpeed !== null ? (
+                            <>
+                              <span>{formatCostAmount(dailySpeed, currentSnapshot.costLimit.currency)}</span>
+                              {(currentSnapshot.costLimit.currency || '').toUpperCase() !== 'USD' && (
+                                <span className="text-cozy-muted text-[11px] font-normal"> {currentSnapshot.costLimit.currency || 'Credits'}</span>
+                              )}
+                              <span className="text-cozy-muted text-[10px] font-normal"> / day</span>
+                            </>
+                          ) : (
+                            <span className="text-cozy-muted">—</span>
+                          )}
+                        </div>
+                      </div>
 
-                {/* Usage Bar */}
-                {typeof currentSnapshot.costLimit.remainingPercent === 'number' && (
-                  <div className="h-2.5 w-full bg-cozy-subtle rounded-full overflow-hidden border border-cozy-border/60">
-                    <div
-                      className={`h-full transition-all duration-500 rounded-full ${getMeterColorClass(
-                        currentSnapshot.costLimit.remainingPercent
-                      )}`}
-                      style={{ width: `${Math.max(3, currentSnapshot.costLimit.remainingPercent)}%` }}
-                    />
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between text-[11px] text-cozy-muted font-mono">
-                  <div>
-                    {currentSnapshot.costLimit.limit !== null && (
-                      <span>
-                        {formatCostAmount(currentSnapshot.costLimit.used, currentSnapshot.costLimit.currency)} /{' '}
-                        {formatCostAmount(currentSnapshot.costLimit.limit, currentSnapshot.costLimit.currency)}
-                        {(currentSnapshot.costLimit.currency || '').toUpperCase() !== 'USD' && (
-                          <span> {currentSnapshot.costLimit.currency || 'Credits'}</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <span>{costResetDescription || 'Reset date unavailable'}</span>
+                      <div
+                        className="flex items-center justify-between sm:justify-end gap-2 bg-cozy-subtle/40 px-3 py-2 rounded-xl border border-cozy-border/50"
+                        title="Allowable daily budget until next reset"
+                      >
+                        <div className="flex items-center gap-1.5 text-cozy-muted">
+                          <Calendar className="w-3.5 h-3.5 text-teal-500" />
+                          <span className="text-[11px] font-medium">Remaining daily budget:</span>
+                        </div>
+                        <div
+                          className={`font-mono font-semibold text-xs ${
+                            dailyRemainingBudget === 0 ? 'text-rose-500' : 'text-teal-600 dark:text-teal-400'
+                          }`}
+                        >
+                          {dailyRemainingBudget !== null ? (
+                            <>
+                              <span>{formatCostAmount(dailyRemainingBudget, currentSnapshot.costLimit.currency)}</span>
+                              {(currentSnapshot.costLimit.currency || '').toUpperCase() !== 'USD' && (
+                                <span className="text-cozy-muted text-[11px] font-normal"> {currentSnapshot.costLimit.currency || 'Credits'}</span>
+                              )}
+                              <span className="text-cozy-muted text-[10px] font-normal"> / day</span>
+                            </>
+                          ) : (
+                            <span className="text-cozy-muted">—</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Detailed Model Buckets (for Antigravity - keeping current design) */}
             {currentSnapshot.buckets && currentSnapshot.buckets.length > 0 && (

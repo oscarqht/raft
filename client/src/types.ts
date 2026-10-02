@@ -356,6 +356,10 @@ export interface AgentCostLimit {
   period?: string | null;
   resetsAt?: string | null;
   resetDescription?: string | null;
+  dailySpeed?: number | null;
+  dailyRemainingBudget?: number | null;
+  daysElapsed?: number | null;
+  daysRemaining?: number | null;
 }
 
 export interface AgentUsageSnapshot {
