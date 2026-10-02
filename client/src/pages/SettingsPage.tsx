@@ -63,6 +63,7 @@ import {
   reconnectAlphaDevice,
 } from '../api';
 import { AgentUsageCard } from '../components/AgentUsageCard';
+import { isWindowsPlatform } from '../utils/platform';
 
 import {
   getCachedModels,
@@ -105,6 +106,7 @@ const SettingsPageContent: React.FC<SettingsPageProps & { settings: Settings }> 
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedOs, setCopiedOs] = useState<'win' | 'mac' | null>(null);
   const [savedToast, setSavedToast] = useState(false);
+  const isWindows = settings?.platform === 'win32' || isWindowsPlatform(settings?.platform);
 
   // Tabs state: 'agents' | 'budgets' | 'alpha' | 'skills' | 'git'
   type SettingsTab = 'agents' | 'budgets' | 'alpha' | 'skills' | 'git';
@@ -1663,7 +1665,7 @@ You have access to terminal commands via your connected local desktop device.
             Review usage quotas, spend allowances, and remaining credits for all AI providers except Alpha Intelligence.
           </p>
         </div>
-        <AgentUsageCard clis={localClis} />
+        <AgentUsageCard clis={localClis} isWindows={isWindows} />
       </div>
     )}
 

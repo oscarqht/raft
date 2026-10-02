@@ -395,6 +395,7 @@ app.get('/api/settings', async (_req: Request, res: Response) => {
     alpha_intelligence_api_url,
     alpha_intelligence_api_key,
     tailscale_https_url: tailscaleServeInfo?.httpsUrl || null,
+    platform: process.platform,
   });
 });
 

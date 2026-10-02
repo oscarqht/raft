@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { AgentUsageSnapshot } from '../types';
 import { getAllAgentUsages } from '../api';
 import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
+import { isWindowsPlatform } from '../utils/platform';
 
 export const BUDGET_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -44,6 +45,7 @@ export const HeaderBudgets: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (isWindowsPlatform()) return;
     isMountedRef.current = true;
     load(false);
     const refresh = () => { if (document.visibilityState === 'visible') void load(true); };
@@ -53,6 +55,8 @@ export const HeaderBudgets: React.FC = () => {
       clearInterval(interval);
     };
   }, [load]);
+
+  if (isWindowsPlatform()) return null;
 
   const items = Object.values(usages)
     .filter((s) => s.cli.toLowerCase() !== 'alpha')

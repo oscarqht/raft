@@ -11,18 +11,23 @@ import {
   Check,
   Gauge,
   Calendar,
+  Laptop,
+  ExternalLink,
 } from 'lucide-react';
 import { AgentUsageSnapshot, CliInfo } from '../types';
 import { getAllAgentUsages } from '../api';
 import { getCachedAgentUsages, setCachedAgentUsages } from '../cache';
 import { calculateDailyBudgetMetrics } from '../utils/budget';
+import { isWindowsPlatform } from '../utils/platform';
 
 interface AgentUsageCardProps {
   clis: CliInfo[];
+  isWindows?: boolean;
 }
 
 export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
   clis,
+  isWindows,
 }) => {
   const [usages, setUsages] = useState<Record<string, AgentUsageSnapshot>>(() => {
     return getCachedAgentUsages() || {};
@@ -75,9 +80,16 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
     }
   }, []);
 
+  const isPlatformWindows =
+    isWindows !== undefined
+      ? isWindows
+      : isWindowsPlatform() || Object.values(usages).some((snapshot) => snapshot.error?.includes('CodexBar is macOS only'));
+
   useEffect(() => {
-    loadAllUsages(false);
-  }, [loadAllUsages]);
+    if (!isPlatformWindows) {
+      loadAllUsages(false);
+    }
+  }, [loadAllUsages, isPlatformWindows]);
 
   const handleRefresh = () => {
     loadAllUsages(true);
@@ -99,6 +111,45 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
       setTimeout(() => setCopiedBrew(false), 2000);
     }
   };
+
+  if (isPlatformWindows) {
+    return (
+      <div className="p-6 sm:p-8 rounded-2xl bg-cozy-subtle/40 border border-cozy-border/80 text-center space-y-4">
+        <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-soft-sm">
+          <Laptop className="w-6 h-6" />
+        </div>
+        <div className="max-w-md mx-auto space-y-1.5">
+          <div className="flex items-center justify-center gap-2">
+            <h3 className="text-sm font-bold text-cozy-text">
+              Not Supported on Windows
+            </h3>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
+              macOS Only
+            </span>
+          </div>
+          <p className="text-xs text-cozy-muted leading-relaxed">
+            AI Provider Budgets relies on <strong className="text-cozy-text font-semibold">CodexBar</strong> to retrieve real-time rate limits, usage quotas, and spend balances from OpenAI Codex, Claude Code, and Antigravity. CodexBar is a macOS-only tool and is not supported on Windows.
+          </p>
+        </div>
+
+        <div className="pt-2 flex flex-wrap items-center justify-center gap-3 text-xs text-cozy-muted">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cozy-surface border border-cozy-border shadow-soft-sm">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+            <span>AI agents and tasks continue to run normally</span>
+          </div>
+          <a
+            href="https://github.com/steipete/CodexBar"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cozy-surface hover:bg-cozy-subtle border border-cozy-border text-teal-600 dark:text-teal-400 transition-colors shadow-soft-sm"
+          >
+            <span>Learn about CodexBar</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   const snapshots = Object.values(usages).filter((snapshot) => snapshot.cli.toLowerCase() !== 'alpha');
   const missingCodexBar = snapshots.some((snapshot) => snapshot.error?.includes('CodexBar CLI not found'));
