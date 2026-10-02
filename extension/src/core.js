@@ -19,12 +19,11 @@ export function localUrl(value) {
   return url;
 }
 export function failure(code, message) { return Object.assign(new Error(message), { code }); }
-export function embeddingRule(id, tabId, url) {
-  const origin = localUrl(url).origin;
+export function embeddingRule(id, tabId) {
   return { id, priority: 1, action: { type: 'modifyHeaders', responseHeaders: [
     { header: 'x-frame-options', operation: 'remove' },
     { header: 'content-security-policy', operation: 'remove' },
-  ] }, condition: { tabIds: [tabId], resourceTypes: ['sub_frame'], regexFilter: '^' + origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/' } };
+  ] }, condition: { tabIds: [tabId], resourceTypes: ['sub_frame'], regexFilter: '^https?://' } };
 }
 export function cropBounds(rect, viewport, bitmap) {
   const values = [rect?.x, rect?.y, rect?.width, rect?.height, viewport?.width, viewport?.height];

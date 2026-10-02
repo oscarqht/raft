@@ -8,6 +8,7 @@ import { usePreviewExtension } from '../usePreviewExtension';
 import { statusFromError } from '../previewExtension';
 import { PreviewExtensionDialog } from './PreviewExtensionDialog';
 import { PreviewFrame } from './PreviewFrame';
+import { resolvePreviewAddress, displayPreviewAddress } from '../previewAddress';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
   import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
@@ -36,7 +37,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const [isAddressFocused, setIsAddressFocused] = useState(false);
   const isAddressFocusedRef = useRef(false);
   const addressInputRef = useRef<HTMLInputElement>(null);
-  const currentIframePathRef = useRef('/');
+  const currentIframeAddressRef = useRef('/');
   const [iframeKey, setIframeKey] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -148,7 +149,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setCanGoBack(false);
     setCanGoForward(false);
     setPathInput('/');
-    currentIframePathRef.current = '/';
+    currentIframeAddressRef.current = '/';
     setActiveScreenshot(null);
     setIsCapturing(false);
     setIsStopping(false);
@@ -229,8 +230,10 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const previewOrigin = new URL(devState.url || `http://localhost:${activeDevPort}`).origin;
   const extension = usePreviewExtension(task.id, previewOrigin,
     devState.taskId === task.id && isServerReady && !isPreviewSleeping && !isStopping && (devState.status === 'running' || devState.status === 'starting'), (value) => {
-      currentIframePathRef.current = value.pathname;
-      if (!isAddressFocusedRef.current) setPathInput(value.pathname);
+      let address: string;
+      try { address = displayPreviewAddress(value.url, previewOrigin); } catch { return; }
+      currentIframeAddressRef.current = address;
+      if (!isAddressFocusedRef.current) setPathInput(address);
       setCanGoBack(Boolean(value.canGoBack));
       setCanGoForward(Boolean(value.canGoForward));
     });
@@ -359,18 +362,16 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   };
 
   const handleNavigateAddress = async (targetPath?: string) => {
-    let raw = (targetPath ?? pathInput).trim();
-    if (/^https?:\/\//.test(raw)) {
-      try { const url = new URL(raw); raw = url.pathname + url.search + url.hash; } catch {}
+    try {
+      const url = resolvePreviewAddress(targetPath ?? pathInput, resolvePreviewAddress(currentIframeAddressRef.current, previewOrigin));
+      const address = displayPreviewAddress(url, previewOrigin);
+      if (extension.registered) await extension.navigate('to', url);
+      currentIframeAddressRef.current = address;
+      setPathInput(address);
+      if (!extension.registered) setIframeKey((key) => key + 1);
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : 'Could not navigate preview');
     }
-    const normalized = '/' + raw.replace(/^\/+/, '');
-    setPathInput(normalized);
-    currentIframePathRef.current = normalized;
-    if (extension.registered) {
-      try { await extension.navigate('to', normalized); return; }
-      catch (error) { setCaptureError(error instanceof Error ? error.message : 'Could not navigate preview'); }
-    }
-    setIframeKey((key) => key + 1);
   };
 
   const handleNavigateBack = () => { void extension.navigate('back').catch((error) => setCaptureError(error.message)); };
@@ -419,11 +420,11 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         return;
       }
       const rect = previewContainerRef.current.getBoundingClientRect();
-      const result = await extension.capture(rect, `${previewOrigin}${currentIframePathRef.current || '/'}`);
+      const result = await extension.capture(rect, resolvePreviewAddress(currentIframeAddressRef.current, previewOrigin));
       if (currentTaskRef.current !== captureTaskId) return;
       const borderedDataUrl = await addBorderToScreenshotDataUrl(result.dataUrl);
       if (currentTaskRef.current !== captureTaskId) return;
-      setActiveScreenshot({ dataUrl: borderedDataUrl, width: result.width, height: result.height, url: (() => { const url = new URL(result.url, previewOrigin); return url.pathname + url.search + url.hash; })() });
+      setActiveScreenshot({ dataUrl: borderedDataUrl, width: result.width, height: result.height, url: displayPreviewAddress(result.url, previewOrigin) });
     } catch (error) {
       if (currentTaskRef.current !== captureTaskId) return;
       if (statusFromError(error)) setShowExtensionDialog(true);
@@ -433,7 +434,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const currentPath = currentIframePathRef.current || (pathInput.startsWith('/') ? pathInput : '/' + pathInput);
+  const currentPath = currentIframeAddressRef.current || '/';
 
   const handleAttachToChat = (attachments: FileAttachment[]) => {
     const screenshotUrl = activeScreenshot?.url || currentPath;
@@ -452,8 +453,8 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const initialIframeSrc = `${previewOrigin}${currentPath}`;
-  const externalUrl = `${previewOrigin}${currentPath}`;
+  const initialIframeSrc = resolvePreviewAddress(currentPath, previewOrigin);
+  const externalUrl = resolvePreviewAddress(currentPath, previewOrigin);
 
   return (
     <div ref={panelRef} className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
@@ -572,7 +573,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             {isAddressFocused ? (
               <div className="flex-1 min-w-0 flex items-center overflow-hidden">
                 <span className="text-cozy-muted select-none font-mono text-[11px] shrink-0 truncate max-w-[130px]">
-                  {previewOrigin}
+                  {/^https?:\/\//.test(pathInput) ? '' : previewOrigin}
                 </span>
                 <input
                   ref={addressInputRef}
@@ -585,7 +586,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                   onBlur={() => {
                     setIsAddressFocused(false);
                     isAddressFocusedRef.current = false;
-                    setPathInput(currentIframePathRef.current);
+                    setPathInput(currentIframeAddressRef.current);
                   }}
                   onChange={(e) => setPathInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -593,7 +594,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                       handleNavigateAddress();
                       (e.target as HTMLInputElement).blur();
                     } else if (e.key === 'Escape') {
-                      setPathInput(currentIframePathRef.current);
+                      setPathInput(currentIframeAddressRef.current);
                       (e.target as HTMLInputElement).blur();
                     }
                   }}
@@ -605,11 +606,11 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
               <div className="flex-1 min-w-0 overflow-hidden">
                 <span
                   className="block truncate font-mono text-[11px] text-cozy-muted select-none"
-                  title={`http://localhost:${activeDevPort}${pathInput.startsWith('/') ? pathInput : '/' + pathInput}`}
+                  title={externalUrl}
                 >
-                  {previewOrigin}
+                  {/^https?:\/\//.test(pathInput) ? '' : previewOrigin}
                   <span className="text-cozy-text font-medium">
-                    {pathInput.startsWith('/') ? pathInput : '/' + pathInput}
+                    {pathInput}
                   </span>
                 </span>
               </div>
@@ -1054,7 +1055,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
       </div>
 
       {showExtensionDialog && <PreviewExtensionDialog status={extension.status}
-        onClose={() => setShowExtensionDialog(false)} onCheck={extension.retry} onSetup={extension.openSetup} />}
+        onClose={() => setShowExtensionDialog(false)} onCheck={extension.retry} />}
       {extension.error && <div role="status" className="px-3 py-2 text-xs text-cozy-muted">{extension.error} <button className="underline" onClick={() => { void extension.retry(); }}>Reconnect preview extension</button></div>}
       {/* Collapsible Console Logs Drawer */}
       {showConsole && (

@@ -16,6 +16,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Vite resolves imports to real paths; its root must match on macOS (/var -> /private/var).
 const temp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'alpha-bro-preview-fixture-')));
 const servers = [];
+const ownerHost = process.env.PREVIEW_FIXTURE_HOST || '127.0.0.1';
+const ownerUrl = 'http://' + (ownerHost.includes(':') ? '[' + ownerHost + ']' : ownerHost) + ':3300';
 const attachments = new Map();
 const statuses = new Map();
 const assetsPath = path.join(root, 'client/dist/assets');
@@ -44,18 +46,20 @@ function App() {
   const [taskId, setTaskId] = useState('task-a');
   const [unrestricted, setUnrestricted] = useState(false);
   const [hmr, setHmr] = useState(false);
+  const [initialRedirect, setInitialRedirect] = useState(false);
   const [hmrStatus, setHmrStatus] = useState('');
   const [attachmentStatus, setAttachmentStatus] = useState('No screenshot attached');
   const [wideChat, setWideChat] = useState(false);
-  const id = taskId + (hmr ? '-hmr' : unrestricted ? '-unrestricted' : '');
+  const id = taskId + (initialRedirect ? '-initial-redirect' : hmr ? '-hmr' : unrestricted ? '-unrestricted' : '');
   const task = { id, project_id: 'fixture-project', name: taskId, branch: taskId, base_branch: 'main',
     worktree_path: '/fixture/' + id, status: 'active', created_at: 0, updated_at: 0 };
   return <div style={{height:'100vh', display:'flex', flexDirection:'column'}}>
     <header style={{padding:'10px 14px', display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', borderBottom:'1px solid #cbd5e1', background:'#f8fafc'}}>
       <strong>Alpha Bro Preview Fixture</strong>
       <button data-testid="switch-task" onClick={() => setTaskId(taskId === 'task-a' ? 'task-b' : 'task-a')}>Switch task</button>
-      <button data-testid="toggle-framing" onClick={() => { setHmr(false); setUnrestricted(!unrestricted); }}>{unrestricted ? 'Use restricted app' : 'Use unrestricted app'}</button>
-      <button data-testid="toggle-hmr" onClick={() => { setHmr(!hmr); setUnrestricted(false); }}>{hmr ? 'Use restricted app' : 'Use HMR app'}</button>
+      <button data-testid="toggle-framing" onClick={() => { setInitialRedirect(false); setHmr(false); setUnrestricted(!unrestricted); }}>{unrestricted ? 'Use restricted app' : 'Use unrestricted app'}</button>
+      <button data-testid="toggle-hmr" onClick={() => { setInitialRedirect(false); setHmr(!hmr); setUnrestricted(false); }}>{hmr ? 'Use restricted app' : 'Use HMR app'}</button>
+      <button data-testid="toggle-initial-redirect" onClick={() => { setInitialRedirect(!initialRedirect); setHmr(false); setUnrestricted(false); }}>{initialRedirect ? 'Use local app' : 'Use initial external redirect'}</button>
       <button data-testid="trigger-hmr" disabled={!hmr} onClick={async () => {
         try {
           const response = await fetch('/fixture/hmr', { method:'POST' });
@@ -66,7 +70,7 @@ function App() {
       }}>Trigger HMR</button>
       <span role="status" data-testid="hmr-status">{hmrStatus}</span>
       <button data-testid="resize-panel" onClick={() => setWideChat(!wideChat)}>Resize chat</button>
-      <span data-testid="current-task">{id} · {hmr ? 'Vite HMR :4413' : unrestricted ? 'unrestricted :4412' : 'XFO + CSP :4411'}</span>
+      <span data-testid="current-task">{id} · {initialRedirect ? 'Initial redirect 127.0.0.1:4411' : hmr ? 'Vite HMR :4413' : unrestricted ? 'unrestricted :4412' : 'XFO + CSP :4411'}</span>
     </header>
     <div style={{display:'flex', minHeight:0, flex:1}}>
       <aside style={{width:wideChat ? 430 : 270, flexShrink:0, padding:20, background:'#eff6ff', borderRight:'1px solid #cbd5e1'}}>
@@ -101,7 +105,7 @@ async function serveFile(res, base, requested) {
 }
 function state(taskId) {
   const port = taskId.endsWith('-hmr') ? 4413 : taskId.endsWith('-unrestricted') ? 4412 : 4411;
-  return { taskId, status: statuses.get(taskId) || 'running', port, url: 'http://localhost:' + port,
+  return { taskId, status: statuses.get(taskId) || 'running', port, url: 'http://' + (taskId.endsWith('-initial-redirect') ? '127.0.0.1:' : 'localhost:') + port,
     logs: ['Fixture dev server ready at http://localhost:' + port + '\n'], devCmd: 'fixture', worktreePath: '/fixture/' + taskId };
 }
 
@@ -110,14 +114,14 @@ const previewPage = `<!doctype html><html><head><meta charset="utf-8"><title>Com
 <body><header><h1>Local preview, live state</h1><span id="framing-label"></span></header><main>
 <p id="route"></p><label>Unsaved input <input id="draft" aria-label="Unsaved preview input" placeholder="Type something to prove current state is captured"></label>
 <div class="cards"><div class="card" style="border-top:5px solid #14b8a6">Teal card<br><strong>128 active</strong></div><div class="card" style="border-top:5px solid #6366f1">Indigo card<br><strong>42 changes</strong></div><div class="card" style="border-top:5px solid #f97316">Orange card<br><strong>7 reviews</strong></div></div>
-<button id="open-modal">Open modal</button><a href="/second">Full navigation /second</a><a href="/redirect">Redirect /second</a>
+<button id="open-modal">Open modal</button><a href="/second">Full navigation /second</a><a href="/redirect">Redirect /second</a><a href="/external-redirect">External login flow</a><a href="/external-chain">External HTTP redirect chain</a><a href="/nested">Nested external frame</a>
 <button id="push">SPA push /spa</button><button id="replace">Replace /replaced</button><button id="hash">Set hash</button><button id="back">Page back</button><button id="forward">Page forward</button>
 <dialog id="modal"><h2>Current preview modal</h2><p>This modal and your unsaved input must appear in the screenshot.</p><button id="close-modal">Close modal</button></dialog>
 <div class="bottom">Scrollable footer: screenshot should capture the visible viewport.</div></main>
 <script>
 const route = document.getElementById('route');
 const update = () => { route.textContent = location.pathname + location.search + location.hash; };
-document.getElementById('framing-label').textContent = location.port === '4411' ? 'Restricted app: X-Frame-Options DENY + CSP frame-ancestors none' : 'Unrestricted baseline app';
+document.getElementById('framing-label').textContent = location.port === '4411' || location.hostname.endsWith('.fixture.test') ? 'Restricted app: X-Frame-Options DENY + CSP frame-ancestors none' : 'Unrestricted baseline app';
 document.getElementById('open-modal').onclick = () => document.getElementById('modal').showModal();
 document.getElementById('close-modal').onclick = () => document.getElementById('modal').close();
 document.getElementById('push').onclick = () => { history.pushState({}, '', '/spa'); update(); };
@@ -155,7 +159,7 @@ if (import.meta.hot) import.meta.hot.accept(next => {
 `;
 }
 
-async function listen(port, handler) {
+async function listen(port, handler, host = '127.0.0.1') {
   const server = http.createServer((req, res) => void Promise.resolve(handler(req, res)).catch(error => {
     console.error(error);
     if (!res.headersSent) json(res, { error: error.message }, 500);
@@ -164,7 +168,7 @@ async function listen(port, handler) {
   servers.push(server);
   await new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, '127.0.0.1', resolve);
+    server.listen({ port, host, ipv6Only: host.includes(':') }, resolve);
   });
 }
 
@@ -185,8 +189,8 @@ try {
     server: { host: '127.0.0.1', port: 4413, strictPort: true,
       headers: { 'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'" } } });
   await vite.listen();
-  await listen(4410, async (req, res) => {
-    const url = new URL(req.url, 'http://localhost:4410');
+  await listen(3300, async (req, res) => {
+    const url = new URL(req.url, 'http://localhost:3300');
     if (url.pathname === '/unregistered') {
       res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
       return res.end('<!doctype html><html><head><title>Unregistered preview tab</title></head><body><h1>Unregistered tab: this iframe must remain blocked</h1><p>No Alpha Bro preview session is registered in this tab.</p><iframe title="Unregistered restricted preview" src="http://localhost:4411" style="width:90vw;height:75vh"></iframe></body></html>');
@@ -226,20 +230,44 @@ try {
     if (url.pathname.startsWith('/extension/')) return serveFile(res, path.join(root, 'client/public/extension'), url.pathname.slice(11));
     if (url.pathname.startsWith('/api/')) return json(res, { error: 'Unknown fixture endpoint' }, 404);
     res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' }); res.end(html);
-  });
+  }, ownerHost);
   for (const port of [4411, 4412]) await listen(port, (req, res) => {
-    const url = new URL(req.url, 'http://localhost:' + port);
-    if (url.pathname === '/redirect') { res.writeHead(302, { Location: '/second' }); return res.end(); }
+    const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost:' + port));
+    const external = ['auth.fixture.test', 'callback.fixture.test'].includes(url.hostname);
     const headers = { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' };
-    if (port === 4411 && url.pathname !== '/unrestricted') {
+    if (external || (port === 4411 && url.pathname !== '/unrestricted')) {
       headers['X-Frame-Options'] = 'DENY';
       headers['Content-Security-Policy'] = "frame-ancestors 'none'";
     }
-    res.writeHead(200, headers); res.end(previewPage);
+    const redirect = location => { res.writeHead(302, { ...headers, Location: location }); res.end(); };
+    if (url.pathname === '/redirect') return redirect('/second');
+    if (url.pathname === '/external-redirect' || (url.hostname === '127.0.0.1' && port === 4411 && url.pathname === '/')) {
+      return redirect('http://auth.fixture.test:4412/login');
+    }
+    if (url.pathname === '/external-chain') return redirect('http://auth.fixture.test:4412/redirect-login');
+    if (url.hostname === 'auth.fixture.test' && url.pathname === '/redirect-login') return redirect('http://callback.fixture.test:4412/redirect-callback');
+    if (url.hostname === 'callback.fixture.test' && url.pathname === '/redirect-callback') return redirect('http://localhost:4411/returned');
+    let page = previewPage;
+    if (external && url.pathname === '/login') {
+      page = page.replace('<h1>Local preview, live state</h1>', '<h1>External login page</h1>')
+        .replace('<p id="route"></p>', '<p id="route"></p><a id="continue-callback" href="http://callback.fixture.test:4412/callback">Continue to external callback</a>');
+    } else if (external && url.pathname === '/callback') {
+      page = page.replace('<h1>Local preview, live state</h1>', '<h1>External callback page</h1>')
+        .replace('<p id="route"></p>', '<p id="route"></p><a id="return-local" href="http://localhost:4411/returned">Return to local app</a>');
+    } else if (url.pathname === '/returned') {
+      page = page.replace('<h1>Local preview, live state</h1>', '<h1>Returned to local preview</h1>');
+    } else if (url.pathname === '/nested') {
+      page = page.replace('<div class="bottom">', '<iframe title="Nested external fixture" src="http://auth.fixture.test:4412/nested-child" style="width:95%;height:180px"></iframe><div class="bottom">');
+    } else if (url.pathname === '/nested-child') {
+      page = '<!doctype html><html><body style="font:20px system-ui;background:#fef3c7"><h1>Nested external child</h1><p>This frame must not replace the main preview navigation target.</p></body></html>';
+    }
+    res.writeHead(200, headers); res.end(page);
   });
-  console.log('Preview fixture ready: http://localhost:4410');
+  console.log('Preview fixture ready: ' + ownerUrl);
   console.log('Restricted dev app: http://localhost:4411 | Unrestricted dev app: http://localhost:4412 | Vite HMR: http://localhost:4413');
-  console.log('Unregistered isolation check: http://localhost:4410/unregistered');
+  console.log('Unregistered isolation check: ' + ownerUrl + '/unregistered');
+  console.log('Map auth.fixture.test and callback.fixture.test to 127.0.0.1; optionally map bro.fixture.test to ' + ownerHost + '.');
+  console.log('External login: /external-redirect | HTTP-only chain: /external-chain | Initial redirect: top button.');
   console.log('Use the top controls to switch tasks, framing mode, or panel width. Ctrl+C cleans temporary bundles.');
 } catch (error) {
   await shutdown();

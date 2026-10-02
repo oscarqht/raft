@@ -85,7 +85,6 @@ export function usePreviewExtension(taskId: string, origin: string, enabled: boo
   return {
     status, registered, preparing, error, check, sessionId: session.current,
     retry: async () => { const next = await check(); if (mounted.current && next === 'ready' && !registered) setRevision((value) => value + 1); return next; },
-    openSetup: () => extensionRequest('openSetup'),
     navigate: (command: 'back' | 'forward' | 'reload' | 'to', path?: string) => request('navigate', { command, path }),
     capture: (rect: DOMRect, url: string) => request<PreviewCapture>('capture', {
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },

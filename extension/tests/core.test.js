@@ -5,12 +5,11 @@ test('loopback validation rejects remote origins and credentials', () => {
   for (const value of ['http://localhost:123/', 'http://127.0.0.1:123/', 'http://[::1]:123/']) assert.ok(localUrl(value));
   for (const value of ['https://localhost.evil.test/', 'http://user:secret@localhost/', 'file:///etc/passwd', 'http://100.1.2.3:123/']) assert.throws(() => localUrl(value));
 });
-test('embedding rule is exact origin and subframe scoped', () => {
-  const rule = embeddingRule(1, 7, 'http://127.0.0.1:4000');
+test('embedding rule covers HTTP(S) subframes on one tab without global changes', () => {
+  const rule = embeddingRule(1, 7);
   const match = new RegExp(rule.condition.regexFilter);
-  assert.ok(match.test('http://127.0.0.1:4000/page'));
-  assert.ok(!match.test('http://127.0.0.1:40001/page'));
-  assert.ok(!match.test('http://127X0X0X1:4000/page'));
+  for (const url of ['http://127.0.0.1:4000/page', 'https://login.example.com/auth', 'http://nested.example.org/frame']) assert.ok(match.test(url));
+  assert.ok(!match.test('file:///example'));
   assert.deepEqual(rule.condition.tabIds, [7]);
   assert.deepEqual(rule.condition.resourceTypes, ['sub_frame']);
 });

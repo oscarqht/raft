@@ -25,5 +25,5 @@ test('portable ZIP has matching local/central records and decompressible manifes
     central += 46 + nameLength;
   }
   assert.equal(central, end);
-  assert.ok(seen >= 4);
+  assert.ok(seen >= 3);
 });

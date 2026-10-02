@@ -220,21 +220,22 @@ screenshots, navigation tracking, and improved iframe compatibility. The existin
 crop, annotation, and chat attachment tools are unchanged. The companion replaces
 browser screen sharing; there is no screen-sharing or preview-proxy fallback.
 
-Click the preview's **Enable enhanced preview** button to open setup. Until a store
+Click the preview's **Enable enhanced preview** button to view installation and connection status. Until a store
 release is published, **Install extension** opens a bundled guide with an unpacked
 extension download. After installation, reload Alpha Bro once. HTTP(S) addresses
-on port 3300 connect automatically. For other ports, open the extension from the
-browser toolbar and connect your Alpha Bro address. Basic iframe preview remains available without the extension when the dev app allows embedding.
+on port 3300 connect automatically; other ports are not supported. The extension
+has no popup or options page. Basic iframe preview remains available without the extension when the dev app allows embedding.
 Remote/Tailscale access to the rest of Alpha Bro remains supported; dev preview is
-local-only.
+local-only for the initial dev server; its iframe can navigate to external HTTP(S) pages.
 
 - `npm run build:extension` builds unpacked, installation, and store ZIP artifacts.
 - `npm run test:preview` checks the extension, client bridge, and direct dev-server lifecycle.
-- `npm run preview:fixture` launches an isolated browser QA fixture on ports 4410–4413.
+- `npm run preview:fixture` launches an isolated browser QA fixture on port 3300 (must be free) and preview ports 4411–4413.
 - Client `dev` and `build` automatically regenerate the bundled installation assets.
 - Set `VITE_PREVIEW_EXTENSION_STORE_URL` to the published Chrome/Edge listing at build time to replace the local installation guide link.
 
 See [extension setup, permissions, and packaging](extension/README.md). Screenshots
 are cropped within the extension before they return to Alpha Bro and are not
 persisted by the extension. Embedding rules relax framing headers and enforcing CSP
-only for the registered local dev-server origin's subframes in the connected tab.
+for all HTTP(S) iframe documents in the Alpha Bro tab while the preview session is
+active, including external redirects and nested frames. Other tabs remain unaffected.
