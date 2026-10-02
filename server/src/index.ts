@@ -68,7 +68,8 @@ const isDev =
   !process.env.RAFT_PRODUCTION &&
   process.env.npm_lifecycle_event !== 'start';
 const defaultPort = isDev ? 3301 : 3300;
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : defaultPort;
+// Use RAFT_PORT only; a generic PORT may be inherited from an unrelated parent process.
+const PORT = process.env.RAFT_PORT ? parseInt(process.env.RAFT_PORT, 10) : defaultPort;
 const { host: HOST, isTailscale, source: hostSource } = resolveHost();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });

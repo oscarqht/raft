@@ -454,7 +454,9 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     })?);
 
     let host = resolve_host();
-    let port = std::env::var("PORT")
+    // Only honour RAFT_PORT: a generic PORT is often inherited from whatever
+    // launched us (e.g. another app's terminal) and must not move Raft off 3300.
+    let port = std::env::var("RAFT_PORT")
         .ok()
         .and_then(|p| p.trim().parse::<u16>().ok())
         .unwrap_or(3300);
@@ -485,7 +487,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
 
     let parent_pid = std::process::id();
     cmd.env("RAFT_PARENT_PID", parent_pid.to_string());
-    cmd.env("PORT", port.to_string());
+    cmd.env("RAFT_PORT", port.to_string());
     cmd.env("HOST", &host);
     cmd.env("NODE_ENV", "production");
     cmd.env("PATH", augmented_path());
