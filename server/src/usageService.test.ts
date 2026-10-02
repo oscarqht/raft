@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { getAgentUsage, getAllAgentUsages, parseClaudeData } from './usageService.js';
+import { getAgentUsage, getAllAgentUsages, parseClaudeData, calculateDailyBudgetMetrics } from './usageService.js';
 
 test('getAgentUsage returns a structured snapshot for codex', async () => {
   const snapshot = await getAgentUsage('codex', true);
@@ -93,3 +93,57 @@ test('Claude keeps explicit provider reset dates and does not infer non-monthly 
   assert.strictEqual(defaultMonthly.costLimit?.resetsAt, '2026-11-01T00:00:00.000Z');
   assert.strictEqual(parseClaudeData({ usage: {} }, now).costLimit, null);
 });
+
+test('calculateDailyBudgetMetrics computes daily speed and remaining daily budget correctly', () => {
+  // Cycle starts 2026-10-01T00:00:00Z and resets 2026-11-01T00:00:00Z (31 days total)
+  const resetsAt = '2026-11-01T00:00:00.000Z';
+  const now = Date.parse('2026-10-02T12:00:00Z'); // 1.5 days elapsed, 29.5 days remaining
+
+  const metrics = calculateDailyBudgetMetrics(
+    { limit: 200, used: 30, remaining: 170, resetsAt, period: 'Monthly cap' },
+    now
+  );
+
+  assert.strictEqual(metrics.daysElapsed, 1.5);
+  assert.strictEqual(metrics.daysRemaining, 29.5);
+  // daily speed = 30 / 1.5 = 20.00
+  assert.strictEqual(metrics.dailySpeed, 20);
+  // remaining daily budget = 170 / 29.5 = 5.76
+  assert.strictEqual(metrics.dailyRemainingBudget, 5.76);
+});
+
+test('calculateDailyBudgetMetrics clamps minimum elapsed days to 1 on Day 1 to avoid spikes', () => {
+  const resetsAt = '2026-11-01T00:00:00.000Z';
+  const now = Date.parse('2026-10-01T02:00:00Z'); // only 2 hours into cycle (0.083 days)
+
+  const metrics = calculateDailyBudgetMetrics(
+    { limit: 200, used: 6, remaining: 194, resetsAt, period: 'Monthly cap' },
+    now
+  );
+
+  // effective elapsed days clamped to 1, so speed is 6 / 1 = 6.00 (not 72/day)
+  assert.strictEqual(metrics.dailySpeed, 6);
+  assert.ok(metrics.dailyRemainingBudget !== null && metrics.dailyRemainingBudget > 0);
+});
+
+test('calculateDailyBudgetMetrics returns 0 remaining daily budget when quota exhausted', () => {
+  const resetsAt = '2026-11-01T00:00:00.000Z';
+  const now = Date.parse('2026-10-15T00:00:00Z');
+
+  const metrics = calculateDailyBudgetMetrics(
+    { limit: 200, used: 200, remaining: 0, resetsAt, period: 'Monthly cap' },
+    now
+  );
+
+  assert.strictEqual(metrics.dailyRemainingBudget, 0);
+  assert.strictEqual(metrics.dailySpeed, 14.29); // 200 / 14 days
+});
+
+test('parseClaudeData populates dailySpeed and dailyRemainingBudget on costLimit', () => {
+  const now = Date.parse('2026-10-02T12:00:00Z');
+  const snapshot = parseClaudeData({ usage: { providerCost: { limit: 200, used: 30 } } }, now);
+  assert.ok(snapshot.costLimit);
+  assert.strictEqual(snapshot.costLimit.dailySpeed, 20);
+  assert.strictEqual(snapshot.costLimit.dailyRemainingBudget, 5.76);
+});
+
