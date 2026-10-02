@@ -1,0 +1,18 @@
+import { mkdir, cp, writeFile, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { createZip } from './zip.mjs';
+const root = fileURLToPath(new URL('../', import.meta.url));
+const dist = join(root, 'dist');
+const unpacked = join(dist, 'alpha-bro-extension');
+await rm(dist, { recursive: true, force: true });
+await mkdir(unpacked, { recursive: true });
+for (const file of ['manifest.json', 'src', 'setup.html', 'setup.css', 'icons']) await cp(join(root, file), join(unpacked, file), { recursive: true });
+await writeFile(join(dist, 'alpha-bro-extension.zip'), await createZip(unpacked, 'alpha-bro-extension/'));
+await writeFile(join(dist, 'alpha-bro-extension-store.zip'), await createZip(unpacked));
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Install Alpha Bro Companion</title><style>body{font:16px/1.7 system-ui,sans-serif;background:#15171c;color:#e5e7eb;max-width:680px;margin:60px auto;padding:24px}a{color:#bcb0ff}code{background:#2b2d36;padding:3px 6px;border-radius:4px}li{margin:12px 0}small{color:#adb4c0}</style></head><body><h1>Install Alpha Bro Companion</h1><p>Capture your local app preview without screen-sharing prompts, and improve iframe compatibility.</p><p>This development release installs as an unpacked extension in Chrome or Edge. A store release is not yet available.</p><ol><li><a href="./alpha-bro-extension.zip" download>Download the companion extension</a> and unzip it.</li><li>Open <code>chrome://extensions</code> or <code>edge://extensions</code>.</li><li>Enable <strong>Developer mode</strong>, select <strong>Load unpacked</strong>, and choose the extracted <code>alpha-bro-extension</code> folder containing <code>manifest.json</code>.</li><li>Return to your Alpha Bro page and reload it once. Open the companion from the browser’s Extensions menu and select <strong>Connect this Alpha Bro address</strong>.</li><li>Return to Alpha Bro and select <strong>Check again</strong>. If you previously disabled or updated the extension, reload Alpha Bro.</li></ol><p><small>Chrome requires broad site access for the in-page screenshot button. Only explicitly connected Alpha Bro origins can request capture. The active preview is cropped before being returned; screenshots are not stored by the extension. Local preview framing restrictions and enforcing CSP are removed only for the registered preview origin in the connected tab. Disconnect an address at any time using the extension popup.</small></p></body></html>`;
+await writeFile(join(dist, 'install.html'), html);
+const publicDir = join(root, '../client/public/extension');
+await mkdir(publicDir, { recursive: true });
+for (const file of ['install.html', 'alpha-bro-extension.zip']) await cp(join(dist, file), join(publicDir, file));
+console.log('Built extension/dist/alpha-bro-extension, ZIP and web installation guide.');

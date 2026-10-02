@@ -40,7 +40,6 @@ test('DevServerManager pending stop scheduling and cancellation on reload/reconn
       devCmd: 'echo hi',
       worktreePath: '/tmp',
     },
-    proxy: null,
   });
 
   // Schedule pending stop with 50ms grace
@@ -78,7 +77,6 @@ test('DevServerManager stopServer with onlyIfNoSubscribers option', async () => 
       devCmd: 'echo hi',
       worktreePath: '/tmp',
     },
-    proxy: null,
   });
 
   devServerManager.addSubscriber(taskId, dummyClient);
@@ -133,12 +131,11 @@ test('occupied default port is not previewed; colored split output routes to the
   const command = nodeCommand(source);
   await manager.startServer('colored-task', process.cwd(), command, port);
   assert.strictEqual((await manager.checkServerReady('colored-task')).ready, false);
-  assert.strictEqual(manager.getServerState('colored-task').proxyPort, undefined);
   await eventually(async () => (await manager.checkServerReady('colored-task')).ready);
   const state = manager.getServerState('colored-task');
   assert.notStrictEqual(state.port, port);
   const body = await new Promise<string>((resolve, reject) => {
-    http.get(`http://127.0.0.1:${state.proxyPort}/`, (res) => {
+    http.get(state.url!, (res) => {
       let body = '';
       res.on('data', (data) => body += data);
       res.on('end', () => resolve(body));
@@ -196,7 +193,64 @@ test('concurrent starts are serialized and Stop during startup leaves no process
     const stopping = manager.stopServer('race-task');
     await Promise.all([first, second, stopping]);
     assert.strictEqual(manager.getServerState('race-task').status, 'stopped');
-    assert.strictEqual(manager.getServerState('race-task').proxyPort, undefined);
+    assert.strictEqual((await manager.checkServerReady('race-task')).ready, false);
     assert.deepStrictEqual(manager.getActiveDevServerTaskIds(), []);
   } finally { await manager.stopAll(); }
+});
+
+for (const host of ['127.0.0.1', '::1']) {
+  test(`direct readiness exposes a reachable URL for a ${host} listener`, async (t) => {
+    if (host === '::1') {
+      const probe = http.createServer();
+      try {
+        await new Promise<void>((resolve, reject) => {
+          probe.once('error', reject);
+          probe.listen(0, host, resolve);
+        });
+      } catch {
+        t.skip('IPv6 loopback is unavailable');
+        return;
+      } finally { probe.close(); }
+    }
+    const manager = new DevServerManager();
+    t.after(() => manager.stopAll());
+    const source = `const http = require("node:http");
+      const server = http.createServer((req, res) => {
+        res.setHeader("X-Frame-Options", "DENY");
+        res.end("direct preview");
+      });
+      server.listen(0, ${JSON.stringify(host)}, () => console.log("http://localhost:" + server.address().port));`;
+    await manager.startServer(`direct-${host}`, process.cwd(), nodeCommand(source));
+    await eventually(async () => (await manager.checkServerReady(`direct-${host}`)).ready);
+    const ready = await manager.checkServerReady(`direct-${host}`);
+    assert.strictEqual(ready.url, manager.getServerState(`direct-${host}`).url);
+    assert.strictEqual(Number(new URL(ready.url!).port), ready.port);
+    const response = await new Promise<{ body: string; framing: string | string[] | undefined }>((resolve, reject) => {
+      http.get(ready.url!, (res) => {
+        let body = '';
+        res.on('data', (chunk) => body += chunk);
+        res.on('end', () => resolve({ body, framing: res.headers['x-frame-options'] }));
+      }).on('error', reject);
+    });
+    assert.deepStrictEqual(response, { body: 'direct preview', framing: 'DENY' });
+    assert.strictEqual('proxyPort' in manager.getServerState(`direct-${host}`), false);
+  });
+}
+
+test('an in-flight readiness response cannot revive a stopped preview', async (t) => {
+  const manager = new DevServerManager();
+  t.after(() => manager.stopAll());
+  const source = `const http = require("node:http");
+    const server = http.createServer((req, res) => {
+      console.log("probe pending");
+      setTimeout(() => res.end("late response"), 500);
+    });
+    server.listen(0, "127.0.0.1", () => console.log("http://localhost:" + server.address().port));`;
+  await manager.startServer('ready-stop-race', process.cwd(), nodeCommand(source));
+  await eventually(() => manager.getServerState('ready-stop-race').logs.some((line) => line.includes('http://localhost:')));
+  const checking = manager.checkServerReady('ready-stop-race');
+  await eventually(() => manager.getServerState('ready-stop-race').logs.some((line) => line.includes('probe pending')));
+  await manager.stopServer('ready-stop-race');
+  assert.strictEqual((await checking).ready, false);
+  assert.strictEqual(manager.getServerState('ready-stop-race').status, 'stopped');
 });

@@ -17,3 +17,6 @@ resources/server/client/
 resources/server/index.mjs
 latest.json
 changelog.txt
+
+# Generated companion installation assets
+client/public/extension/

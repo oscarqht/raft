@@ -17,7 +17,11 @@
     "start": "npm run start --workspace=server",
     "app:dev": "node scripts/prepare-server.mjs && tauri dev",
     "app:build": "node scripts/prepare-server.mjs && tauri build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "build:extension": "npm run build --prefix extension",
+    "test:extension": "npm test --prefix extension",
+    "test:preview": "npm run test:extension && npm run test:preview --workspace=client && npm run build --workspace=server && node --test server/dist/devServerManager.test.js",
+    "preview:fixture": "node scripts/preview-extension-fixture.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
