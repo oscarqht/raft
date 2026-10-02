@@ -96,67 +96,94 @@ fs.writeFileSync(
   JSON.stringify({ name: 'raft', version: rootPkg.version || '0.19.0', type: 'module' }, null, 2) + '\n'
 );
 
+// Record target Node version and ABI for launcher runtime downloads
+const cleanNodeVer = process.version.replace(/^v/, '');
+fs.writeFileSync(
+  path.join(serverOutDir, 'node-target.json'),
+  JSON.stringify({ version: cleanNodeVer, abi: process.versions.modules }, null, 2) + '\n'
+);
+if (fs.existsSync(path.dirname(debugTargetModules))) {
+  fs.copyFileSync(path.join(serverOutDir, 'node-target.json'), path.join(path.dirname(debugTargetModules), 'node-target.json'));
+}
+
+
 console.log('--- 4. Staging client SPA into resources/server/client/dist ---');
 const clientDistDest = path.join(serverOutDir, 'client', 'dist');
 fs.mkdirSync(clientDistDest, { recursive: true });
 fs.cpSync(path.join(root, 'client', 'dist'), clientDistDest, { recursive: true, force: true });
 console.log('✓ Client dist copied to resources/server/client/dist');
 
-console.log('--- 5. Preparing standalone Node.js sidecar binary ---');
-const binDir = path.join(root, 'src-tauri', 'bin');
-fs.mkdirSync(binDir, { recursive: true });
+console.log('--- 5. Preparing Node.js sidecar configuration ---');
+const bundleNode = process.env.BUNDLE_NODE === 'true' || process.env.BUNDLE_NODE === '1';
+const tauriConfPath = path.join(root, 'src-tauri', 'tauri.conf.json');
+const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, 'utf8'));
 
-// Determine current target triple
-let targetTriple = '';
-try {
-  const rustcV = execSync('rustc -vV', { encoding: 'utf8' });
-  const hostMatch = rustcV.match(/host:\s*([^\r\n]+)/);
-  if (hostMatch) {
-    targetTriple = hostMatch[1].trim();
-  }
-} catch {
-  targetTriple = process.platform === 'win32' ? 'x86_64-pc-windows-msvc' : 'aarch64-apple-darwin';
-}
+if (bundleNode) {
+  console.log('BUNDLE_NODE is enabled: bundling Node.js runtime into the application package...');
+  tauriConf.bundle = tauriConf.bundle || {};
+  tauriConf.bundle.externalBin = ['bin/node'];
+  fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
 
-const nodeBinaryName = process.platform === 'win32' ? `node-${targetTriple}.exe` : `node-${targetTriple}`;
-const nodeBinaryPath = path.join(binDir, nodeBinaryName);
+  const binDir = path.join(root, 'src-tauri', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
 
-let shouldStage = !fs.existsSync(nodeBinaryPath);
-if (!shouldStage) {
+  // Determine current target triple
+  let targetTriple = '';
   try {
-    const existingVer = execSync(`"${nodeBinaryPath}" -v`, { encoding: 'utf8' }).trim();
-    if (existingVer !== process.version) {
-      console.log(`Sidecar Node binary version mismatch: present=${existingVer}, expected=${process.version}. Re-staging...`);
-      shouldStage = true;
+    const rustcV = execSync('rustc -vV', { encoding: 'utf8' });
+    const hostMatch = rustcV.match(/host:\s*([^\r\n]+)/);
+    if (hostMatch) {
+      targetTriple = hostMatch[1].trim();
     }
   } catch {
-    shouldStage = true;
+    targetTriple = process.platform === 'win32' ? 'x86_64-pc-windows-msvc' : 'aarch64-apple-darwin';
   }
-}
 
-if (shouldStage) {
-  console.log(`Staging local Node.js binary (${process.version}) as sidecar: ${nodeBinaryName}`);
-  fs.copyFileSync(process.execPath, nodeBinaryPath);
-  if (process.platform !== 'win32') {
-    fs.chmodSync(nodeBinaryPath, 0o755);
-  }
-  console.log(`✓ Staged Node.js binary at ${nodeBinaryPath}`);
-} else {
-  console.log(`✓ Sidecar Node binary (${process.version}) already present at ${nodeBinaryPath}`);
-}
+  const nodeBinaryName = process.platform === 'win32' ? `node-${targetTriple}.exe` : `node-${targetTriple}`;
+  const nodeBinaryPath = path.join(binDir, nodeBinaryName);
 
-if (process.platform === 'darwin') {
-  const entitlementsPath = path.join(root, 'src-tauri', 'Entitlements.plist');
-  if (fs.existsSync(entitlementsPath)) {
+  let shouldStage = !fs.existsSync(nodeBinaryPath);
+  if (!shouldStage) {
     try {
-      execSync(`codesign --force --options runtime --entitlements "${entitlementsPath}" --sign - "${nodeBinaryPath}"`, {
-        stdio: 'inherit',
-      });
-      console.log(`✓ Signed sidecar Node binary with entitlements: ${nodeBinaryName}`);
-    } catch (err) {
-      console.warn(`Warning: Failed to sign sidecar Node binary: ${err.message}`);
+      const existingVer = execSync(`"${nodeBinaryPath}" -v`, { encoding: 'utf8' }).trim();
+      if (existingVer !== process.version) {
+        console.log(`Sidecar Node binary version mismatch: present=${existingVer}, expected=${process.version}. Re-staging...`);
+        shouldStage = true;
+      }
+    } catch {
+      shouldStage = true;
     }
   }
+
+  if (shouldStage) {
+    console.log(`Staging local Node.js binary (${process.version}) as sidecar: ${nodeBinaryName}`);
+    fs.copyFileSync(process.execPath, nodeBinaryPath);
+    if (process.platform !== 'win32') {
+      fs.chmodSync(nodeBinaryPath, 0o755);
+    }
+    console.log(`✓ Staged Node.js binary at ${nodeBinaryPath}`);
+  } else {
+    console.log(`✓ Sidecar Node binary (${process.version}) already present at ${nodeBinaryPath}`);
+  }
+
+  if (process.platform === 'darwin') {
+    const entitlementsPath = path.join(root, 'src-tauri', 'Entitlements.plist');
+    if (fs.existsSync(entitlementsPath)) {
+      try {
+        execSync(`codesign --force --options runtime --entitlements "${entitlementsPath}" --sign - "${nodeBinaryPath}"`, {
+          stdio: 'inherit',
+        });
+        console.log(`✓ Signed sidecar Node binary with entitlements: ${nodeBinaryName}`);
+      } catch (err) {
+        console.warn(`Warning: Failed to sign sidecar Node binary: ${err.message}`);
+      }
+    }
+  }
+} else {
+  console.log('BUNDLE_NODE is disabled: omitting bundled Node.js to keep installer lightweight (launcher will download on demand if needed).');
+  tauriConf.bundle = tauriConf.bundle || {};
+  tauriConf.bundle.externalBin = [];
+  fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + '\n');
 }
 
 console.log('✓ Server preparation completed successfully!');

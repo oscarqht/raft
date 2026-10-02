@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alpha Bro Setup</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #0f172a;
+      --subtext: #475569;
+      --card-bg: #f8fafc;
+      --card-border: #e2e8f0;
+      --accent: #0284c7;
+      --accent-hover: #0369a1;
+      --progress-bg: #e2e8f0;
+      --progress-fill: #0284c7;
+      --success-text: #059669;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --success-border: rgba(16, 185, 129, 0.35);
+      --error-text: #dc2626;
+      --error-bg: #fef2f2;
+      --error-border: #fecaca;
+      --btn-secondary-bg: #f1f5f9;
+      --btn-secondary-border: #cbd5e1;
+      --btn-secondary-text: #334155;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --text: #f8fafc;
+        --subtext: #94a3b8;
+        --card-bg: #1e293b;
+        --card-border: #334155;
+        --accent: #38bdf8;
+        --accent-hover: #0ea5e9;
+        --progress-bg: #334155;
+        --progress-fill: #38bdf8;
+        --success-text: #34d399;
+        --success-bg: rgba(16, 185, 129, 0.15);
+        --success-border: rgba(16, 185, 129, 0.3);
+        --error-text: #f87171;
+        --error-bg: rgba(239, 68, 68, 0.15);
+        --error-border: rgba(239, 68, 68, 0.3);
+        --btn-secondary-bg: #1e293b;
+        --btn-secondary-border: #334155;
+        --btn-secondary-text: #cbd5e1;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+      padding: 24px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .logo {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+
+    .title-group h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .title-group p {
+      font-size: 13px;
+      color: var(--subtext);
+      margin-top: 2px;
+    }
+
+    .info-banner {
+      font-size: 12px;
+      color: var(--subtext);
+      line-height: 1.4;
+      margin-bottom: 20px;
+    }
+
+    .deps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .dep-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .dep-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dep-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--card-border);
+      color: var(--subtext);
+    }
+
+    .badge.ready {
+      background: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid var(--success-border);
+    }
+
+    .badge.downloading {
+      background: rgba(2, 132, 199, 0.12);
+      color: var(--accent);
+    }
+
+    .badge.error {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid var(--error-border);
+    }
+
+    .dep-msg {
+      font-size: 12px;
+      color: var(--subtext);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .progress-bar-container {
+      height: 6px;
+      background: var(--progress-bg);
+      border-radius: 3px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--progress-fill);
+      width: 0%;
+      transition: width 0.2s ease-out;
+    }
+
+    .error-box {
+      display: none;
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+      margin-top: 8px;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+      margin-top: auto;
+    }
+
+    .footer-status {
+      font-size: 12px;
+      color: var(--subtext);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--progress-bg);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    button {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn-secondary {
+      background: var(--btn-secondary-bg);
+      border: 1px solid var(--btn-secondary-border);
+      color: var(--btn-secondary-text);
+    }
+
+    .btn-secondary:hover {
+      filter: brightness(0.95);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      color: #ffffff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-macos-git {
+      display: none;
+      padding: 4px 10px;
+      font-size: 11px;
+      margin-top: 4px;
+      align-self: flex-start;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg class="logo" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="8" fill="#0284C7"/>
+      <path d="M12 28L20 12L28 28H12Z" fill="white"/>
+    </svg>
+    <div class="title-group">
+      <h1>Alpha Bro Setup</h1>
+      <p>Preparing local runtime environment</p>
+    </div>
+  </div>
+
+  <div class="info-banner">
+    Alpha Bro runs locally and requires Node.js and Git. Missing components are downloaded into an isolated application data directory without requiring administrator privileges.
+  </div>
+
+  <div class="deps-list">
+    <!-- Node.js Card -->
+    <div class="dep-card" id="card-node">
+      <div class="dep-header">
+        <div class="dep-name">
+          <span>Node.js</span>
+          <span style="font-size: 11px; color: var(--subtext);">(v20 LTS)</span>
+        </div>
+        <span class="badge" id="badge-node">Checking...</span>
+      </div>
+      <div class="dep-msg" id="msg-node">Detecting installation...</div>
+      <div class="progress-bar-container" id="prog-wrap-node">
+        <div class="progress-bar-fill" id="fill-node"></div>
+      </div>
+    </div>
+
+    <!-- Git Card -->
+    <div class="dep-card" id="card-git">
+      <div class="dep-header">
+        <div class="dep-name">
+          <span>Git</span>
+          <span style="font-size: 11px; color: var(--subtext);">(Portable)</span>
+        </div>
+        <span class="badge" id="badge-git">Checking...</span>
+      </div>
+      <div class="dep-msg" id="msg-git">Detecting installation...</div>
+      <div class="progress-bar-container" id="prog-wrap-git">
+        <div class="progress-bar-fill" id="fill-git"></div>
+      </div>
+      <button class="btn-primary btn-macos-git" id="btn-macos-git" onclick="triggerMacosGit()">Install Apple Git Tools</button>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-status" id="footer-status">
+      <div class="spinner" id="main-spinner"></div>
+      <span id="footer-status-text">Checking environment...</span>
+    </div>
+    <div class="actions">
+      <button class="btn-secondary" id="btn-cancel" onclick="cancelSetup()">Cancel</button>
+      <button class="btn-primary" id="btn-retry" style="display: none;" onclick="retrySetup()">Retry</button>
+    </div>
+  </div>
+
+  <script>
+    // Tauri IPC Helpers
+    async function tauriInvoke(cmd, args = {}) {
+      if (window.__TAURI__?.core?.invoke) {
+        return window.__TAURI__.core.invoke(cmd, args);
+      }
+      if (window.__TAURI_INTERNALS__?.invoke) {
+        return window.__TAURI_INTERNALS__.invoke(cmd, args);
+      }
+      console.warn('Tauri invoke unavailable, falling back');
+      return null;
+    }
+
+    async function tauriListen(event, callback) {
+      if (window.__TAURI__?.event?.listen) {
+        return window.__TAURI__.event.listen(event, callback);
+      }
+      return () => {};
+    }
+
+    let depState = {
+      node: { ready: false, stage: 'checking' },
+      git: { ready: false, stage: 'checking' }
+    };
+
+    let isStartingMainApp = false;
+
+    async function cancelSetup() {
+      await tauriInvoke('cancel_launcher_and_quit');
+    }
+
+    async function triggerMacosGit() {
+      await tauriInvoke('trigger_macos_git_cli');
+    }
+
+    async function retrySetup() {
+      document.getElementById('error-box').style.display = 'none';
+      document.getElementById('btn-retry').style.display = 'none';
+      document.getElementById('main-spinner').style.display = 'block';
+      document.getElementById('footer-status-text').innerText = 'Downloading components...';
+      try {
+        await tauriInvoke('start_dependency_install');
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    function showError(err) {
+      const box = document.getElementById('error-box');
+      box.innerText = String(err || 'An error occurred during runtime installation.');
+      box.style.display = 'block';
+      document.getElementById('btn-retry').style.display = 'inline-block';
+      document.getElementById('main-spinner').style.display = 'none';
+      document.getElementById('footer-status-text').innerText = 'Setup failed.';
+    }
+
+    async function checkReadyAndLaunch() {
+      if (isStartingMainApp) return;
+      if (depState.node.ready && depState.git.ready) {
+        isStartingMainApp = true;
+        document.getElementById('main-spinner').style.display = 'block';
+        document.getElementById('footer-status-text').innerText = 'Starting Alpha Bro...';
+        try {
+          await tauriInvoke('launch_main_app_from_launcher');
+        } catch (err) {
+          isStartingMainApp = false;
+          showError(err);
+        }
+      }
+    }
+
+    function handleProgress(progress) {
+      const { target, stage, percent, message } = progress;
+
+      if (stage === 'error') {
+        showError(message);
+        return;
+      }
+
+      if (target === 'node' || target === 'git') {
+        const badge = document.getElementById(`badge-${target}`);
+        const msg = document.getElementById(`msg-${target}`);
+        const fill = document.getElementById(`fill-${target}`);
+
+        msg.innerText = message || '';
+
+        if (stage === 'downloading') {
+          badge.className = 'badge downloading';
+          badge.innerText = `Downloading ${percent}%`;
+          fill.style.width = `${percent}%`;
+        } else if (stage === 'extracting') {
+          badge.className = 'badge downloading';
+          badge.innerText = 'Extracting...';
+          fill.style.width = '100%';
+        } else if (stage === 'verifying') {
+          badge.className = 'badge downloading';
+          badge.innerText = 'Verifying...';
+        } else if (stage === 'done') {
+          badge.className = 'badge ready';
+          badge.innerText = 'Installed';
+          fill.style.width = '100%';
+          depState[target].ready = true;
+          checkReadyAndLaunch();
+        }
+      }
+    }
+
+    async function init() {
+      // 1. Setup progress event listener
+      await tauriListen('raft://launcher-progress', (event) => {
+        handleProgress(event.payload);
+      });
+
+      // 2. Query initial dependency status
+      try {
+        const status = await tauriInvoke('get_launcher_status');
+        if (!status) return;
+
+        // Update Node card
+        if (status.node_installed) {
+          depState.node.ready = true;
+          document.getElementById('badge-node').className = 'badge ready';
+          document.getElementById('badge-node').innerText = 'Installed';
+          document.getElementById('msg-node').innerText = `Detected ${status.node_version || 'runtime'}`;
+          document.getElementById('fill-node').style.width = '100%';
+        } else {
+          document.getElementById('badge-node').className = 'badge downloading';
+          document.getElementById('badge-node').innerText = 'Pending';
+          document.getElementById('msg-node').innerText = 'Ready to download...';
+        }
+
+        // Update Git card
+        if (status.git_installed) {
+          depState.git.ready = true;
+          document.getElementById('badge-git').className = 'badge ready';
+          document.getElementById('badge-git').innerText = 'Installed';
+          document.getElementById('msg-git').innerText = `Detected ${status.git_version || 'Git'}`;
+          document.getElementById('fill-git').style.width = '100%';
+        } else {
+          if (status.platform === 'macos') {
+            document.getElementById('btn-macos-git').style.display = 'block';
+            document.getElementById('badge-git').className = 'badge';
+            document.getElementById('badge-git').innerText = 'Not Found';
+            document.getElementById('msg-git').innerText = 'Click below to install via Apple Developer Tools.';
+          } else {
+            document.getElementById('badge-git').className = 'badge downloading';
+            document.getElementById('badge-git').innerText = 'Pending';
+            document.getElementById('msg-git').innerText = 'Ready to download...';
+          }
+        }
+
+        // If both already satisfied, launch immediately
+        if (depState.node.ready && depState.git.ready) {
+          checkReadyAndLaunch();
+          return;
+        }
+
+        // Otherwise automatically begin installation
+        document.getElementById('footer-status-text').innerText = 'Downloading components...';
+        await tauriInvoke('start_dependency_install');
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

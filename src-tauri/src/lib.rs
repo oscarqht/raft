@@ -1,5 +1,6 @@
 mod desktop_bridge;
 mod instance_guard;
+mod launcher;
 mod notify;
 mod server;
 mod tray;
@@ -10,6 +11,59 @@ use tauri::{Manager, RunEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 pub struct ServerUrlState(pub Mutex<Option<String>>);
+
+pub fn start_core_services(app_handle: &tauri::AppHandle) {
+    let app_handle = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        match server::start_server(app_handle.clone()).await {
+            Ok((server_url, port, internal_token)) => {
+                println!("[raft] Server running at {server_url}");
+
+                // Store server URL in app state for single-instance focus
+                if let Some(state) = app_handle.try_state::<ServerUrlState>() {
+                    if let Ok(mut guard) = state.0.lock() {
+                        *guard = Some(server_url.clone());
+                    }
+                }
+
+                if let Err(e) = tray::setup_tray(&app_handle, server_url.clone()) {
+                    eprintln!("[raft] Failed to setup tray: {e}");
+                }
+                desktop_bridge::start(app_handle.clone(), port, internal_token);
+                updater::start_background_updater(app_handle.clone());
+
+                #[cfg(target_os = "macos")]
+                {
+                    if !tray::check_full_disk_access() {
+                        println!("[raft] Full Disk Access is not granted yet. Notifying user...");
+                        notify::show_notification(
+                            &app_handle,
+                            "Alpha Bro Permissions",
+                            "Alpha Bro needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.",
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[raft] Failed to start server: {e}");
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+                }
+                let handle = app_handle.clone();
+                app_handle
+                    .dialog()
+                    .message(format!("Failed to start Alpha Bro server:\n\n{e}"))
+                    .title("Alpha Bro Error")
+                    .kind(MessageDialogKind::Error)
+                    .show(move |_| {
+                        handle.exit(1);
+                        std::process::exit(1);
+                    });
+            }
+        }
+    });
+}
 
 pub fn is_dev() -> bool {
     if let Ok(val) = std::env::var("RAFT_ENV") {
@@ -53,6 +107,11 @@ pub fn run() {
             updater::close_update_window,
             tray::cmd_check_full_disk_access,
             tray::cmd_open_full_disk_access_settings,
+            launcher::get_launcher_status,
+            launcher::start_dependency_install,
+            launcher::launch_main_app_from_launcher,
+            launcher::cancel_launcher_and_quit,
+            launcher::trigger_macos_git_cli,
         ])
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(state) = app.try_state::<ServerUrlState>() {
@@ -80,55 +139,25 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
 
-            tauri::async_runtime::spawn(async move {
-                match server::start_server(app_handle.clone()).await {
-                    Ok((server_url, port, internal_token)) => {
-                        println!("[raft] Server running at {server_url}");
+            let dep_status = launcher::check_all_dependencies(&app_handle);
+            let has_required_deps = dep_status.node_installed && (dep_status.git_installed || cfg!(target_os = "macos"));
 
-                        // Store server URL in app state for single-instance focus
-                        if let Some(state) = app_handle.try_state::<ServerUrlState>() {
-                            if let Ok(mut guard) = state.0.lock() {
-                                *guard = Some(server_url.clone());
-                            }
-                        }
-
-                        if let Err(e) = tray::setup_tray(&app_handle, server_url.clone()) {
-                            eprintln!("[raft] Failed to setup tray: {e}");
-                        }
-                        desktop_bridge::start(app_handle.clone(), port, internal_token);
-                        updater::start_background_updater(app_handle.clone());
-
-                        #[cfg(target_os = "macos")]
-                        {
-                            if !tray::check_full_disk_access() {
-                                println!("[raft] Full Disk Access is not granted yet. Notifying user...");
-                                notify::show_notification(
-                                    &app_handle,
-                                    "Alpha Bro Permissions",
-                                    "Alpha Bro needs Full Disk Access to avoid folder permission prompts when inspecting repositories. Click the status bar icon to configure.",
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[raft] Failed to start server: {e}");
-                        #[cfg(target_os = "macos")]
-                        {
-                            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
-                        }
-                        let handle = app_handle.clone();
-                        app_handle
-                            .dialog()
-                            .message(format!("Failed to start Alpha Bro server:\n\n{e}"))
-                            .title("Alpha Bro Error")
-                            .kind(MessageDialogKind::Error)
-                            .show(move |_| {
-                                handle.exit(1);
-                                std::process::exit(1);
-                            });
-                    }
+            if has_required_deps {
+                println!("[raft] Environment dependencies satisfied. Starting Alpha Bro server...");
+                start_core_services(&app_handle);
+            } else {
+                println!(
+                    "[raft] Dependencies missing (node={}, git={}). Opening launcher setup window...",
+                    dep_status.node_installed, dep_status.git_installed
+                );
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
                 }
-            });
+                if let Err(e) = launcher::open_launcher_window(&app_handle) {
+                    eprintln!("[raft] Failed to open launcher window: {e}");
+                }
+            }
 
             #[cfg(unix)]
             {

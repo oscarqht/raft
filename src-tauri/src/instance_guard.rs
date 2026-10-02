@@ -267,7 +267,7 @@ fn detect(_identifier: &str) -> Vec<Found> {
     let self_pid = std::process::id();
     let exe = current_exe_name().unwrap_or_else(|| "raft.exe".to_string()).replace('\'', "''");
     let script = format!(
-        "Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq '{exe}' -or $_.CommandLine -like '*{SERVER_MARKER}*' }} | ForEach-Object {{ \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }}"
+        "Get-CimInstance Win32_Process | Where-Object {{ $_.Name -ne 'powershell.exe' -and $_.Name -ne 'pwsh.exe' -and ($_.Name -eq '{exe}' -or $_.CommandLine -like '*{SERVER_MARKER}*') }} | ForEach-Object {{ \"$($_.ProcessId)`t$($_.Name)`t$($_.CommandLine)\" }}"
     );
     powershell(&script)
         .lines()
@@ -276,7 +276,7 @@ fn detect(_identifier: &str) -> Vec<Found> {
             let pid: u32 = parts.next()?.parse().ok()?;
             let name = parts.next().unwrap_or_default();
             let command = parts.next().unwrap_or_default().to_string();
-            if pid == self_pid {
+            if pid == self_pid || name.eq_ignore_ascii_case("powershell.exe") || name.eq_ignore_ascii_case("pwsh.exe") {
                 return None;
             }
             let kind = if name.eq_ignore_ascii_case(&exe) { Kind::App } else { Kind::Server };

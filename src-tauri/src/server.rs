@@ -221,8 +221,31 @@ pub fn find_available_port(start_port: u16, max_attempts: u16, host: &str) -> Op
     None
 }
 
-/// Discover Node.js executable: checks bundled sidecar first, then system installations
+/// Discover Node.js executable: checks app runtimes first, bundled sidecar, then system installations
 pub fn discover_node_binary(app: &AppHandle) -> Option<PathBuf> {
+    // 0. Check app-managed runtime in app_local_data_dir()/runtimes/node
+    if let Ok(res_dir) = app.path().app_local_data_dir() {
+        let node_dir = res_dir.join("runtimes").join("node");
+        let exe_name = if cfg!(windows) { "node.exe" } else { "node" };
+        let mut candidates = vec![
+            node_dir.join(exe_name),
+            node_dir.join("bin").join(exe_name),
+        ];
+        if let Ok(entries) = std::fs::read_dir(&node_dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    candidates.push(entry.path().join(exe_name));
+                    candidates.push(entry.path().join("bin").join(exe_name));
+                }
+            }
+        }
+        for c in candidates {
+            if c.is_file() {
+                return Some(clean_path(c));
+            }
+        }
+    }
+
     // 1. Check bundled sidecar in resource_dir
     if let Ok(res_dir) = app.path().resource_dir() {
         let exe_name = if cfg!(windows) { "node.exe" } else { "node" };
@@ -344,8 +367,27 @@ pub fn discover_node_binary(app: &AppHandle) -> Option<PathBuf> {
 }
 
 /// Build an augmented PATH environment string
-fn augmented_path() -> String {
+pub fn augmented_path(app: Option<&AppHandle>) -> String {
     let mut candidate_paths: Vec<PathBuf> = Vec::new();
+
+    if let Some(app_handle) = app {
+        if let Ok(local_data) = app_handle.path().app_local_data_dir() {
+            let runtimes = local_data.join("runtimes");
+            candidate_paths.push(runtimes.join("node"));
+            candidate_paths.push(runtimes.join("node").join("bin"));
+            candidate_paths.push(runtimes.join("git").join("cmd"));
+            candidate_paths.push(runtimes.join("git").join("bin"));
+            candidate_paths.push(runtimes.join("git"));
+            if let Ok(entries) = std::fs::read_dir(runtimes.join("node")) {
+                for entry in entries.flatten() {
+                    if entry.path().is_dir() {
+                        candidate_paths.push(entry.path());
+                        candidate_paths.push(entry.path().join("bin"));
+                    }
+                }
+            }
+        }
+    }
 
     if let Some(home) = dirs::home_dir() {
         candidate_paths.push(home.join(".bun/bin"));
@@ -490,7 +532,7 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
     cmd.env("RAFT_PORT", port.to_string());
     cmd.env("HOST", &host);
     cmd.env("NODE_ENV", "production");
-    cmd.env("PATH", augmented_path());
+    cmd.env("PATH", augmented_path(Some(&app)));
     cmd.env("RAFT_INTERNAL_TOKEN", &internal_token);
     cmd.env("RAFT_VERSION", app.package_info().version.to_string());
 

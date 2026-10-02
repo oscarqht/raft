@@ -26,8 +26,12 @@ tokio = { version = "1", features = ["full"] }
 open = "5"
 dirs = "6"
 local-ip-address = "0.6"
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 uuid = { version = "1", features = ["v4"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1.0"
+tar = "0.4"
+futures-util = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
