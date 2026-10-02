@@ -4,7 +4,7 @@ Chrome / Edge Manifest V3 companion for local development previews in Alpha Bro.
 
 ## Development installation
 
-Run `npm --prefix extension run build` from the repository root. Open `chrome://extensions` (or `edge://extensions`), enable Developer mode, choose **Load unpacked**, and select `extension/dist/alpha-bro-extension`. Open or reload the Alpha Bro page. Any HTTP(S) address on port 3300 connects automatically, including localhost, Tailscale IPs, and other hostnames. Other ports are unsupported. There is no extension popup or options page. The webapp’s installation dialog links to a generated guide and ZIP at `/extension/install.html`.
+Run `npm --prefix extension run build` from the repository root. Open `chrome://extensions` (or `edge://extensions`), enable Developer mode, choose **Load unpacked**, and select `extension/dist/alpha-bro-extension`. Open or reload the Alpha Bro page. Any HTTP(S) address on port 3300 connects automatically, including localhost, Tailscale IPs, and other hostnames. Other ports are unsupported. There is no extension popup or options page. Pin the companion in the browser toolbar to see its icon turn yellow during screenshot capture, then return to purple when capture finishes. The webapp’s installation dialog links to a generated guide and ZIP at `/extension/install.html`.
 
 Rebuild and click Reload on the browser extension card after code changes, then reload Alpha Bro. Unit tests: `npm --prefix extension test`.
 

@@ -77,6 +77,29 @@ function validateMeasurement(current, measured, rect) {
     throw failure('STALE_VIEWPORT', 'The preview changed size or position. Please capture again.');
   }
 }
+const captureIcons = new Map();
+async function withCaptureIcon(tabId, run) {
+  let state = captureIcons.get(tabId);
+  if (!state) {
+    state = { count: 0, update: Promise.resolve() };
+    captureIcons.set(tabId, state);
+  }
+  const update = (path) => {
+    // Serialize transitions so a finishing capture cannot overwrite a new one.
+    state.update = state.update.then(() => chrome.action.setIcon({ tabId, path: { 128: path } })).catch(() => {});
+    return state.update;
+  };
+  if (state.count++ === 0) update('icons/capturing128.png');
+  try {
+    await state.update;
+    return await run();
+  } finally {
+    if (--state.count === 0) {
+      await update('icons/icon128.png');
+      if (state.count === 0 && captureIcons.get(tabId) === state) captureIcons.delete(tabId);
+    }
+  }
+}
 async function capture(session, payload, measured) {
   const capturedFrame = await frame(session);
   if (payload.url && new URL(payload.url).href !== capturedFrame.url) throw failure('STALE_SESSION', 'The preview URL changed. Please try again.');
@@ -133,7 +156,7 @@ async function request(message, sender) {
   });
   if (!['capture', 'navigate'].includes(message.action)) throw failure('INVALID_COMMAND', 'Unknown companion request.');
   const session = getSession(sender, payload);
-  if (message.action === 'capture') return capture(session, payload, message.viewport);
+  if (message.action === 'capture') return withCaptureIcon(session.tabId, () => capture(session, payload, message.viewport));
   if (message.action === 'navigate') {
     const targetFrame = await frame(session);
     if (!['back', 'forward', 'reload', 'to'].includes(payload.command)) throw failure('INVALID_COMMAND', 'Unknown preview navigation command.');

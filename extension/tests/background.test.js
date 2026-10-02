@@ -10,6 +10,8 @@ let drawn;
 let markedFrameId = 7;
 const navigationMessages = [];
 const commands = [];
+const iconChanges = [];
+let iconFailure = false;
 let navigationFlags = { navigationAvailable: true, canGoBack: true, canGoForward: false };
 globalThis.createImageBitmap = async () => ({ width: 2000, height: 1600, close() {} });
 globalThis.OffscreenCanvas = class { constructor(width, height) { this.width = width; this.height = height; } getContext() { return { drawImage(...args) { drawn = args; } }; } async convertToBlob() { return new Blob([new Uint8Array([1, 2, 3])]); } };
@@ -17,6 +19,7 @@ const tab = { id: 2, url: 'http://localhost:3300/task', windowId: 1, active: tru
 const topSender = { tab, frameId: 0, url: tab.url };
 const area = data => ({ async get() { return data; }, async set(value) { Object.assign(data, value); } });
 globalThis.chrome = {
+  action: { async setIcon(details) { iconChanges.push(details); if (iconFailure) throw new Error("Icon unavailable"); } },
   storage: { session: area(sessionData),  },
   permissions: { async contains() { return true; } },
   declarativeNetRequest: { async getSessionRules() { return rules; }, async updateSessionRules({ removeRuleIds = [], addRules = [] }) { rules = rules.filter(r => !removeRuleIds.includes(r.id)).concat(addRules); } },
@@ -163,4 +166,40 @@ test('same-origin bounds remain precise but unavailable Navigation API enables n
   const callback = await report();
   assert.equal(callback.canGoBack, true, 'origin crossing remains known after returning locally');
   assert.equal(callback.canGoForward, true);
+});
+
+
+test('capture icon stays busy through overlapping requests and restores after success or failure', { timeout: 3000 }, async () => {
+  await request('registerPreview', { sessionId: 'icons', taskId: 'task', url: 'http://localhost:4000/' });
+  frames = [{ frameId: 7, parentFrameId: 0, url: 'http://localhost:4000/' }];
+  const payload = { sessionId: 'icons', url: frames[0].url, rect: { ...measurement.rect }, viewport: { width: 1000, height: 800 } };
+  iconChanges.length = 0;
+  const releases = [];
+  let entered;
+  onCapture = () => new Promise(resolve => { releases.push(resolve); entered(); });
+  let started = new Promise(resolve => { entered = resolve; });
+  const first = request('capture', payload);
+  await started;
+  assert.deepEqual(iconChanges, [{ tabId: tab.id, path: { 128: 'icons/capturing128.png' } }]);
+  started = new Promise(resolve => { entered = resolve; });
+  const second = request('capture', payload);
+  await started;
+  releases[0]();
+  assert.equal((await first).ok, true);
+  assert.equal(iconChanges.length, 1, 'first completion cannot clear another capture indicator');
+  releases[1]();
+  assert.equal((await second).ok, true);
+  assert.deepEqual(iconChanges.at(-1), { tabId: tab.id, path: { 128: 'icons/icon128.png' } });
+
+  onCapture = async () => { throw new Error('Capture failed'); };
+  assert.equal((await request('capture', payload)).error.message, 'Capture failed');
+  assert.equal(iconChanges.at(-1).path[128], 'icons/icon128.png');
+  tab.active = false;
+  assert.equal((await request('capture', payload)).error.code, 'TAB_NOT_ACTIVE');
+  assert.equal(iconChanges.at(-1).path[128], 'icons/icon128.png');
+  tab.active = true;
+  onCapture = async () => {};
+  iconFailure = true;
+  try { assert.equal((await request('capture', payload)).ok, true, 'cosmetic icon failures must not prevent capture'); }
+  finally { iconFailure = false; }
 });

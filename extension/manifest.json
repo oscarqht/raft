@@ -31,5 +31,11 @@
   ],
   "icons": {
     "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Alpha Bro Companion",
+    "default_icon": {
+      "128": "icons/icon128.png"
+    }
   }
 }
