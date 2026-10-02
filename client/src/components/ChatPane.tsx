@@ -163,7 +163,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         cliOverride?: string,
         modelOverride?: string,
         effortOverride?: string,
-        sessionIdOverride?: string
+        sessionIdOverride?: string,
+        isSteer?: boolean
       ) => void)
     | null
   >(null);
@@ -749,6 +750,10 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
         if (msg.type === 'task_agent_status' && msg.sessionId) {
           const isIdle = msg.agentStatus === 'idle';
+          if (isSteeringRef.current && msg.sessionId === activeChatIdRef.current && isIdle) {
+            // Suppress momentary idle status broadcast caused by the aborted turn during a steer
+            return;
+          }
           setChats((prev) =>
             prev.map((c) => (c.id === msg.sessionId ? { ...c, status: isIdle ? 'idle' : 'running' } : c))
           );
@@ -772,6 +777,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               return next;
             });
           } else if (msg.type === 'chat_stream') {
+            isSteeringRef.current = false;
             setIsStreaming(true);
             isStreamingRef.current = true;
             const fullContent = msg.fullContent;
@@ -893,8 +899,26 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               dispatchNextQueuedMessageRef.current?.(targetSessionId);
             }, 60);
           } else if (msg.type === 'aborted') {
-            if (isSteeringRef.current) {
-              isSteeringRef.current = false;
+            if (isSteeringRef.current || msg.reason === 'steered') {
+              if (msg.messageId) {
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id === msg.messageId) {
+                      let metaObj: any = {};
+                      try {
+                        metaObj = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata || {};
+                      } catch {}
+                      metaObj.interrupted = 'steer';
+                      return {
+                        ...m,
+                        metadata: JSON.stringify(metaObj),
+                        steps: msg.steps || m.steps,
+                      };
+                    }
+                    return m;
+                  })
+                );
+              }
               return;
             }
             setIsStreaming(false);
@@ -1261,7 +1285,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       cliOverride?: string,
       modelOverride?: string,
       effortOverride?: string,
-      sessionIdOverride?: string
+      sessionIdOverride?: string,
+      isSteer?: boolean
     ) => {
       const targetSessionId = sessionIdOverride || activeChatIdRef.current;
       if (!targetSessionId || !ws || ws.readyState !== WebSocket.OPEN) return;
@@ -1279,17 +1304,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         return regex.test(textWithoutUrls);
       });
 
-      const optimisticMetadata =
-        matchedActiveSkills.length > 0 || currentAttachments.length > 0
-          ? JSON.stringify({
-              attachments: currentAttachments,
-              skills: matchedActiveSkills.map((s) => ({
-                name: s.name,
-                description: s.description,
-                content: s.content,
-              })),
-            })
-          : undefined;
+      const metaObj: Record<string, any> = {};
+      if (isSteer) {
+        metaObj.is_steer = true;
+      }
+      if (currentAttachments.length > 0) {
+        metaObj.attachments = currentAttachments;
+      }
+      if (matchedActiveSkills.length > 0) {
+        metaObj.skills = matchedActiveSkills.map((s) => ({
+          name: s.name,
+          description: s.description,
+          content: s.content,
+        }));
+      }
+      const optimisticMetadata = Object.keys(metaObj).length > 0 ? JSON.stringify(metaObj) : undefined;
 
       const optimisticUserMessage: ChatMessage = {
         id: newMsgId,
@@ -1349,6 +1378,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             agentCli: effectiveCli,
             model: modelToSend,
             thinkingEffort: effortToSend,
+            isSteer: Boolean(isSteer),
           })
         );
         const now = Date.now();
@@ -1593,11 +1623,41 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       setCachedQueuedMessages(activeChatId, remaining);
       setCachedTaskQueuedCount(task.id, remaining.length);
 
-      // 2. Set isSteering flag so the incoming 'aborted' broadcast from the cancelled turn is ignored
+      // 2. Mark previous in-flight assistant message as interrupted by steer in local state immediately
+      setMessages((prev) => {
+        let lastAssistantIdx = -1;
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].role === 'assistant') {
+            lastAssistantIdx = i;
+            break;
+          }
+        }
+        if (lastAssistantIdx === -1) return prev;
+        const updated = [...prev];
+        const lastMsg = updated[lastAssistantIdx];
+        let metaObj: any = {};
+        try {
+          metaObj = typeof lastMsg.metadata === 'string' ? JSON.parse(lastMsg.metadata) : lastMsg.metadata || {};
+        } catch {}
+        metaObj.interrupted = 'steer';
+        const updatedSteps = (lastMsg.steps || []).map((s) =>
+          s.status === 'running'
+            ? { ...s, status: 'interrupted' as const, error: 'Interrupted by steer', endTime: Date.now() }
+            : s
+        );
+        updated[lastAssistantIdx] = {
+          ...lastMsg,
+          metadata: JSON.stringify(metaObj),
+          steps: updatedSteps,
+        };
+        return updated;
+      });
+
+      // 3. Set isSteering flag so the incoming 'aborted' broadcast from the cancelled turn is ignored
       isSteeringRef.current = true;
 
-      // 3. Dispatch this message immediately
-      dispatchMessage(item.prompt, item.attachments, item.agentCli, item.model, item.thinkingEffort, activeChatId);
+      // 4. Dispatch this message immediately with isSteer = true
+      dispatchMessage(item.prompt, item.attachments, item.agentCli, item.model, item.thinkingEffort, activeChatId, true);
       chatListRef.current?.scrollToBottom();
     },
     [activeChatId, ws, dispatchMessage, task.id]

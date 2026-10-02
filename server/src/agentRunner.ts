@@ -968,7 +968,7 @@ export interface AgentStep {
   category: 'command' | 'file_read' | 'file_write' | 'search' | 'browser' | 'other';
   title: string;
   detail?: string;
-  status: 'running' | 'completed' | 'failed';
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
   duration?: number;
   output?: string;
   error?: string;
