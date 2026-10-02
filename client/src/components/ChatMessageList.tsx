@@ -309,16 +309,25 @@ export function detectAuthRequiredInfo(msg: ChatMessage, fallbackCli?: string): 
   };
 }
 
+const getElapsedSeconds = (startTime?: number) => (startTime ? Math.max(0, Math.floor((Date.now() - startTime) / 1000)) : 0);
+
 const LiveElapsedTimer: React.FC<{ startTime?: number }> = ({ startTime }) => {
-  const [elapsed, setElapsed] = useState(() => (startTime ? Math.max(0, (Date.now() - startTime) / 1000) : 0));
+  const [elapsed, setElapsed] = useState(() => getElapsedSeconds(startTime));
   useEffect(() => {
     if (!startTime) return;
-    const interval = setInterval(() => {
-      setElapsed(Math.max(0, (Date.now() - startTime) / 1000));
-    }, 100);
-    return () => clearInterval(interval);
+    const update = () => {
+      if (document.visibilityState === 'visible') setElapsed(getElapsedSeconds(startTime));
+    };
+    update();
+    // Whole-second resolution; skip ticks while hidden and catch up when shown again.
+    const interval = setInterval(update, 1000);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', update);
+    };
   }, [startTime]);
-  return <span>{elapsed.toFixed(1)}s</span>;
+  return <span>{elapsed}s</span>;
 };
 
 export function normalizeStepOutput(val: unknown): string {

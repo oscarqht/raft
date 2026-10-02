@@ -324,11 +324,13 @@ export const TaskPage: React.FC<TaskPageProps> = ({
     };
     window.addEventListener('task-agent-status-updated', handleAgentStatus);
     window.addEventListener('focus', refresh);
-    const interval = setInterval(refresh, 10000);
+    document.addEventListener('visibilitychange', refresh);
+    const interval = setInterval(refresh, 30000);
     return () => {
       window.removeEventListener('task-git-status-cached', handleCached);
       window.removeEventListener('task-agent-status-updated', handleAgentStatus);
       window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
       clearInterval(interval);
     };
   }, [taskId]);

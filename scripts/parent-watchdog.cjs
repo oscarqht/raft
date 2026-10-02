@@ -59,7 +59,7 @@
   }
 
   // 2. Periodic parent PID & PPID check (defense-in-depth heartbeat):
-  // Polls every 500ms to verify that the parent Tauri app is still alive.
+  // Polls every 5s to verify that the parent Tauri app is still alive.
   const timer = setInterval(() => {
     // On Unix, when the parent dies, process.ppid is reparented to 1 (launchd / init).
     if (process.ppid !== parentPid && process.ppid === 1) {
@@ -69,7 +69,7 @@
     if (!isProcessAlive(parentPid)) {
       terminate();
     }
-  }, 500);
+  }, 5000);
 
   if (timer.unref) {
     timer.unref();
