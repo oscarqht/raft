@@ -1,5 +1,6 @@
 import { DesktopEvents } from './desktopEvents.js';
 import { stopAllAgentProcesses, forceStopAllAgentProcesses } from './agentProcesses.js';
+import { startOrphanReaper } from './orphanReaper.js';
 import { StreamDelivery } from './streamDelivery.js';
 import http from 'node:http';
 import express, { Request, Response } from 'express';
@@ -3785,10 +3786,13 @@ const isTestEnv =
 
 if (!isTestEnv) {
   devServerManager.initializeRecovery(path.join(path.dirname(db.name), 'preview-processes'));
+  // Backstop for browser-test MCP servers (expect-cli) orphaned by exited agents.
+  const orphanReaper = startOrphanReaper();
   let shuttingDown = false;
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
+    orphanReaper.stop();
     for (const session of [...activeChatSessions.values()]) session.abort();
     for (const run of submitRuns.values()) if (!run.final) run.kill();
     try { await Promise.all([devServerManager.stopAll(), stopAllAgentProcesses()]); }
