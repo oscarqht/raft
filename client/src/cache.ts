@@ -23,11 +23,20 @@ const MAX_MESSAGES_PER_SESSION = 80;
 const MAX_CACHED_SESSIONS = 25;
 const MAX_CACHED_TASKS = 25;
 
+export interface ChatScrollPosition {
+  scrollTop: number;
+  wasAtBottom: boolean;
+  topMessageId?: string;
+  topMessageIndex?: number;
+  topMessageOffset?: number;
+}
+
 const memoryTasks = new Map<string, Task>();
 const memoryChats = new Map<string, ChatSession[]>();
 const memoryMessages = new Map<string, ChatMessage[]>();
 const memoryProjectTasksGitStatus = new Map<string, Record<string, TaskGitStatus>>();
 const memoryAllTasksGitStatus = new Map<string, TaskGitStatus>();
+const memoryChatScrollPositions = new Map<string, ChatScrollPosition>();
 let memoryActiveDevServers: string[] | null = null;
 
 // Track tasks currently being deleted in the background to prevent resurrection on background fetches
@@ -531,6 +540,7 @@ export function deleteCachedTask(taskId: string, projectId?: string): void {
   if (!taskId) return;
   memoryTasks.delete(taskId);
   memoryChats.delete(taskId);
+  clearCachedChatScrollPosition(taskId);
   idbDelete(`${PREFIX}task:${taskId}`).catch(() => {});
   idbDelete(`${PREFIX}chats:${taskId}`).catch(() => {});
   try {
@@ -587,6 +597,7 @@ export function restoreCachedTask(task: Task, projectId?: string): void {
 // Delete cached chat
 export function deleteCachedChat(taskId: string, chatId: string): void {
   memoryMessages.delete(chatId);
+  clearCachedChatScrollPosition(taskId, chatId);
   idbDelete(`${PREFIX}messages:${chatId}`).catch(() => {});
   try {
     localStorage.removeItem(`${PREFIX}messages:${chatId}`);
@@ -977,5 +988,35 @@ export function clearNewTaskDraft(projectId: string): void {
     sessionStorage.removeItem(`${NEW_TASK_DRAFT_KEY_PREFIX}${projectId}`);
   } catch {}
 }
+
+export function getCachedChatScrollPosition(taskId: string, sessionId?: string): ChatScrollPosition | null {
+  if (!taskId) return null;
+  const key = sessionId ? `${taskId}:${sessionId}` : taskId;
+  return memoryChatScrollPositions.get(key) || null;
+}
+
+export function setCachedChatScrollPosition(
+  taskId: string,
+  sessionId: string | undefined,
+  pos: ChatScrollPosition
+): void {
+  if (!taskId) return;
+  const key = sessionId ? `${taskId}:${sessionId}` : taskId;
+  memoryChatScrollPositions.set(key, pos);
+}
+
+export function clearCachedChatScrollPosition(taskId: string, sessionId?: string): void {
+  if (!taskId) return;
+  if (sessionId) {
+    memoryChatScrollPositions.delete(`${taskId}:${sessionId}`);
+  } else {
+    for (const key of Array.from(memoryChatScrollPositions.keys())) {
+      if (key === taskId || key.startsWith(`${taskId}:`)) {
+        memoryChatScrollPositions.delete(key);
+      }
+    }
+  }
+}
+
 
 

@@ -21,6 +21,11 @@ import {
   FilePreviewModal,
 } from './AttachmentModals';
 import {
+  ChatScrollPosition,
+  getCachedChatScrollPosition,
+  setCachedChatScrollPosition,
+} from '../cache';
+import {
   stripAnsi,
   parseLegacyActionLine,
   parseLegacyThoughtToStepsSync as parseLegacyThoughtToSteps,
@@ -950,6 +955,8 @@ export const ChatMessageList = React.memo(
     const listEndRef = useRef<HTMLDivElement>(null);
     const isFirstRender = useRef(true);
     const shouldScrollToBottomOnLoadRef = useRef(true);
+    const isInitialScrollHandledRef = useRef(false);
+    const saveCurrentScrollRef = useRef<((targetTaskId?: string, targetSessionId?: string) => void) | undefined>(undefined);
     const handledLastCachedMessageIdRef = useRef<string | null>(null);
     const prevTaskIdRef = useRef<string | undefined>(taskId);
     const prevSessionIdRef = useRef<string | undefined>(sessionId);
@@ -1037,6 +1044,9 @@ export const ChatMessageList = React.memo(
       scrollRafRef.current = requestAnimationFrame(() => {
         scrollRafRef.current = null;
         updateScrollState();
+        if (isInitialScrollHandledRef.current) {
+          saveCurrentScrollRef.current?.();
+        }
       });
     }, [updateScrollState]);
 
@@ -1045,6 +1055,9 @@ export const ChatMessageList = React.memo(
         clearScrollTimers();
         if (scrollRafRef.current != null) {
           cancelAnimationFrame(scrollRafRef.current);
+        }
+        if (isInitialScrollHandledRef.current) {
+          saveCurrentScrollRef.current?.();
         }
       };
     }, [clearScrollTimers]);
@@ -1194,6 +1207,124 @@ export const ChatMessageList = React.memo(
       [clearScrollTimers, messages.length, rowVirtualizer, updateScrollState]
     );
 
+    const saveCurrentScroll = useCallback(
+      (targetTaskId?: string, targetSessionId?: string) => {
+        const activeTaskId = targetTaskId || taskId;
+        const activeSessionId = targetSessionId !== undefined ? targetSessionId : sessionId;
+        if (!activeTaskId) return;
+        const el = scrollContainerRef.current;
+        if (!el) return;
+
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const isNearBottom = distanceFromBottom <= 60;
+
+        if (isNearBottom) {
+          setCachedChatScrollPosition(activeTaskId, activeSessionId, {
+            scrollTop: el.scrollTop,
+            wasAtBottom: true,
+          });
+          return;
+        }
+
+        const virtualItems = rowVirtualizer.getVirtualItems();
+        let topMessageId: string | undefined;
+        let topMessageIndex: number | undefined;
+        let topMessageOffset: number | undefined;
+
+        if (virtualItems.length > 0) {
+          const firstItem = virtualItems[0];
+          topMessageIndex = firstItem.index;
+          const msg = messages[firstItem.index];
+          if (msg) {
+            topMessageId = msg.id;
+          }
+          const itemEl = el.querySelector(`[data-index="${firstItem.index}"]`) as HTMLElement | null;
+          if (itemEl) {
+            topMessageOffset = itemEl.getBoundingClientRect().top - el.getBoundingClientRect().top;
+          }
+        }
+
+        setCachedChatScrollPosition(activeTaskId, activeSessionId, {
+          scrollTop: el.scrollTop,
+          wasAtBottom: false,
+          topMessageId,
+          topMessageIndex,
+          topMessageOffset,
+        });
+      },
+      [taskId, sessionId, messages, rowVirtualizer]
+    );
+
+    saveCurrentScrollRef.current = saveCurrentScroll;
+
+    const restoreScrollPosition = useCallback(
+      (pos: ChatScrollPosition) => {
+        isAutoScrollEnabled.current = false;
+        setShowScrollBottomBtn(true);
+
+        const performScroll = () => {
+          const scrollEl = scrollContainerRef.current;
+          if (!scrollEl) return;
+
+          let targetIndex = -1;
+          if (pos.topMessageId) {
+            targetIndex = messages.findIndex((m) => m.id === pos.topMessageId);
+          }
+          if (targetIndex === -1 && pos.topMessageIndex != null && pos.topMessageIndex < messages.length) {
+            targetIndex = pos.topMessageIndex;
+          }
+
+          if (targetIndex >= 0) {
+            rowVirtualizer.scrollToIndex(targetIndex, { align: 'start', behavior: 'auto' });
+            const itemEl = scrollEl.querySelector(`[data-index="${targetIndex}"]`) as HTMLElement | null;
+            if (itemEl) {
+              const containerRect = scrollEl.getBoundingClientRect();
+              const itemRect = itemEl.getBoundingClientRect();
+              const targetOffset =
+                pos.topMessageOffset ??
+                (contentRef.current
+                  ? parseFloat(window.getComputedStyle(contentRef.current).paddingTop) || 24
+                  : 24);
+              const currentOffset = itemRect.top - containerRect.top;
+              const diff = currentOffset - targetOffset;
+              if (Math.abs(diff) > 1) {
+                scrollEl.scrollTop += diff;
+              }
+            }
+          } else if (pos.scrollTop != null) {
+            rowVirtualizer.scrollToOffset(pos.scrollTop, { align: 'start', behavior: 'auto' });
+            scrollEl.scrollTop = pos.scrollTop;
+          }
+
+          updateScrollState();
+        };
+
+        clearScrollTimers();
+        performScroll();
+
+        scrollTimersRef.current.raf = requestAnimationFrame(() => {
+          performScroll();
+          scrollTimersRef.current.raf = null;
+        });
+
+        scrollTimersRef.current.t1 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t1 = null;
+        }, 50);
+
+        scrollTimersRef.current.t2 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t2 = null;
+        }, 150);
+
+        scrollTimersRef.current.t3 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t3 = null;
+        }, 300);
+      },
+      [clearScrollTimers, messages, rowVirtualizer, updateScrollState]
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -1233,15 +1364,18 @@ export const ChatMessageList = React.memo(
 
     const prevLastUserMsgIdRef = useRef<string | null>(latestUserMessageId);
 
-    // When switching tasks or sessions, arm the instant scroll to bottom on load
+    // When switching tasks or sessions, save previous and arm scroll restoration on load
     useEffect(() => {
       if (taskId !== prevTaskIdRef.current || sessionId !== prevSessionIdRef.current) {
+        if (prevTaskIdRef.current && isInitialScrollHandledRef.current) {
+          saveCurrentScroll(prevTaskIdRef.current, prevSessionIdRef.current);
+        }
         prevTaskIdRef.current = taskId;
         prevSessionIdRef.current = sessionId;
         prevLastUserMsgIdRef.current = latestUserMessageId;
         shouldScrollToBottomOnLoadRef.current = true;
         handledLastCachedMessageIdRef.current = null;
-        isAutoScrollEnabled.current = true;
+        isInitialScrollHandledRef.current = false;
         setShowScrollBottomBtn(false);
         return;
       }
@@ -1251,7 +1385,7 @@ export const ChatMessageList = React.memo(
         prevLastUserMsgIdRef.current = latestUserMessageId;
         scrollToBottomInstant();
       }
-    }, [latestUserMessageId, taskId, sessionId, scrollToBottomInstant]);
+    }, [latestUserMessageId, taskId, sessionId, scrollToBottomInstant, saveCurrentScroll]);
 
     useEffect(() => {
       if (messages.length === 0) return;
@@ -1260,16 +1394,29 @@ export const ChatMessageList = React.memo(
         shouldScrollToBottomOnLoadRef.current = false;
         isFirstRender.current = false;
 
+        const savedPos = taskId ? getCachedChatScrollPosition(taskId, sessionId) : null;
+        if (savedPos) {
+          isInitialScrollHandledRef.current = true;
+          if (savedPos.wasAtBottom) {
+            scrollToBottomInstant();
+          } else {
+            restoreScrollPosition(savedPos);
+          }
+          return;
+        }
+
         // If we already have messages beyond the last cached message on initial render, scroll directly to first unread
         if (lastCachedMessageId) {
           const lastCachedIndex = messages.findIndex((m) => m.id === lastCachedMessageId);
           if (lastCachedIndex !== -1 && lastCachedIndex + 1 < messages.length) {
             handledLastCachedMessageIdRef.current = lastCachedMessageId;
+            isInitialScrollHandledRef.current = true;
             scrollToMessageIndexTop(lastCachedIndex + 1);
             return;
           }
         }
 
+        isInitialScrollHandledRef.current = true;
         scrollToBottomInstant();
         return;
       }
@@ -1302,8 +1449,11 @@ export const ChatMessageList = React.memo(
       liveStreamingChunk,
       isStreaming,
       lastCachedMessageId,
+      taskId,
+      sessionId,
       scrollToBottomInstant,
       scrollToMessageIndexTop,
+      restoreScrollPosition,
     ]);
 
     return (
