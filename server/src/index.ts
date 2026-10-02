@@ -2572,7 +2572,7 @@ wss.on('connection', (ws: WebSocket) => {
         send({ type: 'dev_server_state', state });
 
         devLogListener = (log: string) => {
-          send({ type: 'dev_server_log', log });
+          send({ type: 'dev_server_log', taskId, log });
         };
         devStateListener = (updatedState: any) => {
           send({ type: 'dev_server_state', state: updatedState });

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predev": "npm run build --prefix ../extension",
+    "prebuild": "npm run build --prefix ../extension",
+    "test:preview": "node --test tests/previewExtension.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.14.13",

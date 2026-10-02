@@ -211,9 +211,7 @@ export interface DevServerState {
   taskId: string;
   status: 'stopped' | 'starting' | 'running' | 'error';
   port?: number;
-  proxyPort?: number;
   url?: string;
-  proxyUrl?: string;
   logs: string[];
   devCmd: string;
   worktreePath: string;

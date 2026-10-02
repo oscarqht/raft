@@ -2,8 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import Ansi from 'ansi-to-react';
 import { Play, Pause, Square, RotateCw, RefreshCw, ExternalLink, Terminal, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Globe, Trash2, Camera, Loader2, AlertCircle, Package, CheckCircle2, X } from 'lucide-react';
 import { Task, DevServerState, FileAttachment } from '../types';
-import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer, getSettings } from '../api';
+import { getDevServerState, startDevServer, stopDevServer, restartDevServer, pingDevServer } from '../api';
 import { useOptionalScriptExecution } from '../contexts/ScriptExecutionContext';
+import { usePreviewExtension } from '../usePreviewExtension';
+import { statusFromError } from '../previewExtension';
+import { PreviewExtensionDialog } from './PreviewExtensionDialog';
+import { PreviewFrame } from './PreviewFrame';
 
 const PreviewAnnotationOverlay = React.lazy(() =>
   import('./PreviewAnnotationOverlay').then((m) => ({ default: m.PreviewAnnotationOverlay }))
@@ -33,7 +37,6 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const isAddressFocusedRef = useRef(false);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const currentIframePathRef = useRef('/');
-  const [activeIframeUrl, setActiveIframeUrl] = useState<string>('');
   const [iframeKey, setIframeKey] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
@@ -44,7 +47,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const captureStreamRef = useRef<MediaStream | null>(null);
+  const [showExtensionDialog, setShowExtensionDialog] = useState(false);
+  const currentTaskRef = useRef(task.id);
+  currentTaskRef.current = task.id;
 
   useEffect(() => {
     if (isAddressFocused) {
@@ -88,13 +93,6 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
   }, []);
 
   const isCompact = panelWidth < 620;
-
-  const stopCaptureStream = () => {
-    if (captureStreamRef.current) {
-      captureStreamRef.current.getTracks().forEach((t) => t.stop());
-      captureStreamRef.current = null;
-    }
-  };
 
   const [isCapturing, setIsCapturing] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
@@ -140,15 +138,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     prevInstallingRef.current = Boolean(isInstalling);
   }, [isInstalling, installCompleted]);
 
-  // Clean up screen capture stream on component unmount
+  // Reset preview state when switching tasks
   useEffect(() => {
-    return () => {
-      stopCaptureStream();
-    };
-  }, []);
-
-  // Reset dev server logs, readiness, and active capture stream when switching tasks
-  useEffect(() => {
+    setDevState({ taskId: task.id, status: 'stopped', logs: [], devCmd: '', worktreePath: '' });
     setLogs([]);
     setIsServerReady(false);
     setIsTimedOut(false);
@@ -157,36 +149,9 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setCanGoForward(false);
     setPathInput('/');
     currentIframePathRef.current = '/';
-    setActiveIframeUrl('');
-    stopCaptureStream();
+    setActiveScreenshot(null);
+    setIsCapturing(false);
     setIsStopping(false);
-  }, [task.id]);
-
-  // Listen for URL changes and navigation history depth from injected preview tracker
-  useEffect(() => {
-    const handleWindowMessage = (event: MessageEvent) => {
-      try {
-        if (!event.data || typeof event.data !== 'object') return;
-        if (event.data.type === 'RAFT_PREVIEW_URL_CHANGED') {
-          if (event.data.taskId && event.data.taskId !== task.id) return;
-          if (typeof event.data.pathname === 'string') {
-            currentIframePathRef.current = event.data.pathname;
-            if (!isAddressFocusedRef.current) {
-              setPathInput(event.data.pathname);
-            }
-          }
-          if (typeof event.data.canGoBack === 'boolean') {
-            setCanGoBack(event.data.canGoBack);
-          }
-          if (typeof event.data.canGoForward === 'boolean') {
-            setCanGoForward(event.data.canGoForward);
-          }
-        }
-      } catch {}
-    };
-
-    window.addEventListener('message', handleWindowMessage);
-    return () => window.removeEventListener('message', handleWindowMessage);
   }, [task.id]);
 
   // Subscribe to dev server WebSocket events
@@ -209,7 +174,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     const handleMessage = (event: MessageEvent) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'dev_server_state') {
+        if (msg.type === 'dev_server_state' && msg.state?.taskId === task.id) {
           setDevState(msg.state);
           if (msg.state?.status === 'stopped' || msg.state?.status === 'error') {
             setIsStopping(false);
@@ -217,7 +182,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
           if (msg.state?.logs && msg.state.logs.length > 0) {
             setLogs((prev) => (prev.length === 0 ? msg.state.logs : prev));
           }
-        } else if (msg.type === 'dev_server_log') {
+        } else if (msg.type === 'dev_server_log' && msg.taskId === task.id) {
           setLogs((prev) => [...prev, msg.log]);
         }
       } catch {}
@@ -236,14 +201,17 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
 
   // Initial fetch
   useEffect(() => {
+    let cancelled = false;
     getDevServerState(task.id)
       .then((state) => {
+        if (cancelled) return;
         setDevState(state);
         if (state.logs && state.logs.length > 0) {
           setLogs((prev) => (prev.length === 0 ? state.logs : prev));
         }
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [task.id]);
 
   // Reset readiness when server stops or errors
@@ -256,27 +224,16 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     }
   }, [devState.status]);
 
-  // Active port and host resolution
+  // Direct local preview; the companion supplies capture and frame navigation.
   const activeDevPort = devState.port || 5173;
-  const activeProxyPort = devState.proxyPort || activeDevPort;
-  const previewHostname = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? window.location.hostname
-    : 'localhost';
-
-  // Synchronize initial iframe URL when dev server starts or proxy port becomes available
-  useEffect(() => {
-    if (devState.status === 'running' || devState.status === 'starting') {
-      const targetPath = currentIframePathRef.current || '/';
-      const normalized = targetPath.startsWith('/') ? targetPath : '/' + targetPath;
-      const targetUrl = `http://${previewHostname}:${activeProxyPort}${normalized}`;
-      setActiveIframeUrl((prev) => {
-        if (!prev || !prev.startsWith(`http://${previewHostname}:${activeProxyPort}`)) {
-          return targetUrl;
-        }
-        return prev;
-      });
-    }
-  }, [devState.status, activeProxyPort, previewHostname]);
+  const previewOrigin = new URL(devState.url || `http://localhost:${activeDevPort}`).origin;
+  const extension = usePreviewExtension(task.id, previewOrigin,
+    devState.taskId === task.id && isServerReady && !isPreviewSleeping && !isStopping && (devState.status === 'running' || devState.status === 'starting'), (value) => {
+      currentIframePathRef.current = value.pathname;
+      if (!isAddressFocusedRef.current) setPathInput(value.pathname);
+      setCanGoBack(Boolean(value.canGoBack));
+      setCanGoForward(Boolean(value.canGoForward));
+    });
 
   // Polling readiness check effect
   useEffect(() => {
@@ -297,18 +254,24 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
       }
 
       let ready = false;
+      let resolvedPreview: { url: string; port: number } | undefined;
 
       // 1. Backend ping probe (checks TCP/HTTP on host)
       try {
         const ping = await pingDevServer(task.id);
         if (ping.ready) {
           ready = true;
+          if (ping.url) resolvedPreview = { url: ping.url, port: ping.port };
         }
       } catch {}
 
       if (!isMounted) return;
 
       if (ready) {
+        if (resolvedPreview) {
+          const resolved = resolvedPreview;
+          setDevState((prev) => ({ ...prev, ...resolved }));
+        }
         setIsServerReady(true);
         setIsTimedOut(false);
         setAttemptCount(0);
@@ -363,7 +326,7 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     if (isStopping) return;
     setIsStopping(true);
     try {
-      stopCaptureStream();
+      setActiveScreenshot(null);
       await stopDevServer(task.id);
       setDevState((prev) => ({ ...prev, status: 'stopped' }));
       setIsServerReady(false);
@@ -384,70 +347,34 @@ export const PreviewPane: React.FC<PreviewPaneProps> = ({ task, ws, onAttachToCh
     setAttemptCount(0);
     const next = await restartDevServer(task.id);
     setDevState(next);
-    const restartPath = currentIframePathRef.current || '/';
-    const normalized = restartPath.startsWith('/') ? restartPath : '/' + restartPath;
-    const nextPort = next.proxyPort || next.port || 5173;
-    setActiveIframeUrl(`http://${previewHostname}:${nextPort}${normalized}`);
     setIframeKey((k) => k + 1);
   };
 
-  const handleReloadIframe = () => {
-    let messageSent = false;
-    if (iframeRef.current?.contentWindow) {
-      try {
-        iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_RELOAD' }, '*');
-        messageSent = true;
-      } catch {}
+  const handleReloadIframe = async () => {
+    if (extension.registered) {
+      try { await extension.navigate('reload'); return; }
+      catch (error) { setCaptureError(error instanceof Error ? error.message : 'Could not reload preview'); }
     }
-    if (!messageSent) {
-      setIframeKey((k) => k + 1);
-    }
+    setIframeKey((key) => key + 1);
   };
 
-  const handleNavigateAddress = (targetPath?: string) => {
+  const handleNavigateAddress = async (targetPath?: string) => {
     let raw = (targetPath ?? pathInput).trim();
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
-      try {
-        const parsed = new URL(raw);
-        raw = parsed.pathname + parsed.search + parsed.hash;
-      } catch {}
+    if (/^https?:\/\//.test(raw)) {
+      try { const url = new URL(raw); raw = url.pathname + url.search + url.hash; } catch {}
     }
-    const normalized = raw.startsWith('/') ? raw : '/' + raw;
+    const normalized = '/' + raw.replace(/^\/+/, '');
     setPathInput(normalized);
     currentIframePathRef.current = normalized;
-
-    const targetUrl = `http://${previewHostname}:${activeProxyPort}${normalized}`;
-
-    if (iframeRef.current?.contentWindow) {
-      try {
-        iframeRef.current.contentWindow.postMessage(
-          {
-            type: 'RAFT_PREVIEW_NAVIGATE_TO',
-            path: normalized,
-          },
-          '*'
-        );
-      } catch {
-        setActiveIframeUrl(targetUrl);
-        setIframeKey((k) => k + 1);
-      }
-    } else {
-      setActiveIframeUrl(targetUrl);
-      setIframeKey((k) => k + 1);
+    if (extension.registered) {
+      try { await extension.navigate('to', normalized); return; }
+      catch (error) { setCaptureError(error instanceof Error ? error.message : 'Could not navigate preview'); }
     }
+    setIframeKey((key) => key + 1);
   };
 
-  const handleNavigateBack = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_NAVIGATE_BACK' }, '*');
-    }
-  };
-
-  const handleNavigateForward = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type: 'RAFT_PREVIEW_NAVIGATE_FORWARD' }, '*');
-    }
-  };
+  const handleNavigateBack = () => { void extension.navigate('back').catch((error) => setCaptureError(error.message)); };
+  const handleNavigateForward = () => { void extension.navigate('forward').catch((error) => setCaptureError(error.message)); };
 
 // Draws a crisp 1px subtle border around the perimeter of the captured screenshot
 // so that light/white pages have clear contrast against the tldraw canvas and chat bubbles.
@@ -480,167 +407,29 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
 }
 
   const handleCaptureScreenshot = async () => {
-    if (isCapturing || !previewContainerRef.current) return;
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getDisplayMedia) {
-      if (typeof window !== 'undefined' && !window.isSecureContext) {
-        try {
-          const s = await getSettings();
-          if (s.tailscale_https_url) {
-            setCaptureError(
-              `Screen capture requires HTTPS. Open Raft via Tailscale HTTPS: ${s.tailscale_https_url}`
-            );
-          } else {
-            setCaptureError(
-              'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
-            );
-          }
-        } catch {
-          setCaptureError(
-            'Screen capture requires a Secure Context (HTTPS or localhost). Your browser disables it over plain HTTP on remote/Tailscale IP.'
-          );
-        }
-      } else {
-        setCaptureError('Screen capture is not supported in this browser environment.');
-      }
-      setTimeout(() => setCaptureError(null), 8000);
-      return;
-    }
-
-    let stream: MediaStream | null = null;
-    let videoEl: HTMLVideoElement | null = null;
-
+    if (isCapturing || isPreviewSleeping || !iframeRef.current || !previewContainerRef.current) return;
+    const captureTaskId = task.id;
+    setIsCapturing(true);
+    setCaptureError(null);
     try {
-      setIsCapturing(true);
-      setCaptureError(null);
-      const container = previewContainerRef.current;
-      const rect = container.getBoundingClientRect();
-
-      try {
-        stream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            displaySurface: 'browser',
-          } as any,
-          audio: false,
-          preferCurrentTab: true,
-          selfBrowserSurface: 'include',
-          surfaceSwitching: 'include',
-          systemAudio: 'exclude',
-        } as any);
-      } catch (displayErr: any) {
-        // If user dismissed or cancelled the tab share dialog, gracefully exit
-        if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
-          return;
-        }
-        throw displayErr;
+      const status = await extension.check();
+      if (currentTaskRef.current !== captureTaskId) return;
+      if (status !== 'ready' || !extension.registered) {
+        setShowExtensionDialog(true);
+        return;
       }
-
-      const track = stream.getVideoTracks()[0];
-      if (!track) {
-        throw new Error('No video track returned from screen capture');
-      }
-
-      let drawSource: CanvasImageSource | null = null;
-      let sourceWidth = 0;
-      let sourceHeight = 0;
-
-      // 3. Accelerated GPU frame extraction via ImageCapture if supported (instant, 0ms latency)
-      if (typeof (window as any).ImageCapture !== 'undefined') {
-        try {
-          const imageCapture = new (window as any).ImageCapture(track);
-          const bitmap = await imageCapture.grabFrame();
-          sourceWidth = bitmap.width;
-          sourceHeight = bitmap.height;
-          drawSource = bitmap;
-        } catch {
-          drawSource = null;
-        }
-      }
-
-      // 4. Fallback to video element if ImageCapture is unavailable
-      if (!drawSource) {
-        videoEl = document.createElement('video');
-        videoEl.srcObject = stream;
-        videoEl.muted = true;
-        videoEl.playsInline = true;
-        await videoEl.play();
-
-        await new Promise<void>((resolve) => {
-          if (videoEl!.readyState >= 2) return resolve();
-          videoEl!.onloadeddata = () => resolve();
-        });
-
-        // Brief delay for video frame buffer
-        await new Promise((r) => setTimeout(r, 60));
-
-        sourceWidth = videoEl.videoWidth;
-        sourceHeight = videoEl.videoHeight;
-        drawSource = videoEl;
-      }
-
-      const windowW = window.innerWidth;
-      const windowH = window.innerHeight;
-
-      const scaleX = sourceWidth / windowW;
-      const scaleY = sourceHeight / windowH;
-
-      let cropX = Math.max(0, Math.round(rect.left * scaleX));
-      let cropY = Math.max(0, Math.round(rect.top * scaleY));
-      let cropW = Math.min(sourceWidth - cropX, Math.round(rect.width * scaleX));
-      let cropH = Math.min(sourceHeight - cropY, Math.round(rect.height * scaleY));
-
-      if (cropW <= 0 || cropH <= 0) {
-        cropX = 0;
-        cropY = 0;
-        cropW = sourceWidth;
-        cropH = sourceHeight;
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = cropW;
-      canvas.height = cropH;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Failed to create 2d canvas context');
-
-      ctx.drawImage(drawSource, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-      // Release ImageBitmap resources if applicable
-      if (typeof (drawSource as any).close === 'function') {
-        (drawSource as any).close();
-      }
-
-      const currentPath = pathInput.startsWith('/') ? pathInput : '/' + pathInput;
-      const rawDataUrl = canvas.toDataURL('image/png');
-      const borderedDataUrl = await addBorderToScreenshotDataUrl(rawDataUrl);
-      setActiveScreenshot({
-        dataUrl: borderedDataUrl,
-        width: cropW,
-        height: cropH,
-        url: currentPath,
-      });
-    } catch (err: any) {
-      if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-        console.error('Failed to capture preview screenshot:', err);
-        setCaptureError(err.message || 'Failed to capture preview screenshot');
-        setTimeout(() => setCaptureError(null), 5000);
-      }
+      const rect = previewContainerRef.current.getBoundingClientRect();
+      const result = await extension.capture(rect, `${previewOrigin}${currentIframePathRef.current || '/'}`);
+      if (currentTaskRef.current !== captureTaskId) return;
+      const borderedDataUrl = await addBorderToScreenshotDataUrl(result.dataUrl);
+      if (currentTaskRef.current !== captureTaskId) return;
+      setActiveScreenshot({ dataUrl: borderedDataUrl, width: result.width, height: result.height, url: (() => { const url = new URL(result.url, previewOrigin); return url.pathname + url.search + url.hash; })() });
+    } catch (error) {
+      if (currentTaskRef.current !== captureTaskId) return;
+      if (statusFromError(error)) setShowExtensionDialog(true);
+      else setCaptureError(error instanceof Error ? error.message : 'Failed to capture preview screenshot');
     } finally {
-      setIsCapturing(false);
-      // Clean up fallback video element
-      if (videoEl) {
-        try {
-          videoEl.pause();
-          videoEl.srcObject = null;
-        } catch {}
-        videoEl = null;
-      }
-      // Stop media tracks immediately so Chrome stops background screen capture pipelines
-      if (stream) {
-        try {
-          stream.getTracks().forEach((t) => t.stop());
-        } catch {}
-        stream = null;
-      }
-      captureStreamRef.current = null;
+      if (currentTaskRef.current === captureTaskId) setIsCapturing(false);
     }
   };
 
@@ -663,8 +452,8 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
     }
   };
 
-  const initialIframeSrc = activeIframeUrl || `http://${previewHostname}:${activeProxyPort}${currentPath}`;
-  const externalUrl = `http://${previewHostname}:${activeDevPort}${currentPath}`;
+  const initialIframeSrc = `${previewOrigin}${currentPath}`;
+  const externalUrl = `${previewOrigin}${currentPath}`;
 
   return (
     <div ref={panelRef} className="flex-1 flex flex-col h-full bg-transparent min-w-0 overflow-hidden relative">
@@ -748,7 +537,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <button
               type="button"
               onClick={handleNavigateBack}
-              disabled={devState.status !== 'running' || !isServerReady || !canGoBack}
+              disabled={devState.status !== 'running' || !isServerReady || !extension.registered || !canGoBack}
               className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               title="Back"
               aria-label="Back"
@@ -758,7 +547,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <button
               type="button"
               onClick={handleNavigateForward}
-              disabled={devState.status !== 'running' || !isServerReady || !canGoForward}
+              disabled={devState.status !== 'running' || !isServerReady || !extension.registered || !canGoForward}
               className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle disabled:opacity-30 transition-colors cursor-pointer disabled:cursor-not-allowed"
               title="Forward"
               aria-label="Forward"
@@ -783,7 +572,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             {isAddressFocused ? (
               <div className="flex-1 min-w-0 flex items-center overflow-hidden">
                 <span className="text-cozy-muted select-none font-mono text-[11px] shrink-0 truncate max-w-[130px]">
-                  http://localhost:{activeDevPort}
+                  {previewOrigin}
                 </span>
                 <input
                   ref={addressInputRef}
@@ -818,7 +607,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                   className="block truncate font-mono text-[11px] text-cozy-muted select-none"
                   title={`http://localhost:${activeDevPort}${pathInput.startsWith('/') ? pathInput : '/' + pathInput}`}
                 >
-                  http://localhost:{activeDevPort}
+                  {previewOrigin}
                   <span className="text-cozy-text font-medium">
                     {pathInput.startsWith('/') ? pathInput : '/' + pathInput}
                   </span>
@@ -840,10 +629,15 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
             <RotateCw className="w-3.5 h-3.5" />
           </button>
 
+          <button type="button" onClick={() => setShowExtensionDialog(true)}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle"
+            title={extension.registered ? 'Preview extension connected' : 'Enable enhanced preview'} aria-label="Enable enhanced preview">
+            <Globe className={`w-3.5 h-3.5 ${extension.registered ? 'text-teal-500' : ''}`} />
+          </button>
           {/* Screenshot & Annotate Preview button */}
           <button
             onClick={handleCaptureScreenshot}
-            disabled={devState.status !== 'running' || !isServerReady || isCapturing}
+            disabled={devState.status !== 'running' || !isServerReady || isCapturing || isPreviewSleeping || extension.preparing}
             className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${
               activeScreenshot
                 ? 'bg-teal-500/15 text-teal-600 dark:text-teal-400'
@@ -982,7 +776,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
           </div>
         )}
 
-        {devState.status === 'running' || devState.status === 'starting' ? (
+        {devState.taskId === task.id && (devState.status === 'running' || devState.status === 'starting') ? (
           isServerReady ? (
             isPreviewSleeping ? (
               <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center text-cozy-muted bg-cozy-bg/50 select-none">
@@ -1004,10 +798,13 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                   <span>Resume Preview</span>
                 </button>
               </div>
+            ) : extension.preparing ? (
+              <div className="flex h-full items-center justify-center gap-2 text-sm text-cozy-muted"><Loader2 className="h-4 w-4 animate-spin" />Connecting preview extension…</div>
             ) : (
-              <iframe
+              <PreviewFrame
                 ref={iframeRef}
-                key={iframeKey}
+                data-alpha-bro-preview={extension.sessionId || undefined}
+                key={`${task.id}:${previewOrigin}:${iframeKey}`}
                 src={initialIframeSrc}
                 title="Task Dev Server Preview"
                 className="w-full h-full border-0"
@@ -1084,7 +881,7 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
                 Waiting for Dev Server...
               </h3>
               <p className="text-xs font-mono text-teal-600/90 dark:text-teal-400 mb-4 font-medium">
-                http://localhost:{activeDevPort}
+                {previewOrigin}
               </p>
 
               <div className="w-64 max-w-xs mb-3">
@@ -1256,6 +1053,9 @@ async function addBorderToScreenshotDataUrl(dataUrl: string): Promise<string> {
         )}
       </div>
 
+      {showExtensionDialog && <PreviewExtensionDialog status={extension.status}
+        onClose={() => setShowExtensionDialog(false)} onCheck={extension.retry} onSetup={extension.openSetup} />}
+      {extension.error && <div role="status" className="px-3 py-2 text-xs text-cozy-muted">{extension.error} <button className="underline" onClick={() => { void extension.retry(); }}>Reconnect preview extension</button></div>}
       {/* Collapsible Console Logs Drawer */}
       {showConsole && (
         <div className="h-52 border-t border-cozy-border/60 bg-cozy-surface/95 backdrop-blur-md flex flex-col shrink-0 select-text animate-in slide-in-from-bottom duration-200">

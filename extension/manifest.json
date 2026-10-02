@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Alpha Bro Companion",
+  "version": "1.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Capture and annotate local app previews in Alpha Bro, with improved iframe compatibility.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Connect Alpha Bro",
+    "default_popup": "setup.html"
+  },
+  "options_page": "setup.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "128": "icons/icon128.png"
+  }
+}

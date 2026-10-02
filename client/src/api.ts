@@ -342,7 +342,7 @@ export async function getDevServerState(taskId: string): Promise<DevServerState>
   return res.json();
 }
 
-export async function pingDevServer(taskId: string): Promise<{ ready: boolean; port: number }> {
+export async function pingDevServer(taskId: string): Promise<{ ready: boolean; port: number; url?: string }> {
   try {
     const res = await fetch(`${API_BASE}/tasks/${taskId}/dev-server/ping`);
     if (!res.ok) return { ready: false, port: 5173 };

@@ -5,15 +5,12 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getCrossPlatformEnv } from './agentRunner.js';
-import { startDevServerProxy, DevServerProxyInstance } from './previewProxy.js';
 
 export interface DevServerState {
   taskId: string;
   status: 'stopped' | 'starting' | 'running' | 'error';
   port?: number;
-  proxyPort?: number;
   url?: string;
-  proxyUrl?: string;
   logs: string[];
   devCmd: string;
   worktreePath: string;
@@ -32,8 +29,6 @@ export class DevServerManager extends EventEmitter {
   private servers: Map<string, {
     proc: ChildProcess | null;
     state: DevServerState;
-    proxy?: DevServerProxyInstance | null;
-    targetPort?: number;
     stopping?: Promise<boolean>;
     portConfirmed?: boolean;
     output?: string;
@@ -261,7 +256,6 @@ export class DevServerManager extends EventEmitter {
           state.url = `http://localhost:${detectedPort}`;
           this.emitState(taskId, state);
         }
-        if (!entry.proxy || entry.targetPort !== detectedPort) void this.ensureProxy(taskId, detectedPort);
       }
     };
 
@@ -292,10 +286,9 @@ export class DevServerManager extends EventEmitter {
       this.emitState(taskId, state);
     });
 
-    this.servers.set(taskId, { proc, state, proxy: null, portConfirmed: !occupied });
+    this.servers.set(taskId, { proc, state, portConfirmed: !occupied });
     this.persistProcesses();
     this.emitState(taskId, state);
-    if (!occupied) await this.ensureProxy(taskId, defaultPort);
     return state;
   }
 
@@ -312,36 +305,6 @@ export class DevServerManager extends EventEmitter {
     } catch { return false; }
   }
 
-  async ensureProxy(taskId: string, targetPort: number): Promise<void> {
-    const entry = this.servers.get(taskId);
-    if (!entry || entry.stopping || !entry.portConfirmed || entry.state.port !== targetPort || !this.ownsListener(entry.proc?.pid, targetPort)) return;
-
-    if (entry.proxy && entry.proxy.port && entry.targetPort === targetPort) {
-      return;
-    }
-
-    if (entry.proxy) {
-      entry.proxy.close();
-      entry.proxy = null;
-    }
-
-    try {
-      const proxy = await startDevServerProxy(taskId, targetPort, '127.0.0.1');
-      if (this.servers.get(taskId) !== entry || entry.stopping || entry.state.port !== targetPort || entry.state.status === 'stopped' || entry.state.status === 'error') {
-        proxy.close();
-        return;
-      }
-      (entry.proxy as DevServerProxyInstance | null)?.close();
-      entry.targetPort = targetPort;
-      entry.proxy = proxy;
-      entry.state.proxyPort = proxy.port;
-      entry.state.proxyUrl = `http://localhost:${proxy.port}`;
-      this.emitState(taskId, entry.state);
-    } catch (err: any) {
-      console.error(`[DevServerManager] Failed to start preview proxy for task ${taskId}:`, err);
-    }
-  }
-
   async stopServer(taskId: string, options?: { onlyIfNoSubscribers?: boolean }): Promise<boolean> {
     // A Stop arriving while startup probes are pending must not leave a new process behind.
     await this.pendingStarts.get(taskId)?.catch(() => {});
@@ -355,11 +318,6 @@ export class DevServerManager extends EventEmitter {
     if (!entry) return false;
     if (entry.stopping) return entry.stopping;
     const wasRunning = entry.state.status === 'running' || entry.state.status === 'starting' || entry.proc !== null;
-    entry.proxy?.close();
-    entry.proxy = null;
-    entry.targetPort = undefined;
-    entry.state.proxyPort = undefined;
-    entry.state.proxyUrl = undefined;
     entry.portConfirmed = false;
 
     entry.stopping = (async () => {
@@ -409,14 +367,13 @@ export class DevServerManager extends EventEmitter {
     return this.startServer(taskId, worktreePath, devCmd, defaultPort || port);
   }
 
-  async checkServerReady(taskId: string): Promise<{ ready: boolean; port: number; proxyPort?: number }> {
+  async checkServerReady(taskId: string): Promise<{ ready: boolean; port: number; url?: string }> {
     const entry = this.servers.get(taskId);
     if (!entry || entry.stopping || !entry.portConfirmed || !entry.proc || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
-      return { ready: false, port: entry?.state.port || 5173, proxyPort: entry?.state.proxyPort };
+      return { ready: false, port: entry?.state.port || 5173 };
     }
     const port = entry.state.port || 5173;
-    const proxyPort = entry.state.proxyPort;
-    if (!this.ownsListener(entry.proc.pid, port)) return { ready: false, port, proxyPort };
+    if (!this.ownsListener(entry.proc.pid, port)) return { ready: false, port };
 
     const probe = (hostname: string): Promise<boolean> => {
       return new Promise((resolve) => {
@@ -443,19 +400,27 @@ export class DevServerManager extends EventEmitter {
       });
     };
 
-    const isReady127 = await probe('127.0.0.1');
-    if (isReady127) {
-      await this.ensureProxy(taskId, port);
-      entry.proxy?.setTargetHost('127.0.0.1');
-      return { ready: Boolean(entry.proxy) && !entry.stopping, port, proxyPort: entry.state.proxyPort };
+    // Keep localhost when it is reachable so redirects, cookies and HMR use a
+    // stable origin. Fall back to an explicit loopback address for one-family binds.
+    const previousHost = entry.state.url ? new URL(entry.state.url).hostname.replace(/^\[|\]$/g, '') : 'localhost';
+    for (const hostname of new Set([previousHost, 'localhost', '127.0.0.1', '::1'])) {
+      const ready = await probe(hostname);
+      // A stop/restart or a new port announcement can race the HTTP response.
+      if (this.servers.get(taskId) !== entry || entry.stopping || !entry.proc || !entry.portConfirmed ||
+          entry.state.port !== port || (entry.state.status !== 'running' && entry.state.status !== 'starting')) {
+        return { ready: false, port };
+      }
+      if (!ready) continue;
+      if (!this.ownsListener(entry.proc.pid, port)) return { ready: false, port };
+      const host = hostname === '::1' ? '[::1]' : hostname;
+      const url = `http://${host}:${port}`;
+      if (entry.state.url !== url) {
+        entry.state.url = url;
+        this.emitState(taskId, entry.state);
+      }
+      return { ready: true, port, url };
     }
-    const isReadyIpv6 = await probe('::1');
-    if (isReadyIpv6) {
-      await this.ensureProxy(taskId, port);
-      entry.proxy?.setTargetHost('::1');
-      return { ready: Boolean(entry.proxy) && !entry.stopping, port, proxyPort: entry.state.proxyPort };
-    }
-    return { ready: false, port, proxyPort };
+    return { ready: false, port };
   }
 }
 
