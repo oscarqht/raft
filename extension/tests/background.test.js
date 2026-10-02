@@ -73,3 +73,32 @@ test('explicitly paired Tailscale owner can register only a loopback preview', a
   assert.equal((await request('registerPreview', preview, remoteSender)).ok, true);
   assert.equal((await request('registerPreview', { ...preview, url: 'http://100.64.1.2:4000/' }, remoteSender)).error.code, 'INVALID_URL');
 });
+
+test('port 3300 auto-connects every HTTP(S) host but only registers local previews', async () => {
+  const origins = ['http://localhost:3300', 'http://100.64.1.2:3300', 'https://bro.example.com:3300'];
+  let tabId = 30;
+  for (const origin of origins) {
+    const sender = { tab: { ...tab, id: tabId++, url: origin + '/task' }, frameId: 0, url: origin + '/task' };
+    const preview = { sessionId: origin, taskId: 'task', url: 'http://localhost:4000/' };
+    assert.equal((await request('hello', {}, sender)).result.connected, true);
+    assert.equal((await request('registerPreview', preview, sender)).ok, true);
+    assert.equal((await request('registerPreview', { ...preview, url: 'https://example.com:4000/' }, sender)).error.code, 'INVALID_URL');
+  }
+  const otherPort = { tab: { ...tab, id: 40, url: 'http://localhost:3301/' }, frameId: 0, url: 'http://localhost:3301/' };
+  assert.equal((await request('hello', {}, otherPort)).result.connected, false);
+  assert.equal((await request('registerPreview', { sessionId: 'other', taskId: 'task', url: 'http://localhost:4000/' }, otherPort)).error.code, 'NOT_CONNECTED');
+  const invalidScheme = { ...otherPort, url: 'ftp://localhost:3300/' };
+  assert.equal((await request('hello', {}, invalidScheme)).error.code, 'INVALID_URL');
+});
+
+test('manual connection removal retains auto-connected sessions and removes manual sessions', async () => {
+  localData.connectedOrigins = [];
+  chrome.storage.onChanged.listeners[0]({ connectedOrigins: { newValue: [] } }, 'local');
+  // A subsequent serialized operation waits for the connection cleanup.
+  await request('unregisterPreview', { sessionId: 'unrelated' }, { tab: { ...tab, id: 30 }, frameId: 0, url: 'http://localhost:3300/' });
+  assert.ok(rules.some(rule => rule.condition.tabIds.includes(30)));
+  assert.ok(rules.some(rule => rule.condition.tabIds.includes(31)));
+  assert.ok(rules.some(rule => rule.condition.tabIds.includes(32)));
+  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(2)));
+  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(8)));
+});

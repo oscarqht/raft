@@ -44,7 +44,9 @@ export function PreviewExtensionDialog({ status, onClose, onCheck, onSetup }: Pr
     try {
       const next = await onCheck();
       setMessage(next === 'ready' ? 'Connected. Close this dialog and capture your preview.' : next === 'setup'
-        ? 'Extension found. Finish setup to connect this Alpha Bro page.' : 'The extension is not ready yet. Check that it is enabled, then try again.');
+        ? 'Extension found. Finish setup to connect this Alpha Bro page.' : next === 'missing'
+          ? 'No response from the extension in this tab. If you already installed it, reload Alpha Bro once. Check again cannot load the extension into an already-open tab.'
+          : 'The extension is not ready yet. Check that it is enabled, then try again.');
     } finally { setBusy(false); }
   };
 
@@ -59,9 +61,9 @@ export function PreviewExtensionDialog({ status, onClose, onCheck, onSetup }: Pr
         <h2 id="preview-extension-title" className="mt-4 text-lg font-semibold">Enhance your preview with Alpha Bro Companion</h2>
         <p className="mt-2 text-sm text-cozy-muted">Capture the preview exactly as you see it, without a screen-sharing dialog. Keep using the same crop and annotation tools.</p>
         <p className="mt-2 text-sm text-cozy-muted">The extension also helps local dev apps load inside the preview and connects its navigation controls.</p>
-        <p className="mt-3 text-xs text-cozy-muted">Connect this Alpha Bro address once in the extension. Screenshots stay in your browser until you attach them to chat.</p>
+        <p className="mt-3 text-xs text-cozy-muted">Alpha Bro addresses on port 3300 connect automatically. Other ports need a one-time connection in the extension. Screenshots stay in your browser until you attach them to chat.</p>
         {status === 'unsupported' && <p className="mt-3 text-sm">Alpha Bro Companion currently supports desktop Chrome and Edge. Open Alpha Bro in either browser to use these features.</p>}
-        {status === 'missing' && <p className="mt-3 text-sm">After installing, reload Alpha Bro once, then connect this address from the extension toolbar button.</p>}
+        {status === 'missing' && <p className="mt-3 text-sm">After installing, reload Alpha Bro once. Port 3300 connects automatically; for other ports, connect this address from the extension toolbar button.</p>}
         {status === 'setup' && <p className="mt-3 text-sm">The extension is installed. Finish setup to grant access and connect this page.</p>}
         {status === 'reload' && <p className="mt-3 text-sm">The extension was updated or disabled. Enable it if needed, then reload Alpha Bro to reconnect.</p>}
         {status === 'update' && <p className="mt-3 text-sm">Update the extension to a compatible version, then check again.</p>}
@@ -75,6 +77,7 @@ export function PreviewExtensionDialog({ status, onClose, onCheck, onSetup }: Pr
               {status === 'update' ? 'Update extension' : 'Install extension'}<ExternalLink className="h-3.5 w-3.5" />
             </a>
           )}
+          {status === 'missing' && <button className="rounded-lg border border-cozy-border px-3 py-2 text-sm" onClick={() => window.location.reload()}>Already installed? Reload Alpha Bro</button>}
           {status !== 'unsupported' && <button disabled={busy} onClick={check} className="inline-flex items-center gap-2 rounded-lg border border-cozy-border px-3 py-2 text-sm disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}Check again
           </button>}

@@ -222,9 +222,9 @@ browser screen sharing; there is no screen-sharing or preview-proxy fallback.
 
 Click the preview's **Enable enhanced preview** button to open setup. Until a store
 release is published, **Install extension** opens a bundled guide with an unpacked
-extension download. After installation, reload Alpha Bro once, open the extension
-from the browser toolbar, and connect your Alpha Bro address. Basic iframe
-preview remains available without the extension when the dev app allows embedding.
+extension download. After installation, reload Alpha Bro once. HTTP(S) addresses
+on port 3300 connect automatically. For other ports, open the extension from the
+browser toolbar and connect your Alpha Bro address. Basic iframe preview remains available without the extension when the dev app allows embedding.
 Remote/Tailscale access to the rest of Alpha Bro remains supported; dev preview is
 local-only.
 

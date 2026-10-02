@@ -1,4 +1,4 @@
-import { ownerUrl } from './core.js';
+import { ownerUrl, isAutoConnected } from './core.js';
 const status = document.getElementById('status');
 const button = document.getElementById('connect');
 let origin;
@@ -6,7 +6,7 @@ async function render() {
   const { connectedOrigins = [] } = await chrome.storage.local.get('connectedOrigins');
   const list = document.getElementById('connections');
   list.replaceChildren();
-  for (const address of connectedOrigins) {
+  for (const address of connectedOrigins.filter(value => !isAutoConnected(value))) {
     const item = document.createElement('li');
     item.append(document.createTextNode(address));
     const remove = document.createElement('button');
@@ -19,8 +19,14 @@ async function render() {
     item.append(remove);
     list.append(item);
   }
-  button.textContent = connectedOrigins.includes(origin) ? 'Connected' : 'Connect this Alpha Bro address';
-  button.disabled = !origin || connectedOrigins.includes(origin);
+  const automatic = isAutoConnected(origin);
+  button.textContent = automatic ? 'Automatically connected (port 3300)' : connectedOrigins.includes(origin) ? 'Connected' : 'Connect this Alpha Bro address';
+  button.disabled = !origin || automatic || connectedOrigins.includes(origin);
+  if (origin && (automatic || connectedOrigins.includes(origin))) {
+    status.textContent = 'Address connected. If Alpha Bro cannot detect the extension, reload the entire Alpha Bro browser tab once (Cmd+R on Mac, Ctrl+R on Windows), then try Capture again.';
+  } else {
+    status.textContent = '';
+  }
 }
 try {
   const requested = new URL(location.href).searchParams.get('origin');
@@ -36,7 +42,6 @@ button.onclick = async () => {
     if (!allowed) { status.textContent = 'Allow access to all sites in browser extension settings, then try again.'; return; }
     const { connectedOrigins = [] } = await chrome.storage.local.get('connectedOrigins');
     await chrome.storage.local.set({ connectedOrigins: [...new Set([...connectedOrigins, origin])] });
-    status.textContent = 'Connected. Return to Alpha Bro and choose Check again.';
     await render();
   } catch (error) { status.textContent = error.message; }
 };

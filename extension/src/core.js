@@ -7,6 +7,9 @@ export function ownerUrl(value) {
   }
   return url;
 }
+export function isAutoConnected(value) {
+  try { return ownerUrl(value).port === '3300'; } catch { return false; }
+}
 export function localUrl(value) {
   let url;
   try { url = new URL(value); } catch { throw failure('INVALID_URL', 'Enter a valid local preview URL.'); }
