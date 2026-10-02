@@ -1,3 +1,4 @@
+mod desktop_bridge;
 mod instance_guard;
 mod notify;
 mod server;
@@ -94,95 +95,8 @@ pub fn run() {
                         if let Err(e) = tray::setup_tray(&app_handle, server_url.clone()) {
                             eprintln!("[raft] Failed to setup tray: {e}");
                         }
+                        desktop_bridge::start(app_handle.clone(), port, internal_token);
                         updater::start_background_updater(app_handle.clone());
-
-                        // Periodically sync UpdateStatus with the Express server and poll for user-triggered updater actions
-                        let sync_app_handle = app_handle.clone();
-                        let sync_token = internal_token.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let client = reqwest::Client::builder()
-                                .timeout(std::time::Duration::from_secs(2))
-                                .build()
-                                .unwrap_or_default();
-
-                            let mut interval = tokio::time::interval(std::time::Duration::from_millis(1500));
-                            let mut last_status: Option<updater::UpdateStatus> = None;
-
-                            loop {
-                                interval.tick().await;
-
-                                // 1. Push latest UpdateStatus to server if changed
-                                if let Some(state) = sync_app_handle.try_state::<updater::UpdateState>() {
-                                    let current_status = {
-                                        let mgr = state.0.lock().await;
-                                        mgr.status.clone()
-                                    };
-
-                                    if last_status.as_ref() != Some(&current_status) {
-                                        last_status = Some(current_status.clone());
-                                        let payload = serde_json::json!({
-                                            "current_version": sync_app_handle.package_info().version.to_string(),
-                                            "status": current_status,
-                                        });
-                                        let url = format!("http://127.0.0.1:{}/api/internal/updater-status", port);
-                                        let _ = client
-                                            .post(&url)
-                                            .header("X-Raft-Token", &sync_token)
-                                            .json(&payload)
-                                            .send()
-                                            .await;
-                                    }
-                                }
-
-                                // 2. Check if web client triggered updater action
-                                let action_url = format!("http://127.0.0.1:{}/api/internal/updater-action", port);
-                                if let Ok(resp) = client
-                                    .get(&action_url)
-                                    .header("X-Raft-Token", &sync_token)
-                                    .send()
-                                    .await
-                                {
-                                    if let Ok(val) = resp.json::<serde_json::Value>().await {
-                                        if let Some(act) = val.get("action").and_then(|v| v.as_str()) {
-                                            match act {
-                                                "check" => {
-                                                    let h = sync_app_handle.clone();
-                                                    tauri::async_runtime::spawn(async move {
-                                                        updater::check_and_download(&h, false, true).await;
-                                                    });
-                                                }
-                                                "install" => {
-                                                    let h = sync_app_handle.clone();
-                                                    tauri::async_runtime::spawn(async move {
-                                                        let _ = updater::install_and_relaunch_inner(&h).await;
-                                                    });
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // 3. Check for pending system desktop notifications
-                                let notify_url = format!("http://127.0.0.1:{}/api/internal/pending-notifications", port);
-                                if let Ok(resp) = client
-                                    .get(&notify_url)
-                                    .header("X-Raft-Token", &sync_token)
-                                    .send()
-                                    .await
-                                {
-                                    if let Ok(val) = resp.json::<serde_json::Value>().await {
-                                        if let Some(arr) = val.get("notifications").and_then(|v| v.as_array()) {
-                                            for n in arr {
-                                                let title = n.get("title").and_then(|v| v.as_str()).unwrap_or("Alpha Bro");
-                                                let body = n.get("body").and_then(|v| v.as_str()).unwrap_or("");
-                                                notify::show_notification(&sync_app_handle, title, body);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        });
 
                         #[cfg(target_os = "macos")]
                         {

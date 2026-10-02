@@ -169,15 +169,6 @@ pub fn setup_tray(
         app.manage(TrayFdaState {
             item: Mutex::new(Some(fda_item.clone())),
         });
-
-        let app_handle_poll = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3));
-            loop {
-                interval.tick().await;
-                update_fda_menu_item(&app_handle_poll);
-            }
-        });
     }
 
     let autostart_item = CheckMenuItem::with_id(
@@ -267,7 +258,11 @@ pub fn setup_tray(
     }
 
     tray_builder
-        .on_tray_icon_event(move |_tray, event| {
+        .on_tray_icon_event(move |tray, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(event, TrayIconEvent::Enter { .. } | TrayIconEvent::Click { .. }) {
+                update_fda_menu_item(tray.app_handle());
+            }
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,

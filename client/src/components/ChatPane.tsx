@@ -1,3 +1,4 @@
+import { applyStreamContent, applyStreamSteps } from '../streamUpdate';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
@@ -5,7 +6,7 @@ import {
   Terminal, Sparkles, MessageSquareQuote, Target, Clock, Globe, ListTodo, HelpCircle, BookOpen, Layers, MoreVertical,
   Paperclip, Loader2, AlertCircle, Trash2, ArrowUp, RotateCcw, PanelLeftOpen
 } from 'lucide-react';
-import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage } from '../types';
+import { Task, ChatSession, ChatMessage, Settings, CliInfo, ModelOption, AgentSkill, FileAttachment, AlphaHitlPayload, QueuedMessage, AgentStep } from '../types';
 import { ChatMessageList, ChatMessageListHandle } from './ChatMessageList';
 import { ChatQueueDrawer } from './ChatQueueDrawer';
 import { getTaskChats, createChatSession, updateChatSession, deleteChatSession, getChatMessages, deleteChatMessage, getModels, getSkills, uploadTaskAttachments } from '../api';
@@ -753,6 +754,8 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   // Listen to WebSocket messages
   useEffect(() => {
     if (!ws) return;
+    // Keep the wire snapshot separate from REST/cache hydration and lazy activity loading.
+    let streamSnapshot: { messageId: string; content: string; steps?: AgentStep[] } | null = null;
 
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -791,7 +794,17 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
             isSteeringRef.current = false;
             setIsStreaming(true);
             isStreamingRef.current = true;
-            const fullContent = msg.fullContent;
+            if (msg.contentPatch && streamSnapshot?.messageId !== msg.messageId) {
+              ws.send(JSON.stringify({ type: 'subscribe_chat', sessionId: activeChatId }));
+              return;
+            }
+            const fullContent = msg.contentPatch
+              ? applyStreamContent(streamSnapshot!.content, msg.contentPatch)
+              : msg.fullContent;
+            const streamSteps = applyStreamSteps(streamSnapshot && streamSnapshot.messageId === msg.messageId ? streamSnapshot.steps : undefined, msg);
+            if (typeof fullContent === 'string') {
+              streamSnapshot = { messageId: msg.messageId, content: fullContent, steps: streamSteps };
+            }
             const deltaContent = msg.event?.content || '';
 
             setMessages((prev) => {
@@ -833,7 +846,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   ...target,
                   id: msg.messageId || target.id,
                   content: nextContent,
-                  steps: msg.steps || target.steps,
+                  steps: streamSteps || target.steps,
                 };
                 return updated;
               }
@@ -846,7 +859,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                   session_id: eventSessionId,
                   role: 'assistant',
                   content: typeof fullContent === 'string' ? fullContent : deltaContent,
-                  steps: msg.steps,
+                  steps: streamSteps,
                   timestamp: Date.now(),
                 },
               ];
@@ -956,7 +969,21 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     };
 
     ws.addEventListener('message', handleMessage);
-    return () => ws.removeEventListener('message', handleMessage);
+    const subscribe = () => {
+      if (!activeChatId || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: document.visibilityState === 'visible' ? 'subscribe_chat' : 'unsubscribe_chat', sessionId: activeChatId }));
+    };
+    subscribe();
+    ws.addEventListener('open', subscribe);
+    document.addEventListener('visibilitychange', subscribe);
+    return () => {
+      ws.removeEventListener('message', handleMessage);
+      ws.removeEventListener('open', subscribe);
+      document.removeEventListener('visibilitychange', subscribe);
+      if (activeChatId && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'unsubscribe_chat', sessionId: activeChatId }));
+      }
+    };
   }, [ws, activeChatId]);
 
   const handleCreateChat = async () => {

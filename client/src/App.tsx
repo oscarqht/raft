@@ -169,6 +169,7 @@ export default function App() {
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
+        socket?.send(JSON.stringify({ type: 'stream_protocol', version: 1 }));
         setWs(socket);
       };
 

@@ -1,3 +1,4 @@
+import { manageAgentProcess } from './agentProcesses.js';
 import { spawn, execSync, ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -1258,8 +1259,10 @@ export function spawnAgentCli(
     cwd,
     env,
     shell: isWin ? isScript : false,
+    detached: !isWin,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+  manageAgentProcess(proc);
 
   // Close stdin immediately so non-interactive tools (like codex exec) don't hang waiting for stdin
   proc.stdin?.end();
