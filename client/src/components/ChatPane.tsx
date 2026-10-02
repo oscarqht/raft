@@ -1415,6 +1415,47 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     }
   }, [isStreaming, activeChatId, queuedMessages.length, ws?.readyState, dispatchNextQueuedMessage]);
 
+  // Streamed events are not replayed, so anything broadcast while the socket was down or the tab was
+  // hidden (including chat_turn_complete) is lost. Re-read the server state to catch up.
+  const resyncActiveChat = useCallback(async () => {
+    const chatId = activeChatIdRef.current;
+    const taskId = taskRef.current.id;
+    if (!chatId) return;
+    try {
+      const [freshChats, freshMessages] = await Promise.all([
+        getTaskChats(taskId),
+        getChatMessages(chatId),
+      ]);
+      if (activeChatIdRef.current !== chatId || taskRef.current.id !== taskId) return;
+      setChats(freshChats);
+      setCachedChats(taskId, freshChats);
+      setMessages((prev) => {
+        // Never regress to fewer messages (e.g. an optimistic user message not persisted yet)
+        if (freshMessages.length < prev.length) return prev;
+        return freshMessages;
+      });
+      setCachedMessages(chatId, freshMessages);
+    } catch {}
+  }, []);
+
+  const hasConnectedOnceRef = useRef(false);
+  useEffect(() => {
+    if (!ws) return;
+    if (!hasConnectedOnceRef.current) {
+      hasConnectedOnceRef.current = true;
+      return;
+    }
+    resyncActiveChat();
+  }, [ws, resyncActiveChat]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') resyncActiveChat();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [resyncActiveChat]);
+
   // When WebSocket becomes open, trigger queued message check if idle
   useEffect(() => {
     if (!ws) return;
