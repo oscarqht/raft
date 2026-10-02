@@ -177,9 +177,15 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   const currentTaskIdRef = useRef(currentTaskId);
   currentTaskIdRef.current = currentTaskId;
 
+  const lastFetchedGitStatusRef = useRef<number>(0);
   const fetchGitStatuses = useCallback(async (taskList: Task[], force = false) => {
     const projectIds = Array.from(new Set(taskList.map((t) => t.project_id).filter(Boolean)));
     if (projectIds.length === 0) return;
+
+    if (!force && Date.now() - lastFetchedGitStatusRef.current < 15000) {
+      return;
+    }
+    lastFetchedGitStatusRef.current = Date.now();
 
     try {
       const results = await Promise.allSettled(
@@ -294,7 +300,11 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
         return next;
       });
 
-      fetchGitStatuses(activeTasks);
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => fetchGitStatuses(activeTasks));
+      } else {
+        setTimeout(() => fetchGitStatuses(activeTasks), 150);
+      }
     } catch (err) {
       console.error('Failed to load tasks and projects for sidebar:', err);
     } finally {
@@ -350,9 +360,6 @@ export const ProjectsTasksSidebar: React.FC<ProjectsTasksSidebarProps> = ({
   };
 
   useEffect(() => {
-    if (tasks.length > 0) {
-      fetchGitStatuses(tasks, false);
-    }
     fetchData();
     fetchActiveDevServers();
   }, []);

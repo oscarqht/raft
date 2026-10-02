@@ -117,6 +117,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
   CREATE INDEX IF NOT EXISTS idx_chat_sessions_task ON chat_sessions(task_id);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id);
+  CREATE INDEX IF NOT EXISTS idx_chat_messages_session_time ON chat_messages(session_id, timestamp ASC);
   CREATE TABLE IF NOT EXISTS git_accounts (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,

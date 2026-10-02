@@ -1784,8 +1784,8 @@ app.patch('/api/tasks/:id', (req: Request, res: Response) => {
 });
 
 // Shared by the single-task and batch status endpoints so both report identical status
-async function computeTaskGitStatus(task: any, force: boolean): Promise<any> {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any;
+async function computeTaskGitStatus(task: any, force: boolean, projectArg?: any): Promise<any> {
+  const project = projectArg || (db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) as any);
   const effectiveWorktreePath = project?.path
     ? GitService.ensureWorktree(
         project.path,
@@ -1802,7 +1802,7 @@ async function computeTaskGitStatus(task: any, force: boolean): Promise<any> {
     } catch {}
   }
 
-  const remoteUrl = GitService.getRemoteUrl(task.worktree_path, task.branch);
+  const remoteUrl = await GitService.getRemoteUrlAsync(task.worktree_path, task.branch);
   const account = remoteUrl ? findGitAccountForRemote(remoteUrl) : undefined;
   const status = await GitService.getDetailedTaskStatus(task.worktree_path, task.branch, task.base_branch, {
     token: account?.token,
@@ -1826,6 +1826,7 @@ app.get('/api/tasks/:id/git/status', async (req: Request, res: Response) => {
 
 // Batch Git status for all tasks in a project
 app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as any;
   const tasks = db.prepare('SELECT * FROM tasks WHERE project_id = ?').all(req.params.id) as any[];
   const force = req.query.force === '1' || req.query.force === 'true';
   const results: Record<string, any> = {};
@@ -1833,7 +1834,7 @@ app.get('/api/projects/:id/tasks-status', async (req: Request, res: Response) =>
   await Promise.all(
     tasks.map(async (task) => {
       try {
-        results[task.id] = await computeTaskGitStatus(task, force);
+        results[task.id] = await computeTaskGitStatus(task, force, project);
       } catch {
         const isAgentRunning = Boolean(
           db.prepare("SELECT 1 FROM chat_sessions WHERE task_id = ? AND status = 'running' LIMIT 1").get(task.id)
@@ -2065,6 +2066,15 @@ app.get('/api/tasks/:taskId/attachments/:attachmentId', (req: Request, res: Resp
       return res.status(404).json({ error: 'Attachment file not found on disk' });
     }
 
+    const stat = fs.statSync(fullFilePath);
+    const etag = `"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+
     const isDownload = req.query.download === '1' || req.query.download === 'true';
     const disposition = isDownload ? 'attachment' : 'inline';
 
@@ -2202,6 +2212,18 @@ interface ActiveChatSession {
 
 const activeChatSessions = new Map<string, ActiveChatSession>();
 
+// Fast in-memory cache for processed session messages (TTL: 60s, invalidated on writes)
+const sessionMessagesCache = new Map<string, { messages: any[]; timestamp: number }>();
+const SESSION_MESSAGES_CACHE_TTL = 60_000;
+
+export function invalidateSessionMessages(sessionId?: string) {
+  if (sessionId) {
+    sessionMessagesCache.delete(sessionId);
+  } else {
+    sessionMessagesCache.clear();
+  }
+}
+
 function extractMessageActivity(rawContent: string, rawMetadata: string | null) {
   let steps: any[] = [];
   let thoughts: string | null = null;
@@ -2217,11 +2239,17 @@ function extractMessageActivity(rawContent: string, rawMetadata: string | null) 
   }
 
   if (typeof rawContent === 'string') {
-    const thoughtMatch = rawContent.match(/<thought>([\s\S]*?)<\/thought>/);
-    if (thoughtMatch) {
-      thoughts = thoughtMatch[1].trim();
-      cleanContent = rawContent.replace(/<thought>[\s\S]*?<\/thought>/g, '').trim();
-    } else {
+    const openTag = '<thought>';
+    const closeTag = '</thought>';
+    const openIdx = rawContent.indexOf(openTag);
+    if (openIdx !== -1) {
+      const closeIdx = rawContent.indexOf(closeTag, openIdx + openTag.length);
+      if (closeIdx !== -1) {
+        thoughts = rawContent.slice(openIdx + openTag.length, closeIdx).trim();
+        cleanContent = (rawContent.slice(0, openIdx) + rawContent.slice(closeIdx + closeTag.length)).trim();
+      }
+    } else if (steps.length === 0) {
+      // Only legacy messages without structured steps need line scanning
       const lines = rawContent.split('\n');
       const thoughtLines: string[] = [];
       const contentLines: string[] = [];
@@ -2255,7 +2283,7 @@ function extractMessageActivity(rawContent: string, rawMetadata: string | null) 
   return { steps, thoughts, cleanContent };
 }
 
-function getSessionMessages(chatId: string) {
+function loadSessionMessagesFromDb(chatId: string) {
   const messages = db.prepare('SELECT * FROM chat_messages WHERE session_id = ? ORDER BY timestamp ASC').all(chatId) as any[];
 
   for (const msg of messages) {
@@ -2293,6 +2321,23 @@ function getSessionMessages(chatId: string) {
         msg.content = cleanContent;
       }
     }
+  }
+
+  return messages;
+}
+
+function getSessionMessages(chatId: string) {
+  const cached = sessionMessagesCache.get(chatId);
+  let messages: any[];
+
+  if (cached && Date.now() - cached.timestamp < SESSION_MESSAGES_CACHE_TTL) {
+    messages = cached.messages.map((m) => ({ ...m }));
+  } else {
+    messages = loadSessionMessagesFromDb(chatId);
+    sessionMessagesCache.set(chatId, {
+      messages: messages.map((m) => ({ ...m })),
+      timestamp: Date.now(),
+    });
   }
 
   // If there is an active running session for this chat, sync the in-memory latest content
@@ -2431,12 +2476,17 @@ app.delete('/api/chats/:id', (req: Request, res: Response) => {
     activeChatSessions.get(chatId)?.abort();
   }
   db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(chatId);
+  invalidateSessionMessages(chatId);
   res.json({ success: true });
 });
 
 app.delete('/api/messages/:id', (req: Request, res: Response) => {
   const messageId = req.params.id as string;
+  const msg = db.prepare('SELECT session_id FROM chat_messages WHERE id = ?').get(messageId) as any;
   db.prepare('DELETE FROM chat_messages WHERE id = ?').run(messageId);
+  if (msg?.session_id) {
+    invalidateSessionMessages(msg.session_id);
+  }
   res.json({ success: true });
 });
 
@@ -2769,6 +2819,7 @@ wss.on('connection', (ws: WebSocket) => {
           INSERT INTO chat_messages (id, session_id, role, content, metadata, timestamp)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(userMsgId, sessionId, 'user', prompt, userMetadata, now);
+        invalidateSessionMessages(sessionId);
         db.prepare('UPDATE chat_sessions SET updated_at = ? WHERE id = ?').run(now, sessionId);
         db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?').run(now, session.task_id);
 
@@ -2982,6 +3033,7 @@ wss.on('connection', (ws: WebSocket) => {
           JSON.stringify({ cli: cliToUse, model: modelToUse }),
           now + 1
         );
+        invalidateSessionMessages(sessionId);
 
         setChatSessionStatus(sessionId, 'running', now);
 
@@ -3050,6 +3102,7 @@ wss.on('connection', (ws: WebSocket) => {
               db.prepare(`
                 UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?
               `).run(assistantContent, JSON.stringify(metaObj), currentNow, assistantMsgId);
+              invalidateSessionMessages(sessionId);
             } catch {}
           }
         };
@@ -3154,6 +3207,7 @@ wss.on('connection', (ws: WebSocket) => {
               try {
                 db.prepare('UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?')
                   .run(assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'), JSON.stringify(metaObj), finishedAt, assistantMsgId);
+                invalidateSessionMessages(sessionId);
               } catch {}
 
               activeChatSessions.delete(sessionId);
@@ -3486,6 +3540,7 @@ wss.on('connection', (ws: WebSocket) => {
             try {
               db.prepare('UPDATE chat_messages SET content = ?, metadata = ?, timestamp = ? WHERE id = ?')
                 .run(assistantContent || (ev.type === 'error' ? `Error: ${ev.content}` : '(Completed)'), JSON.stringify(metaObj), finishedAt, assistantMsgId);
+              invalidateSessionMessages(sessionId);
             } catch {}
 
             activeChatSessions.delete(sessionId);
@@ -3632,11 +3687,27 @@ const candidateDistDirs = [
 const clientDistDir = candidateDistDirs.find((dir) => fs.existsSync(dir));
 
 if (clientDistDir) {
-  app.use(express.static(clientDistDir));
+  app.use(
+    express.static(clientDistDir, {
+      maxAge: '1d',
+      setHeaders: (res, filePath) => {
+        if (filePath.includes('/assets/')) {
+          // Vite hashed bundles are immutable
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.match(/\.(png|jpg|jpeg|gif|svg|ico|webp|woff2?)$/i)) {
+          // Static icons/logos
+          res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        } else if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    })
+  );
   app.get('*', (req: Request, res: Response, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/ws')) {
       return next();
     }
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDistDir, 'index.html'));
   });
 }
