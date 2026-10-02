@@ -136,10 +136,54 @@ test('renders daily speed and remaining daily budget for Codex and Claude', () =
   assert.ok(html.includes('Credits'));
   assert.ok(html.includes('$24.04'));
 
-  // Remaining daily budget labels and values
   assert.ok(html.includes('Remaining daily budget:'));
   assert.ok(html.includes('38.66'));
   assert.ok(html.includes('$5.73'));
   assert.ok(html.includes('/ day'));
+});
+
+test('AgentUsageCard renders unsupported placeholder on Windows', () => {
+  cacheSnapshots();
+  const html = renderToStaticMarkup(<AgentUsageCard clis={clis} isWindows={true} />);
+  assert.ok(html.includes('Not Supported on Windows'));
+  assert.ok(html.includes('macOS Only'));
+  assert.ok(html.includes('CodexBar is a macOS-only tool and is not supported on Windows'));
+  assert.ok(html.includes('AI agents and tasks continue to run normally'));
+  assert.ok(!html.includes('Refresh Quotas'));
+  assert.ok(!html.includes('codex budget account'));
+});
+
+test('SettingsPage renders unsupported placeholder on Windows platform in budgets tab', () => {
+  cacheSnapshots();
+  const html = renderToStaticMarkup(
+    <MemoryRouter initialEntries={['/settings?tab=budgets']}>
+      <SettingsPage
+        settings={{ agent_cli: 'codex', default_model: '', thinking_effort: 'medium', theme: 'auto', platform: 'win32' }}
+        clis={clis}
+        onUpdateSettings={() => {}}
+      />
+    </MemoryRouter>
+  );
+  assert.ok(html.includes('AI Provider Budgets'));
+  assert.ok(html.includes('Not Supported on Windows'));
+  assert.ok(html.includes('macOS Only'));
+  assert.ok(!html.includes('Refresh Quotas'));
+  assert.ok(!html.includes('codex budget account'));
+});
+
+test('AgentUsageCard renders unsupported placeholder if snapshot error indicates CodexBar is macOS only', () => {
+  setCachedAgentUsages({
+    codex: {
+      cli: 'codex',
+      providerName: 'OpenAI Codex',
+      isAvailable: true,
+      updatedAt: Date.now(),
+      error: 'CodexBar is macOS only and is not supported on Windows.',
+    },
+  });
+  const html = renderToStaticMarkup(<AgentUsageCard clis={clis} />);
+  assert.ok(html.includes('Not Supported on Windows'));
+  assert.ok(html.includes('macOS Only'));
+  assert.ok(!html.includes('Refresh Quotas'));
 });
 

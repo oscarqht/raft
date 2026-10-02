@@ -140,6 +140,7 @@ export interface Settings {
   alpha_intelligence_api_url?: string;
   alpha_intelligence_api_key?: string;
   alpha_intelligence_email?: string;
+  platform?: string;
 }
 
 export interface AlphaDeviceStatus {

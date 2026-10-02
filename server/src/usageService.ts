@@ -224,6 +224,10 @@ function parseSafeNumber(val: any): number | null {
 }
 
 export function resolveCodexbarPath(): string | null {
+  if (process.platform !== 'darwin') {
+    return null;
+  }
+
   const candidates = [
     '/opt/homebrew/bin/codexbar',
     '/usr/local/bin/codexbar',
@@ -241,7 +245,7 @@ export function resolveCodexbarPath(): string | null {
   }
 
   const resolved = resolveCliPath('codexbar');
-  if (resolved) return resolved;
+  if (resolved && fs.existsSync(resolved)) return resolved;
 
   try {
     const out = execSync('which codexbar', { encoding: 'utf8', timeout: 2000 }).trim();
@@ -252,6 +256,10 @@ export function resolveCodexbarPath(): string | null {
 }
 
 async function runCodexbarUsage(): Promise<any[]> {
+  if (process.platform !== 'darwin') {
+    throw new Error('CodexBar is macOS only and is not supported on Windows.');
+  }
+
   const codexbarPath = resolveCodexbarPath();
   if (!codexbarPath) {
     throw new Error('CodexBar CLI not found in system PATH. Install via: brew install steipete/tap/codexbar');
@@ -572,8 +580,11 @@ export async function fetchAllFromCodexbar(): Promise<Record<string, AgentUsageS
       }
     }
   } catch (err: any) {
+    const isUnsupported = process.platform !== 'darwin';
     const isMissingCli = err.message?.includes('CodexBar CLI not found');
-    const errorMsg = isMissingCli
+    const errorMsg = isUnsupported
+      ? 'CodexBar is macOS only and is not supported on Windows.'
+      : isMissingCli
       ? 'CodexBar CLI not found. Install via: brew install steipete/tap/codexbar'
       : `Failed to retrieve usage from CodexBar: ${err.message}`;
 
