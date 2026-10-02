@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -204,6 +205,17 @@ export const MermaidBlock: React.FC<{
   };
 
   useEffect(() => {
+    if (!showModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showModal]);
+
+  useEffect(() => {
     const clean = code.trim();
     if (!clean) {
       setSvg('');
@@ -385,45 +397,53 @@ export const MermaidBlock: React.FC<{
       </div>
 
       {/* Lightbox / Expanded Diagram Modal */}
-      {showModal && svg && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-150"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="relative w-full max-w-5xl max-h-[88vh] bg-cozy-surface border border-cozy-border rounded-squircle shadow-soft-xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border/70 bg-cozy-subtle/80">
-              <div className="flex items-center gap-2">
-                <Workflow className="w-4 h-4 text-teal-500" />
-                <span className="text-sm font-semibold text-cozy-text">Mermaid Diagram Preview</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-cozy-border/70 bg-cozy-surface hover:bg-cozy-subtle text-cozy-muted hover:text-cozy-text transition-colors"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copied ? 'Copied' : 'Copy DSL'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
+      {showModal && svg && typeof document !== 'undefined'
+        ? createPortal(
             <div
-              className="p-6 overflow-auto flex-1 flex items-center justify-center [&>svg]:max-w-none [&>svg]:w-auto [&>svg]:h-auto"
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-          </div>
-        </div>
-      )}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Mermaid Diagram Preview"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in duration-150"
+              onClick={() => setShowModal(false)}
+            >
+              <div
+                className="relative w-full max-w-5xl max-h-[88vh] bg-cozy-surface border border-cozy-border rounded-squircle shadow-soft-xl flex flex-col overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-cozy-border/70 bg-cozy-subtle/80">
+                  <div className="flex items-center gap-2">
+                    <Workflow className="w-4 h-4 text-teal-500" />
+                    <span className="text-sm font-semibold text-cozy-text">Mermaid Diagram Preview</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border border-cozy-border/70 bg-cozy-surface hover:bg-cozy-subtle text-cozy-muted hover:text-cozy-text transition-colors"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? 'Copied' : 'Copy DSL'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowModal(false)}
+                      className="p-1 rounded-lg text-cozy-muted hover:text-cozy-text hover:bg-cozy-subtle transition-colors"
+                      title="Close preview (Esc)"
+                      aria-label="Close diagram preview"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="p-6 overflow-auto flex-1 flex [&>svg]:m-auto [&>svg]:max-w-none [&>svg]:w-auto [&>svg]:h-auto"
+                  dangerouslySetInnerHTML={{ __html: svg }}
+                />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 });
