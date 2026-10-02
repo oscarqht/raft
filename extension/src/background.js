@@ -1,4 +1,4 @@
-import { VERSION, localUrl, ownerUrl, failure, embeddingRule, cropBounds } from './core.js';
+import { VERSION, localUrl, ownerUrl, isAutoConnected, failure, embeddingRule, cropBounds } from './core.js';
 
 const sessions = new Map();
 let nextRuleId = 1;
@@ -31,6 +31,7 @@ async function drop(tabId) {
   await save();
 }
 async function connected(origin) {
+  if (isAutoConnected(origin)) return true;
   const { connectedOrigins = [] } = await chrome.storage.local.get('connectedOrigins');
   return connectedOrigins.includes(origin);
 }
@@ -176,6 +177,6 @@ for (const event of [chrome.webNavigation.onCommitted, chrome.webNavigation.onHi
 chrome.tabs.onRemoved.addListener(tabId => serial(() => drop(tabId)).catch(() => {}));
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.connectedOrigins) serial(async () => {
-    for (const session of [...sessions.values()]) if (!changes.connectedOrigins.newValue?.includes(session.ownerOrigin)) await drop(session.tabId);
+    for (const session of [...sessions.values()]) if (!isAutoConnected(session.ownerOrigin) && !changes.connectedOrigins.newValue?.includes(session.ownerOrigin)) await drop(session.tabId);
   }).catch(() => {});
 });

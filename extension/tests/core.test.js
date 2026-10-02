@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { localUrl, ownerUrl, embeddingRule, cropBounds } from '../src/core.js';
+import { localUrl, ownerUrl, isAutoConnected, embeddingRule, cropBounds } from '../src/core.js';
 test('loopback validation rejects remote origins and credentials', () => {
   for (const value of ['http://localhost:123/', 'http://127.0.0.1:123/', 'http://[::1]:123/']) assert.ok(localUrl(value));
   for (const value of ['https://localhost.evil.test/', 'http://user:secret@localhost/', 'file:///etc/passwd', 'http://100.1.2.3:123/']) assert.throws(() => localUrl(value));
@@ -27,4 +27,9 @@ test('owner pages may use Tailscale HTTP or HTTPS but reject other schemes and c
   assert.equal(ownerUrl('https://bro.tailnet.ts.net/task').origin, 'https://bro.tailnet.ts.net');
   assert.throws(() => ownerUrl('file:///example'));
   assert.throws(() => ownerUrl('http://secret@example.com'));
+});
+
+test('automatic connection is restricted to credential-free HTTP(S) port 3300', () => {
+  for (const url of ['http://localhost:3300/task', 'http://100.64.1.2:3300', 'https://bro.example.com:3300', 'http://[::1]:3300']) assert.equal(isAutoConnected(url), true, url);
+  for (const url of ['http://localhost:3301', 'https://bro.example.com', 'ftp://localhost:3300', 'file:///localhost:3300', 'http://user:secret@localhost:3300', 'not a URL']) assert.equal(isAutoConnected(url), false, url);
 });
