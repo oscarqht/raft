@@ -1,3 +1,6 @@
+import { DesktopEvents } from './desktopEvents.js';
+import { stopAllAgentProcesses, forceStopAllAgentProcesses } from './agentProcesses.js';
+import { StreamDelivery } from './streamDelivery.js';
 import http from 'node:http';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -144,6 +147,10 @@ function getEffectiveAgentCli(): string {
 // Updater state & loopback sync
 let currentUpdaterStatus: any = { status: 'Idle' };
 let pendingUpdaterAction: 'check' | 'install' | null = null;
+const desktopEvents = new DesktopEvents();
+function dispatchUpdaterAction(action: 'check' | 'install') {
+  pendingUpdaterAction = desktopEvents.send({ type: 'action', action }) ? null : action;
+}
 let raftVersionOverride = '';
 const internalAuthToken = process.env.RAFT_INTERNAL_TOKEN || '';
 
@@ -186,7 +193,7 @@ app.get('/api/updater/status', (_req: Request, res: Response) => {
 });
 
 app.post('/api/updater/check', (_req: Request, res: Response) => {
-  pendingUpdaterAction = 'check';
+  dispatchUpdaterAction('check');
   if (
     !currentUpdaterStatus ||
     currentUpdaterStatus.status === 'Idle' ||
@@ -199,8 +206,22 @@ app.post('/api/updater/check', (_req: Request, res: Response) => {
 });
 
 app.post('/api/updater/install', (_req: Request, res: Response) => {
-  pendingUpdaterAction = 'install';
+  dispatchUpdaterAction('install');
   res.json({ success: true });
+});
+
+// Authenticated push channel for the native shell. Older polling routes remain compatible.
+app.get('/api/internal/events', (req: Request, res: Response) => {
+  if (!internalAuthToken || req.headers['x-raft-token'] !== internalAuthToken) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  desktopEvents.attach(res);
+  if (pendingUpdaterAction && desktopEvents.send({ type: 'action', action: pendingUpdaterAction })) {
+    pendingUpdaterAction = null;
+  }
+  for (const notification of pendingSystemNotifications.splice(0)) {
+    desktopEvents.send({ type: 'notification', ...notification });
+  }
 });
 
 // Internal Updater endpoints (polled/pushed by Tauri loopback sync)
@@ -312,12 +333,11 @@ export function queueSystemNotification(title: string, body: string, taskId?: st
     taskId,
     projectId,
   };
-  pendingSystemNotifications.push(notif);
+  if (desktopEvents.send({ type: 'notification', ...notif })) return;
 
   const isTauriActive = Date.now() - lastTauriNotificationPollTime < 4000;
-  if (!isTauriActive) {
-    dispatchSystemNotification(cleanTitle, cleanBody);
-  }
+  if (isTauriActive) pendingSystemNotifications.push(notif);
+  else dispatchSystemNotification(cleanTitle, cleanBody);
 }
 
 export function notifyTaskCompletionIfNoWebClients(
@@ -2207,6 +2227,7 @@ interface ActiveChatSession {
   sessionId: string;
   assistantMsgId: string;
   getContent: () => string;
+  getSteps: () => AgentStep[];
   abort: (options?: { reason?: 'steered' | 'user' }) => void;
 }
 
@@ -2355,7 +2376,17 @@ function getSessionMessages(chatId: string) {
   return messages;
 }
 
+const streamDelivery = new StreamDelivery();
+
 function broadcastWs(data: any) {
+  if (data.type === 'chat_stream') {
+    for (const client of wss.clients) {
+      if (client.readyState !== WebSocket.OPEN) continue;
+      const update = streamDelivery.encode(client, data);
+      if (update) client.send(JSON.stringify(update));
+    }
+    return;
+  }
   const payload = JSON.stringify(data);
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) {
@@ -2567,6 +2598,27 @@ wss.on('connection', (ws: WebSocket) => {
   ws.on('message', async (raw: string) => {
     try {
       const msg = JSON.parse(raw.toString());
+
+      if (msg.type === 'stream_protocol' && msg.version === 1) {
+        streamDelivery.enable(ws);
+        return;
+      }
+      if (msg.type === 'subscribe_chat' && typeof msg.sessionId === 'string') {
+        streamDelivery.subscribe(ws, msg.sessionId);
+        const active = activeChatSessions.get(msg.sessionId);
+        if (active) {
+          const snapshot = streamDelivery.encode(ws, {
+            type: 'chat_stream', sessionId: msg.sessionId, messageId: active.assistantMsgId,
+            fullContent: active.getContent(), steps: active.getSteps(),
+          });
+          if (snapshot) send(snapshot);
+        }
+        return;
+      }
+      if (msg.type === 'unsubscribe_chat' && typeof msg.sessionId === 'string') {
+        streamDelivery.unsubscribe(ws, msg.sessionId);
+        return;
+      }
 
       if (msg.type === 'get_alpha_status') {
         const curApiUrl = getSetting<string>('alpha_intelligence_api_url', '');
@@ -3065,10 +3117,10 @@ wss.on('connection', (ws: WebSocket) => {
         const queueBroadcast = (ev: StreamEvent, immediate = false) => {
           lastEventSent = ev;
           const currentNow = Date.now();
-          if (immediate || currentNow - lastBroadcastTime >= 40) {
+          if (immediate || currentNow - lastBroadcastTime >= 150) {
             flushBroadcast();
           } else if (!broadcastTimer) {
-            const delay = Math.max(10, 40 - (currentNow - lastBroadcastTime));
+            const delay = Math.max(10, 150 - (currentNow - lastBroadcastTime));
             broadcastTimer = setTimeout(() => {
               flushBroadcast();
             }, delay);
@@ -3089,7 +3141,7 @@ wss.on('connection', (ws: WebSocket) => {
 
         const saveAssistantProgress = (force = false, isSpendCap = false, interrupted?: 'steer' | 'user') => {
           const currentNow = Date.now();
-          if (force || currentNow - lastDbSaveTime > 300) {
+          if (force || currentNow - lastDbSaveTime > 2000) {
             lastDbSaveTime = currentNow;
             try {
               const metaObj = {
@@ -3141,7 +3193,9 @@ wss.on('connection', (ws: WebSocket) => {
 
           const abortController = new AbortController();
 
+          let alphaTurnFinished = false;
           const handleAlphaEvent = (ev: StreamEvent) => {
+            if (alphaTurnFinished || abortController.signal.aborted) return;
             if (ev.type === 'step' && ev.step) {
               const step = ev.step;
               const idx = assistantSteps.findIndex((s) => s.id === step.id);
@@ -3171,6 +3225,7 @@ wss.on('connection', (ws: WebSocket) => {
             }
 
             if (ev.type === 'done' || ev.type === 'error') {
+              alphaTurnFinished = true;
               flushBroadcast();
               const finishedAt = Date.now();
               if (!assistantResponse.trim() && ev.type === 'done') {
@@ -3277,6 +3332,7 @@ wss.on('connection', (ws: WebSocket) => {
             sessionId,
             assistantMsgId,
             getContent: () => assistantContent,
+          getSteps: () => assistantSteps,
             abort: abortAlphaSession,
           });
 
@@ -3393,7 +3449,9 @@ wss.on('connection', (ws: WebSocket) => {
           return;
         }
 
+        let cliTurnFinished = false;
         const proc = spawnAgentCli(cliToUse, args, effectiveWorktreePath, (ev: StreamEvent) => {
+          if (cliTurnFinished) return;
           // If a conversation ID was detected from the CLI stream, persist it to chat_sessions once
           if (ev.conversationId && ev.conversationId !== persistedCliSessionId) {
             persistedCliSessionId = ev.conversationId;
@@ -3453,6 +3511,8 @@ wss.on('connection', (ws: WebSocket) => {
           }
 
           if (ev.type === 'done' || ev.type === 'error') {
+            cliTurnFinished = true;
+            if (ev.type === 'error') proc.kill('SIGTERM');
             flushBroadcast();
             const finishedAt = Date.now();
             const isExitError = ev.type === 'error' || (ev.metadata?.code !== undefined && ev.metadata.code !== 0);
@@ -3578,6 +3638,8 @@ wss.on('connection', (ws: WebSocket) => {
         });
 
         const abortSession = (options?: { reason?: 'steered' | 'user' }) => {
+          if (cliTurnFinished) return;
+          cliTurnFinished = true;
           const isSteered = options?.reason === 'steered';
           if (broadcastTimer) {
             clearTimeout(broadcastTimer);
@@ -3613,6 +3675,7 @@ wss.on('connection', (ws: WebSocket) => {
           sessionId,
           assistantMsgId,
           getContent: () => assistantContent,
+          getSteps: () => assistantSteps,
           abort: abortSession,
         });
       }
@@ -3726,13 +3789,15 @@ if (!isTestEnv) {
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
-    try { await devServerManager.stopAll(); }
-    catch (err) { console.error('[raft-server] Preview shutdown failed:', err); }
+    for (const session of [...activeChatSessions.values()]) session.abort();
+    for (const run of submitRuns.values()) if (!run.final) run.kill();
+    try { await Promise.all([devServerManager.stopAll(), stopAllAgentProcesses()]); }
+    catch (err) { console.error('[raft-server] Process shutdown failed:', err); }
     finally { process.exit(0); }
   };
   process.once('SIGTERM', shutdown);
   process.once('SIGINT', shutdown);
-  process.once('exit', () => devServerManager.forceStopAll());
+  process.once('exit', () => { devServerManager.forceStopAll(); forceStopAllAgentProcesses(); });
   const listenHost = isTailscale ? '0.0.0.0' : HOST;
   server.listen(PORT, listenHost, () => {
     const networkType = isTailscale ? 'Tailscale network' : 'local interface';

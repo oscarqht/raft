@@ -46,7 +46,8 @@ export const HeaderBudgets: React.FC = () => {
   useEffect(() => {
     isMountedRef.current = true;
     load(false);
-    const interval = setInterval(() => load(true), BUDGET_REFRESH_INTERVAL_MS);
+    const refresh = () => { if (document.visibilityState === 'visible') void load(true); };
+    const interval = setInterval(refresh, BUDGET_REFRESH_INTERVAL_MS);
     return () => {
       isMountedRef.current = false;
       clearInterval(interval);
