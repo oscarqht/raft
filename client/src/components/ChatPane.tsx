@@ -96,6 +96,15 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
       : cachedSessions[0]?.id;
     return targetId ? (getCachedMessages(targetId) || []) : [];
   });
+  const [lastCachedMessageId, setLastCachedMessageId] = useState<string | null>(() => {
+    const cachedActive = getCachedActiveChatId(task.id);
+    const cachedSessions = getCachedChats(task.id) || [];
+    const targetId = (cachedActive && cachedSessions.some((c) => c.id === cachedActive))
+      ? cachedActive
+      : cachedSessions[0]?.id;
+    const initialCached = targetId ? (getCachedMessages(targetId) || []) : [];
+    return initialCached.length > 0 ? initialCached[initialCached.length - 1].id : null;
+  });
   const [loadingChats, setLoadingChats] = useState(() => !(getCachedChats(task.id)?.length));
   // True while a background revalidation of the active chat's messages is in flight
   const [syncingChats, setSyncingChats] = useState(true);
@@ -505,12 +514,20 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const cached = getCachedMessages(activeChatId);
     if (cached && cached.length > 0) {
       setMessages(cached);
+      setLastCachedMessageId(cached[cached.length - 1].id);
     } else {
       // Never show the previous chat's messages while this one loads
       setMessages([]);
+      setLastCachedMessageId(null);
       loadCachedMessagesAsync(activeChatId).then((idbMsgs) => {
         if (idbMsgs && idbMsgs.length > 0) {
-          setMessages((prev) => (prev.length === 0 ? idbMsgs : prev));
+          setMessages((prev) => {
+            if (prev.length === 0) {
+              setLastCachedMessageId(idbMsgs[idbMsgs.length - 1].id);
+              return idbMsgs;
+            }
+            return prev;
+          });
         }
       });
     }
@@ -940,6 +957,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     const nextChats = [...chats, optimisticChat];
     setChats(nextChats);
     setMessages([]);
+    setLastCachedMessageId(null);
     setActiveChatId(newId);
     setCachedChats(task.id, nextChats);
     setCachedActiveChatId(task.id, newId);
@@ -1979,6 +1997,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
           isStreaming={isStreaming}
           taskId={task.id}
           sessionId={activeChatId || undefined}
+          lastCachedMessageId={lastCachedMessageId}
           clis={clis}
           currentCli={tabCli || settings?.agent_cli || 'codex'}
           activeHitl={activeChatId ? activeHitl[activeChatId] : null}

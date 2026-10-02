@@ -888,6 +888,7 @@ const AgentActivityView: React.FC<{
 
 export interface ChatMessageListHandle {
   scrollToBottom: () => void;
+  scrollToIndexTop?: (index: number) => void;
 }
 
 export interface ChatMessageListProps {
@@ -898,6 +899,7 @@ export interface ChatMessageListProps {
   isSyncing?: boolean;
   taskId?: string;
   sessionId?: string;
+  lastCachedMessageId?: string | null;
   clis?: CliInfo[];
   currentCli?: string;
   onRetryPrompt?: (userPrompt: string, failedMsgId: string) => void;
@@ -916,6 +918,7 @@ export const ChatMessageList = React.memo(
     isSyncing,
     taskId,
     sessionId,
+    lastCachedMessageId,
     clis,
     currentCli,
     onRetryPrompt,
@@ -931,6 +934,7 @@ export const ChatMessageList = React.memo(
     const listEndRef = useRef<HTMLDivElement>(null);
     const isFirstRender = useRef(true);
     const shouldScrollToBottomOnLoadRef = useRef(true);
+    const handledLastCachedMessageIdRef = useRef<string | null>(null);
     const prevTaskIdRef = useRef<string | undefined>(taskId);
     const prevSessionIdRef = useRef<string | undefined>(sessionId);
 
@@ -971,10 +975,16 @@ export const ChatMessageList = React.memo(
     const contentRef = useRef<HTMLDivElement>(null);
     const isAutoScrollEnabled = useRef(true);
     const scrollRafRef = useRef<number | null>(null);
-    const scrollTimersRef = useRef<{ raf: number | null; t1: NodeJS.Timeout | null; t2: NodeJS.Timeout | null }>({
+    const scrollTimersRef = useRef<{
+      raf: number | null;
+      t1: NodeJS.Timeout | null;
+      t2: NodeJS.Timeout | null;
+      t3: NodeJS.Timeout | null;
+    }>({
       raf: null,
       t1: null,
       t2: null,
+      t3: null,
     });
 
     const clearScrollTimers = useCallback(() => {
@@ -989,6 +999,10 @@ export const ChatMessageList = React.memo(
       if (scrollTimersRef.current.t2 != null) {
         clearTimeout(scrollTimersRef.current.t2);
         scrollTimersRef.current.t2 = null;
+      }
+      if (scrollTimersRef.current.t3 != null) {
+        clearTimeout(scrollTimersRef.current.t3);
+        scrollTimersRef.current.t3 = null;
       }
     }, []);
 
@@ -1016,6 +1030,21 @@ export const ChatMessageList = React.memo(
         if (scrollRafRef.current != null) {
           cancelAnimationFrame(scrollRafRef.current);
         }
+      };
+    }, [clearScrollTimers]);
+
+    // Clear programmatic scroll timers if the user actively scrolls or touches the container
+    useEffect(() => {
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const onUserInteraction = () => {
+        clearScrollTimers();
+      };
+      el.addEventListener('wheel', onUserInteraction, { passive: true });
+      el.addEventListener('touchstart', onUserInteraction, { passive: true });
+      return () => {
+        el.removeEventListener('wheel', onUserInteraction);
+        el.removeEventListener('touchstart', onUserInteraction);
       };
     }, [clearScrollTimers]);
 
@@ -1068,11 +1097,73 @@ export const ChatMessageList = React.memo(
         performScroll();
         scrollTimersRef.current.t2 = null;
       }, 150);
+
+      scrollTimersRef.current.t3 = setTimeout(() => {
+        performScroll();
+        scrollTimersRef.current.t3 = null;
+      }, 300);
     }, [clearScrollTimers, messages.length, rowVirtualizer]);
 
-    useImperativeHandle(ref, () => ({
-      scrollToBottom: scrollToBottomInstant,
-    }), [scrollToBottomInstant]);
+    const scrollToMessageIndexTop = useCallback(
+      (targetIndex: number) => {
+        isAutoScrollEnabled.current = false;
+
+        const performScroll = () => {
+          if (targetIndex >= 0 && targetIndex < messages.length) {
+            rowVirtualizer.scrollToIndex(targetIndex, { align: 'start', behavior: 'auto' });
+          }
+          const scrollEl = scrollContainerRef.current;
+          if (scrollEl) {
+            const itemEl = scrollEl.querySelector(`[data-index="${targetIndex}"]`) as HTMLElement | null;
+            if (itemEl) {
+              const containerRect = scrollEl.getBoundingClientRect();
+              const itemRect = itemEl.getBoundingClientRect();
+              const targetTopOffset = contentRef.current
+                ? parseFloat(window.getComputedStyle(contentRef.current).paddingTop) || 24
+                : 24;
+              const offsetDiff = itemRect.top - (containerRect.top + targetTopOffset);
+              if (Math.abs(offsetDiff) > 1) {
+                scrollEl.scrollTop += offsetDiff;
+              }
+            }
+          }
+          updateScrollState();
+        };
+
+        clearScrollTimers();
+        performScroll();
+
+        scrollTimersRef.current.raf = requestAnimationFrame(() => {
+          performScroll();
+          scrollTimersRef.current.raf = null;
+        });
+
+        scrollTimersRef.current.t1 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t1 = null;
+        }, 50);
+
+        scrollTimersRef.current.t2 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t2 = null;
+        }, 150);
+
+        scrollTimersRef.current.t3 = setTimeout(() => {
+          performScroll();
+          scrollTimersRef.current.t3 = null;
+        }, 300);
+      },
+      [clearScrollTimers, messages.length, rowVirtualizer, updateScrollState]
+    );
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToBottom: scrollToBottomInstant,
+        scrollToIndexTop: scrollToMessageIndexTop,
+      }),
+      [scrollToBottomInstant, scrollToMessageIndexTop]
+    );
 
     // Observe content size changes to auto-scroll during streaming and sync scroll button state
     useEffect(() => {
@@ -1111,6 +1202,7 @@ export const ChatMessageList = React.memo(
         prevSessionIdRef.current = sessionId;
         prevLastUserMsgIdRef.current = latestUserMessageId;
         shouldScrollToBottomOnLoadRef.current = true;
+        handledLastCachedMessageIdRef.current = null;
         isAutoScrollEnabled.current = true;
         setShowScrollBottomBtn(false);
         return;
@@ -1129,8 +1221,29 @@ export const ChatMessageList = React.memo(
       if (shouldScrollToBottomOnLoadRef.current || isFirstRender.current) {
         shouldScrollToBottomOnLoadRef.current = false;
         isFirstRender.current = false;
+
+        // If we already have messages beyond the last cached message on initial render, scroll directly to first unread
+        if (lastCachedMessageId) {
+          const lastCachedIndex = messages.findIndex((m) => m.id === lastCachedMessageId);
+          if (lastCachedIndex !== -1 && lastCachedIndex + 1 < messages.length) {
+            handledLastCachedMessageIdRef.current = lastCachedMessageId;
+            scrollToMessageIndexTop(lastCachedIndex + 1);
+            return;
+          }
+        }
+
         scrollToBottomInstant();
         return;
+      }
+
+      // When fresh messages arrive after rendering cached messages, scroll to the first unread message
+      if (lastCachedMessageId && handledLastCachedMessageIdRef.current !== lastCachedMessageId) {
+        handledLastCachedMessageIdRef.current = lastCachedMessageId;
+        const lastCachedIndex = messages.findIndex((m) => m.id === lastCachedMessageId);
+        if (lastCachedIndex !== -1 && lastCachedIndex + 1 < messages.length) {
+          scrollToMessageIndexTop(lastCachedIndex + 1);
+          return;
+        }
       }
 
       if (!isAutoScrollEnabled.current) return;
@@ -1146,7 +1259,14 @@ export const ChatMessageList = React.memo(
         // Instant scroll to bottom when new messages arrive or turn finishes
         scrollToBottomInstant();
       }
-    }, [messages, liveStreamingChunk, isStreaming, scrollToBottomInstant]);
+    }, [
+      messages,
+      liveStreamingChunk,
+      isStreaming,
+      lastCachedMessageId,
+      scrollToBottomInstant,
+      scrollToMessageIndexTop,
+    ]);
 
     return (
       <div className="relative flex-1 min-h-0 flex flex-col">
