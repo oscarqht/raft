@@ -7,14 +7,14 @@ const restored = (async () => {
   for (const session of saved.sessions || []) {
     try {
       const tab = await chrome.tabs.get(session.tabId);
-      if (new URL(tab.url).origin === session.ownerOrigin && await connected(session.ownerOrigin) && await permitted()) {
+      if (new URL(tab.url).origin === session.ownerOrigin && isAutoConnected(session.ownerOrigin) && await permitted()) {
         sessions.set(session.tabId, session);
         nextRuleId = Math.max(nextRuleId, session.ruleId + 1);
       }
     } catch { /* Closed tabs cannot keep a preview session. */ }
   }
   const rules = await chrome.declarativeNetRequest.getSessionRules();
-  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: rules.map(rule => rule.id), addRules: [...sessions.values()].map(s => embeddingRule(s.ruleId, s.tabId, s.origin)) });
+  await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: rules.map(rule => rule.id), addRules: [...sessions.values()].map(s => embeddingRule(s.ruleId, s.tabId)) });
 })();
 let mutation = Promise.resolve();
 function serial(fn) {
@@ -30,11 +30,6 @@ async function drop(tabId) {
   await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: [session.ruleId] });
   await save();
 }
-async function connected(origin) {
-  if (isAutoConnected(origin)) return true;
-  const { connectedOrigins = [] } = await chrome.storage.local.get('connectedOrigins');
-  return connectedOrigins.includes(origin);
-}
 const permitted = () => chrome.permissions.contains({ origins: ['<all_urls>'] });
 function getSession(sender, payload) {
   const session = sessions.get(sender.tab.id);
@@ -44,13 +39,32 @@ function getSession(sender, payload) {
 function live(session) {
   if (sessions.get(session.tabId) !== session) throw failure('STALE_SESSION', 'The task or preview changed during capture. Please try again.');
 }
+const challenges = new Map();
+async function identifyFrame(session, frameId) {
+  const token = crypto.randomUUID();
+  let timer;
+  const identified = new Promise(resolve => {
+    const finish = (value) => { clearTimeout(timer); challenges.delete(token); resolve(value); };
+    challenges.set(token, { session, frameId, finish });
+    timer = setTimeout(() => finish(false), 700);
+  });
+  try {
+    await chrome.tabs.sendMessage(session.tabId, { type: 'identify', token, sessionId: session.sessionId }, { frameId });
+  } catch { challenges.get(token)?.finish(false); }
+  return identified;
+}
 async function frame(session) {
   const frames = await chrome.webNavigation.getAllFrames({ tabId: session.tabId });
-  const matches = frames.filter(f => f.parentFrameId === 0 && new URL(f.url).origin === session.origin);
-  const chosen = matches.find(f => f.frameId === session.frameId) || (matches.length === 1 ? matches[0] : null);
-  if (!chosen) throw failure('PREVIEW_NOT_READY', 'Wait for the local preview to load, then try again.');
-  session.frameId = chosen.frameId;
-  return chosen;
+  const candidates = frames.filter(candidate => candidate.parentFrameId === 0 && /^https?:\/\//.test(candidate.url));
+  const previous = candidates.find(candidate => candidate.frameId === session.frameId);
+  if (previous && await identifyFrame(session, previous.frameId)) { live(session); return previous; }
+  // The DOM marker, not hostname or frame ordering, is the authority.
+  const verified = await Promise.all(candidates.map(async candidate => await identifyFrame(session, candidate.frameId) ? candidate : null));
+  live(session);
+  const matches = verified.filter(Boolean);
+  if (matches.length !== 1) throw failure('PREVIEW_NOT_READY', 'Wait for the preview to load, then try again.');
+  session.frameId = matches[0].frameId;
+  return matches[0];
 }
 async function active(session) {
   const tab = await chrome.tabs.get(session.tabId);
@@ -75,7 +89,8 @@ async function capture(session, payload, measured) {
   const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
   await active(session);
   live(session);
-  if ((await frame(session)).url !== capturedFrame.url) throw failure('STALE_SESSION', 'The preview navigated during capture. Please try again.');
+  const afterFrame = await frame(session);
+  if (afterFrame.url !== capturedFrame.url || afterFrame.frameId !== capturedFrame.frameId || afterFrame.documentId !== capturedFrame.documentId) throw failure('STALE_SESSION', 'The preview navigated during capture. Please try again.');
   const after = await chrome.tabs.sendMessage(session.tabId, { type: 'measure', sessionId: session.sessionId }, { frameId: 0 });
   validateMeasurement(after, measured, payload.rect);
   const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
@@ -93,15 +108,11 @@ async function capture(session, payload, measured) {
 }
 async function request(message, sender) {
   await restored;
-  if (!sender.tab || sender.frameId !== 0) throw failure('NOT_CONNECTED', 'Connect Alpha Bro through the extension first.');
+  if (!sender.tab || sender.frameId !== 0) throw failure('NOT_CONNECTED', 'Open Alpha Bro on port 3300 to use the companion.');
   const owner = ownerUrl(sender.url);
   const payload = message.payload || {};
-  if (message.action === 'hello') return { connected: await connected(owner.origin), permissions: await permitted(), version: VERSION };
-  if (message.action === 'openSetup') {
-    await chrome.tabs.create({ url: chrome.runtime.getURL('setup.html') + '?origin=' + encodeURIComponent(owner.origin) });
-    return {};
-  }
-  if (!(await connected(owner.origin))) throw failure('NOT_CONNECTED', 'Connect this Alpha Bro address in the extension.');
+  if (message.action === 'hello') return { connected: isAutoConnected(owner.origin), permissions: await permitted(), version: VERSION };
+  if (!(isAutoConnected(owner.origin))) throw failure('NOT_CONNECTED', 'The companion works with Alpha Bro addresses on port 3300.');
   if (!(await permitted())) throw failure('PERMISSION_REQUIRED', 'Allow the companion extension access to all sites in browser extension settings.');
   if (message.action === 'registerPreview') return serial(async () => {
     const target = localUrl(payload.url);
@@ -111,7 +122,7 @@ async function request(message, sender) {
     if (previous?.sessionId === payload.sessionId && previous.origin === target.origin) return { sessionId: previous.sessionId, ready: true };
     await drop(sender.tab.id);
     const session = { tabId: sender.tab.id, ownerOrigin: owner.origin, sessionId: payload.sessionId, taskId: payload.taskId, origin: target.origin, url: target.href, ruleId: nextRuleId++, frameId: null };
-    await chrome.declarativeNetRequest.updateSessionRules({ addRules: [embeddingRule(session.ruleId, session.tabId, session.origin)] });
+    await chrome.declarativeNetRequest.updateSessionRules({ addRules: [embeddingRule(session.ruleId, session.tabId)] });
     sessions.set(session.tabId, session);
     await save();
     return { sessionId: session.sessionId, ready: true };
@@ -120,6 +131,7 @@ async function request(message, sender) {
     if (sessions.get(sender.tab.id)?.sessionId === payload.sessionId) await drop(sender.tab.id);
     return {};
   });
+  if (!['capture', 'navigate'].includes(message.action)) throw failure('INVALID_COMMAND', 'Unknown companion request.');
   const session = getSession(sender, payload);
   if (message.action === 'capture') return capture(session, payload, message.viewport);
   if (message.action === 'navigate') {
@@ -127,8 +139,7 @@ async function request(message, sender) {
     if (!['back', 'forward', 'reload', 'to'].includes(payload.command)) throw failure('INVALID_COMMAND', 'Unknown preview navigation command.');
     let url;
     if (payload.command === 'to') {
-      url = new URL(payload.path || '/', session.url).href;
-      if (localUrl(url).origin !== session.origin) throw failure('INVALID_URL', 'Preview navigation must stay on the registered local server.');
+      url = ownerUrl(new URL(payload.path || '/', targetFrame.url).href).href;
     }
     await chrome.tabs.sendMessage(session.tabId, { type: 'navigate', command: payload.command, url }, { frameId: targetFrame.frameId });
     return {};
@@ -139,29 +150,28 @@ async function report(details) {
   await restored;
   const session = sessions.get(details.tabId);
   if (!session || details.frameId === 0) return;
-  let target;
-  try { target = new URL(details.url); } catch { return; }
-  if (target.origin !== session.origin) {
-    if (session.frameId === details.frameId) {
-      await chrome.tabs.sendMessage(session.tabId, { type: 'event', message: { event: 'navigation', sessionId: session.sessionId, payload: { url: target.href, pathname: target.pathname + target.search + target.hash, canGoBack: false, canGoForward: false } } }, { frameId: 0 }).catch(() => {});
-    }
-    return;
-  }
   const metadata = await chrome.webNavigation.getFrame({ tabId: details.tabId, frameId: details.frameId });
-  if (!metadata || metadata.parentFrameId !== 0) return;
-  if (session.frameId !== null && session.frameId !== details.frameId) {
-    const frames = await chrome.webNavigation.getAllFrames({ tabId: session.tabId });
-    if (frames.some(item => item.frameId === session.frameId)) return;
-    const candidates = frames.filter(item => item.parentFrameId === 0 && new URL(item.url).origin === session.origin);
-    if (candidates.length !== 1 || candidates[0].frameId !== details.frameId) return;
-  }
-  session.frameId = details.frameId;
-  session.url = target.href;
-  await save();
+  if (!metadata || metadata.parentFrameId !== 0 || !/^https?:\/\//.test(metadata.url)) return;
+  if (!(await identifyFrame(session, details.frameId))) return;
+  live(session);
   const navigation = await chrome.tabs.sendMessage(session.tabId, { type: 'navigationState' }, { frameId: details.frameId }).catch(() => null);
-  await chrome.tabs.sendMessage(session.tabId, { type: 'event', message: { event: 'navigation', sessionId: session.sessionId, payload: { url: navigation?.url || target.href, pathname: navigation?.pathname || target.pathname + target.search + target.hash, canGoBack: navigation?.canGoBack ?? false, canGoForward: navigation?.canGoForward ?? false } } }, { frameId: 0 }).catch(() => {});
+  live(session);
+  const target = ownerUrl(navigation?.url || metadata.url);
+  session.frameId = details.frameId;
+  session.crossOriginHistory = session.crossOriginHistory || new URL(session.url).origin !== target.origin;
+  session.url = target.href;
+  // Navigation API bounds exclude cross-origin entries. In that case (or when
+  // unavailable), keep native history attempts usable; the browser owns bounds.
+  const unknownBounds = session.crossOriginHistory || navigation?.navigationAvailable === false;
+  await save();
+  await chrome.tabs.sendMessage(session.tabId, { type: 'event', message: { event: 'navigation', sessionId: session.sessionId, payload: { url: target.href, pathname: target.pathname + target.search + target.hash, canGoBack: unknownBounds || (navigation?.canGoBack ?? false), canGoForward: unknownBounds || (navigation?.canGoForward ?? false) } } }, { frameId: 0 }).catch(() => {});
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message.type === 'identified') {
+    const challenge = challenges.get(message.token);
+    if (challenge && sender.tab?.id === challenge.session.tabId && sender.frameId === 0 && sender.url && new URL(sender.url).origin === challenge.session.ownerOrigin && message.sessionId === challenge.session.sessionId && sessions.get(sender.tab.id) === challenge.session) challenge.finish(true);
+    return;
+  }
   if (message.type === 'frameReady') {
     if (sender.tab && sender.frameId > 0) report({ tabId: sender.tab.id, frameId: sender.frameId, url: sender.url, transitionQualifiers: message.traverse ? ['forward_back'] : [] }).catch(() => {});
     return;
@@ -175,8 +185,3 @@ chrome.webNavigation.onBeforeNavigate.addListener(details => {
 });
 for (const event of [chrome.webNavigation.onCommitted, chrome.webNavigation.onHistoryStateUpdated, chrome.webNavigation.onReferenceFragmentUpdated]) event.addListener(details => report(details).catch(() => {}));
 chrome.tabs.onRemoved.addListener(tabId => serial(() => drop(tabId)).catch(() => {}));
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.connectedOrigins) serial(async () => {
-    for (const session of [...sessions.values()]) if (!isAutoConnected(session.ownerOrigin) && !changes.connectedOrigins.newValue?.includes(session.ownerOrigin)) await drop(session.tabId);
-  }).catch(() => {});
-});

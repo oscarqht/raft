@@ -17,11 +17,6 @@
     "service_worker": "src/background.js",
     "type": "module"
   },
-  "action": {
-    "default_title": "Connect Alpha Bro",
-    "default_popup": "setup.html"
-  },
-  "options_page": "setup.html",
   "content_scripts": [
     {
       "matches": [

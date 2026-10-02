@@ -54,3 +54,17 @@ test('navigation updates are isolated by session and listener lifetime', () => {
   assert.deepEqual(received, [event.payload]);
   assert.equal(listeners.size, 0);
 });
+
+const addressCode = await transform(await readFile(new URL('../src/previewAddress.ts', import.meta.url), 'utf8'), { loader: 'ts', format: 'esm' });
+const address = await import('data:text/javascript;base64,' + Buffer.from(addressCode.code).toString('base64'));
+test('external preview addresses survive display, remount, navigation and attachment formatting', () => {
+  const local = 'http://localhost:5173';
+  const external = 'https://auth.example.test/login?client=app#consent';
+  assert.equal(address.displayPreviewAddress(external, local), external);
+  assert.equal(address.resolvePreviewAddress(address.displayPreviewAddress(external, local), local), external);
+  assert.equal(address.resolvePreviewAddress('/callback?code=test', external), 'https://auth.example.test/callback?code=test');
+  assert.equal(address.displayPreviewAddress(local + '/returned?ok=1#done', local), '/returned?ok=1#done');
+  for (const value of ['javascript:alert(1)', 'data:text/html,test', 'file:///tmp/test', 'https://user:secret@example.test/']) {
+    assert.throws(() => address.resolvePreviewAddress(value, local));
+  }
+});

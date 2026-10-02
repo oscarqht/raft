@@ -2,41 +2,51 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 const event = () => ({ listeners: [], addListener(fn) { this.listeners.push(fn); } });
 const sessionData = { sessions: [{ tabId: 2, ownerOrigin: 'http://localhost:3000', origin: 'http://localhost:4000', ruleId: 42 }] };
-const localData = { connectedOrigins: [] };
 let rules = [{ id: 42 }];
 let frames = [];
 let measurement = { width: 1000, height: 800, rect: { x: 400, y: 100, width: 500, height: 500 } };
 let onCapture = async () => {};
 let drawn;
+let markedFrameId = 7;
+const navigationMessages = [];
+const commands = [];
+let navigationFlags = { navigationAvailable: true, canGoBack: true, canGoForward: false };
 globalThis.createImageBitmap = async () => ({ width: 2000, height: 1600, close() {} });
 globalThis.OffscreenCanvas = class { constructor(width, height) { this.width = width; this.height = height; } getContext() { return { drawImage(...args) { drawn = args; } }; } async convertToBlob() { return new Blob([new Uint8Array([1, 2, 3])]); } };
-const tab = { id: 2, url: 'http://localhost:3000/task', windowId: 1, active: true };
+const tab = { id: 2, url: 'http://localhost:3300/task', windowId: 1, active: true };
 const topSender = { tab, frameId: 0, url: tab.url };
 const area = data => ({ async get() { return data; }, async set(value) { Object.assign(data, value); } });
 globalThis.chrome = {
-  storage: { session: area(sessionData), local: area(localData), onChanged: event() },
+  storage: { session: area(sessionData),  },
   permissions: { async contains() { return true; } },
   declarativeNetRequest: { async getSessionRules() { return rules; }, async updateSessionRules({ removeRuleIds = [], addRules = [] }) { rules = rules.filter(r => !removeRuleIds.includes(r.id)).concat(addRules); } },
-  tabs: { async get() { return tab; }, async create() {}, async sendMessage() { return structuredClone(measurement); }, async captureVisibleTab() { await onCapture(); return 'data:image/png;base64,AA=='; }, onRemoved: event() },
+  tabs: { async get() { return tab; }, async create() {}, async sendMessage(tabId, message, options) {
+    if (message.type === 'identify') {
+      if (options.frameId === markedFrameId) chrome.runtime.onMessage.listeners[0]({ type: 'identified', token: message.token, sessionId: message.sessionId }, { tab: { ...tab, id: tabId }, frameId: 0, url: tab.url }, () => {});
+      return {};
+    }
+    if (message.type === 'navigationState') return { url: frames.find(frame => frame.frameId === options.frameId)?.url, ...navigationFlags };
+    if (message.type === 'event') { navigationMessages.push(message.message); return; }
+    if (message.type === 'navigate') { commands.push({ ...message, frameId: options.frameId }); return; }
+    return structuredClone(measurement);
+  }, async captureVisibleTab() { await onCapture(); return 'data:image/png;base64,AA=='; }, onRemoved: event() },
   windows: { async get() { return { focused: true }; } },
   runtime: { onMessage: event(), getURL: value => 'chrome-extension://test/' + value },
-  webNavigation: { onBeforeNavigate: event(), onCommitted: event(), onHistoryStateUpdated: event(), onReferenceFragmentUpdated: event(), async getAllFrames() { return frames; } },
+  webNavigation: { onBeforeNavigate: event(), onCommitted: event(), onHistoryStateUpdated: event(), onReferenceFragmentUpdated: event(), async getAllFrames() { return frames; }, async getFrame({ frameId }) { return frames.find(frame => frame.frameId === frameId); } },
 };
 await import('../src/background.js');
 function request(action, payload, sender = topSender) {
   return new Promise(resolve => chrome.runtime.onMessage.listeners[0]({ type: 'page', action, payload, viewport: { width: 1000, height: 800 } }, sender, resolve));
 }
-test('pairing, session replacement, exact tab rules and stale-session rejection', async () => {
-  assert.deepEqual((await request('hello')).result, { connected: false, permissions: true, version: 1 });
-  assert.equal((await request('registerPreview', { sessionId: 'a', taskId: 'task', url: 'http://localhost:4000' })).error.code, 'NOT_CONNECTED');
-  assert.equal(rules.length, 0, 'unpaired restored sessions lose their rules');
-  localData.connectedOrigins = ['http://localhost:3000'];
+test('session replacement, exact tab rules and stale-session rejection', async () => {
+  assert.deepEqual((await request('hello')).result, { connected: true, permissions: true, version: 1 });
+  assert.equal(rules.length, 0, 'restored sessions from unsupported origins lose their rules');
   assert.equal((await request('registerPreview', { sessionId: 'a', taskId: 'task', url: 'http://localhost:4000' })).ok, true);
   assert.equal(rules.length, 1);
   assert.deepEqual(rules[0].condition.tabIds, [2]);
   await request('registerPreview', { sessionId: 'b', taskId: 'next', url: 'http://localhost:5000' });
   assert.equal(rules.length, 1);
-  assert.match(rules[0].condition.regexFilter, /5000/);
+  assert.equal(rules[0].condition.regexFilter, '^https?://');
   assert.equal((await request('capture', { sessionId: 'a' })).error.code, 'PREVIEW_NOT_READY');
   await request('unregisterPreview', { sessionId: 'a' });
   assert.equal(rules.length, 1, 'stale unregistration cannot remove new preview');
@@ -64,16 +74,6 @@ test('capture crops correctly and rejects tab, layout and task races', async () 
   assert.equal((await request('capture', payload)).error.code, 'STALE_SESSION');
 });
 
-test('explicitly paired Tailscale owner can register only a loopback preview', async () => {
-  const remoteSender = { tab: { ...tab, id: 8, url: 'http://100.64.1.2:3000/task' }, frameId: 0, url: 'http://100.64.1.2:3000/task' };
-  const preview = { sessionId: 'tailscale', taskId: 'task', url: 'http://localhost:4000/' };
-  assert.equal((await request('registerPreview', preview, remoteSender)).error.code, 'NOT_CONNECTED');
-  localData.connectedOrigins.push('http://100.64.1.2:3000');
-  assert.equal((await request('hello', {}, remoteSender)).result.connected, true);
-  assert.equal((await request('registerPreview', preview, remoteSender)).ok, true);
-  assert.equal((await request('registerPreview', { ...preview, url: 'http://100.64.1.2:4000/' }, remoteSender)).error.code, 'INVALID_URL');
-});
-
 test('port 3300 auto-connects every HTTP(S) host but only registers local previews', async () => {
   const origins = ['http://localhost:3300', 'http://100.64.1.2:3300', 'https://bro.example.com:3300'];
   let tabId = 30;
@@ -91,14 +91,76 @@ test('port 3300 auto-connects every HTTP(S) host but only registers local previe
   assert.equal((await request('hello', {}, invalidScheme)).error.code, 'INVALID_URL');
 });
 
-test('manual connection removal retains auto-connected sessions and removes manual sessions', async () => {
-  localData.connectedOrigins = [];
-  chrome.storage.onChanged.listeners[0]({ connectedOrigins: { newValue: [] } }, 'local');
-  // A subsequent serialized operation waits for the connection cleanup.
-  await request('unregisterPreview', { sessionId: 'unrelated' }, { tab: { ...tab, id: 30 }, frameId: 0, url: 'http://localhost:3300/' });
-  assert.ok(rules.some(rule => rule.condition.tabIds.includes(30)));
+test('tab navigation and closure remove only their preview session rules', async () => {
+  chrome.webNavigation.onBeforeNavigate.listeners[0]({ tabId: 30, frameId: 0 });
+  // A subsequent serialized operation waits for navigation cleanup.
+  await request('unregisterPreview', { sessionId: 'unrelated' }, { tab: { ...tab, id: 31 }, frameId: 0, url: 'http://100.64.1.2:3300/' });
+  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(30)));
   assert.ok(rules.some(rule => rule.condition.tabIds.includes(31)));
+  chrome.tabs.onRemoved.listeners[0](31);
+  await request('unregisterPreview', { sessionId: 'unrelated' });
+  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(31)));
   assert.ok(rules.some(rule => rule.condition.tabIds.includes(32)));
-  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(2)));
-  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(8)));
+  assert.equal((await request('openSetup')).error.code, 'INVALID_COMMAND');
+});
+
+test('marked iframe can initially redirect externally, navigate and capture while siblings/nested stay unbound', async () => {
+  onCapture = async () => {};
+  await request('registerPreview', { sessionId: 'external', taskId: 'task', url: 'http://localhost:4000/' });
+  frames = [
+    { frameId: 7, parentFrameId: 0, url: 'https://login.example.com/auth' },
+    { frameId: 9, parentFrameId: 0, url: 'https://sibling.example.com/' },
+    { frameId: 10, parentFrameId: 7, url: 'https://nested.example.com/' },
+  ];
+  const reportFrame = async (frameId) => {
+    const current = frames.find(frame => frame.frameId === frameId);
+    chrome.runtime.onMessage.listeners[0]({ type: 'frameReady' }, { tab, frameId, url: current.url }, () => {});
+    await new Promise(resolve => setTimeout(resolve, 750));
+  };
+  navigationMessages.length = 0;
+  await reportFrame(9);
+  await reportFrame(10);
+  assert.equal(navigationMessages.length, 0);
+  await reportFrame(7);
+  assert.equal(navigationMessages.at(-1).payload.url, 'https://login.example.com/auth');
+  assert.equal(navigationMessages.at(-1).payload.canGoBack, true);
+  assert.equal(navigationMessages.at(-1).payload.canGoForward, true, 'cross-origin forward bounds are unknown, so native attempts remain available');
+  const captured = await request('capture', { sessionId: 'external', url: frames[0].url, rect: measurement.rect, viewport: { width: 1000, height: 800 } });
+  assert.equal(captured.ok, true);
+  assert.equal(captured.result.url, 'https://login.example.com/auth');
+  assert.equal((await request('navigate', { sessionId: 'external', command: 'to', path: 'https://app.example.org/done' })).ok, true);
+  assert.equal(commands.at(-1).frameId, 7);
+  assert.equal(commands.at(-1).url, 'https://app.example.org/done');
+  assert.equal((await request('navigate', { sessionId: 'external', command: 'to', path: 'javascript:alert(1)' })).error.code, 'INVALID_URL');
+  onCapture = async () => { frames[0] = { ...frames[0], url: 'https://app.example.org/done' }; };
+  assert.equal((await request('capture', { sessionId: 'external', url: 'https://login.example.com/auth', rect: measurement.rect, viewport: { width: 1000, height: 800 } })).error.code, 'STALE_SESSION');
+  await request('unregisterPreview', { sessionId: 'external' });
+  assert.ok(!rules.some(rule => rule.condition.tabIds.includes(tab.id)));
+});
+
+test('same-origin bounds remain precise but unavailable Navigation API enables native history attempts', async () => {
+  await request('registerPreview', { sessionId: 'bounds', taskId: 'task', url: 'http://localhost:4000/' });
+  frames = [{ frameId: 7, parentFrameId: 0, url: 'http://localhost:4000/' }];
+  const report = async () => {
+    chrome.runtime.onMessage.listeners[0]({ type: 'frameReady' }, { tab, frameId: 7, url: frames[0].url }, () => {});
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return navigationMessages.at(-1).payload;
+  };
+  navigationFlags = { navigationAvailable: true, canGoBack: false, canGoForward: false };
+  const known = await report();
+  assert.equal(known.canGoBack, false);
+  assert.equal(known.canGoForward, false);
+  navigationFlags.navigationAvailable = false;
+  const unknown = await report();
+  assert.equal(unknown.canGoBack, true);
+  assert.equal(unknown.canGoForward, true);
+  navigationFlags.navigationAvailable = true;
+  frames[0].url = 'https://auth.example.com/';
+  const external = await report();
+  assert.equal(external.canGoBack, true);
+  assert.equal(external.canGoForward, true);
+  frames[0].url = 'http://localhost:4000/callback';
+  const callback = await report();
+  assert.equal(callback.canGoBack, true, 'origin crossing remains known after returning locally');
+  assert.equal(callback.canGoForward, true);
 });
