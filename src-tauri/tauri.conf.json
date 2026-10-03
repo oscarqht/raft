@@ -13,6 +13,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "A cozy, distraction-free AI coding workspace",
+    "longDescription": "A cozy, distraction-free AI coding workspace with git worktree isolation.",
     "createUpdaterArtifacts": true,
     "resources": [
       "../resources/server"
@@ -37,7 +40,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/oscarqht/termai/releases/latest/download/latest.json"
+        "https://github.com/oscarqht/raft/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5M0YxMDFCQUJDNUU4OTMKUldTVDZNV3JHeEEvK1NPajEzYmduenpFSStBc0N0eW04OEZ0eGVPQ2djeGFvck9weXJ4aUpnNmkK"
     }

@@ -35,7 +35,7 @@ if (!repo) {
     } catch {}
   }
 }
-if (!repo) repo = 'oscarqht/termai';
+if (!repo) repo = 'oscarqht/raft';
 
 let releaseData = { assets: [], body: '' };
 try {

@@ -21,7 +21,7 @@
 ## ✨ Features
 
 - **🦦 Cozy, Non-Overwhelming UX**: Clean visual aesthetic with soft squircles, warm dark & light themes, floating island layout, and smooth draggable split panels.
-- **🖥️ Native Desktop & Web App**: Packaged with **Tauri v2** for macOS (Apple Silicon) and Windows x64. Features an embedded Node.js sidecar runtime, parent-process watchdog, system tray menu, and in-app auto-updates.
+- **🖥️ Native Desktop & Web App**: Packaged with **Tauri v2** for macOS (Apple Silicon), Windows x64, and Linux (AppImage, Debian `.deb`, and native Arch Linux `.pkg.tar.zst`). Features an embedded Node.js sidecar runtime, parent-process watchdog, system tray menu, and in-app auto-updates.
 - **🤖 Multi-Agent CLI Support**: First-class support for **`agy`** (Google Antigravity), **`claude`** (Claude Code), and **`codex`** (OpenAI Codex CLI) with configurable thinking/reasoning effort and in-app CLI installer.
 - **🌿 Git Worktree Task Isolation**: Every task gets its own clean branch and isolated git worktree under `<projectRoot>/.worktrees/<task-branch>`. Run multiple tasks concurrently without git checkout clashes or dirty workspace states.
 - **📸 Live Dev Preview with Screenshot Annotation**: Embedded responsive iframe preview with auto-retry and connection health monitoring. Capture full preview snapshots, mark them up with arrows, shapes, pen strokes, text boxes, and highlights, and attach them straight into the chat for the agent to inspect visual bugs.
@@ -173,7 +173,30 @@ npm run app:build
 
 ### GitHub Actions Release & Signing Keys
 
-The release workflow (`.github/workflows/release.yml`) builds cross-platform packages (macOS & Windows) and signs update artifacts using Tauri's updater.
+The release workflow (`.github/workflows/release.yml`) builds cross-platform packages:
+- **macOS**: Apple Silicon `.dmg` & `.app.tar.gz`
+- **Windows**: `.exe` (NSIS setup) & `.msi`
+- **Linux**:
+  - `.AppImage` (standalone portable Linux executable)
+  - `.deb` (Debian / Ubuntu)
+  - `.pkg.tar.zst` (native Arch Linux / Omarchy Linux package)
+
+It automatically creates and uploads the unified updater manifest `latest.json` for in-app updates across macOS, Windows, and Linux.
+
+#### Installing on Arch Linux / Omarchy Linux
+
+Download `raft-<version>-1-x86_64.pkg.tar.zst` from GitHub Releases and install with `pacman`:
+
+```bash
+sudo pacman -U raft-<version>-1-x86_64.pkg.tar.zst
+```
+
+Alternatively, run the portable `.AppImage`:
+
+```bash
+chmod +x Alpha.Bro_<version>_amd64.AppImage
+./Alpha.Bro_<version>_amd64.AppImage
+```
 
 #### Generating a New Signing Key Pair
 
@@ -191,7 +214,7 @@ If you need to configure or rotate `TAURI_SIGNING_PRIVATE_KEY`:
    "plugins": {
      "updater": {
        "endpoints": [
-         "https://github.com/oscarqht/termai/releases/latest/download/latest.json"
+         "https://github.com/oscarqht/raft/releases/latest/download/latest.json"
        ],
        "pubkey": "<YOUR_NEW_PUBLIC_KEY>"
      }
