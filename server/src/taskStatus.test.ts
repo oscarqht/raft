@@ -60,6 +60,7 @@ test('GitService.getDetailedTaskStatus detects behind base branch and local chan
     // Initial commit on main
     fs.writeFileSync(path.join(repoDir, 'README.md'), '# Main', 'utf-8');
     execSync('git add . && git commit -m "init main"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git branch -M main', { cwd: repoDir, stdio: 'ignore' });
     execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
 
     // Create a worktree for feature-1
@@ -120,6 +121,7 @@ test('GitService.getDetailedTaskStatus does not falsely mark newly created task 
     // Initial commit on main right before task creation
     fs.writeFileSync(path.join(repoDir, 'README.md'), '# Main', 'utf-8');
     execSync('git add . && git commit -m "chore(release): v0.34.0"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git branch -M main', { cwd: repoDir, stdio: 'ignore' });
     execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
 
     // Task is created a few seconds after the commit on main
@@ -157,6 +159,7 @@ test('GitService.getDetailedTaskStatus accurately detects merged tasks via merge
 
     fs.writeFileSync(path.join(repoDir, 'README.md'), '# Main', 'utf-8');
     execSync('git add . && git commit -m "init"', { cwd: repoDir, stdio: 'ignore' });
+    execSync('git branch -M main', { cwd: repoDir, stdio: 'ignore' });
     execSync('git push origin main', { cwd: repoDir, stdio: 'ignore' });
 
     const taskCreatedAt = Date.now();
