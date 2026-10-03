@@ -26,7 +26,7 @@
     "preview:fixture": "node scripts/preview-extension-fixture.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.1.0",
+    "@tauri-apps/cli": "^2.11.5",
     "concurrently": "^9.1.2"
   }
 }

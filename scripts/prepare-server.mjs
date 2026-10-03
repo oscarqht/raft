@@ -61,32 +61,60 @@ for (const pkg of copyPackages) {
   }
 }
 
+// Determine target prebuild binary for current host/target
+const isMusl = process.platform === 'linux' && (!process.report?.getReport || !process.report.getReport().header?.glibcVersionRuntime);
+const targetPrebuild = `${isMusl ? 'linuxmusl' : process.platform}-${process.arch}.node`;
+
+const betterSqlitePrebuilds = path.join(destModules, 'better-sqlite3', 'prebuilds');
+const betterSqliteBuild = path.join(destModules, 'better-sqlite3', 'build', 'Release');
+const betterSqliteBuiltFile = path.join(betterSqliteBuild, 'better_sqlite3.node');
+
+if (fs.existsSync(betterSqliteBuiltFile)) {
+  fs.mkdirSync(betterSqlitePrebuilds, { recursive: true });
+  fs.copyFileSync(betterSqliteBuiltFile, path.join(betterSqlitePrebuilds, targetPrebuild));
+  console.log(`✓ Synchronized rebuilt better_sqlite3.node to prebuilds/${targetPrebuild}`);
+}
+
+// Prune all other prebuilds so linuxdeploy won't encounter foreign or musl libc dependencies
+if (fs.existsSync(betterSqlitePrebuilds)) {
+  const entries = fs.readdirSync(betterSqlitePrebuilds);
+  for (const entry of entries) {
+    if (entry !== targetPrebuild) {
+      fs.unlinkSync(path.join(betterSqlitePrebuilds, entry));
+    }
+  }
+  console.log(`✓ Pruned non-target prebuilds from better-sqlite3 (kept ${targetPrebuild})`);
+}
+
+// Prune build/ directory if present to save ~30MB
+const betterSqliteBuildDir = path.join(destModules, 'better-sqlite3', 'build');
+if (fs.existsSync(betterSqliteBuildDir)) {
+  fs.rmSync(betterSqliteBuildDir, { recursive: true, force: true });
+  console.log('✓ Pruned better-sqlite3 build/ directory');
+}
+
+// Prune unneeded source and doc directories (deps/ contains ~10MB sqlite3 C source code)
+for (const dirName of ['deps', 'src', 'docs']) {
+  const dirPath = path.join(destModules, 'better-sqlite3', dirName);
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true });
+    console.log(`✓ Pruned ${dirName}/ from better-sqlite3`);
+  }
+}
+
+// Clean stale bundler staging caches in target to ensure fresh packaging
+for (const targetSub of ['release', 'debug']) {
+  const staleUp = path.join(root, 'src-tauri', 'target', targetSub, '_up_');
+  if (fs.existsSync(staleUp)) {
+    fs.rmSync(staleUp, { recursive: true, force: true });
+  }
+}
+
 // Sync to Tauri debug target cache if present so dev builds pick up updated native modules immediately
 const debugTargetModules = path.join(root, 'src-tauri', 'target', 'debug', '_up_', 'resources', 'server', 'node_modules');
 if (fs.existsSync(path.dirname(debugTargetModules))) {
   fs.cpSync(destModules, debugTargetModules, { recursive: true, force: true });
   console.log('✓ Synced production node_modules to src-tauri debug target cache');
-}
-
-// Prune build artifacts (.pdb, .iobj, .ipdb, obj/) from better-sqlite3 to save ~30MB
-const betterSqliteBuild = path.join(destModules, 'better-sqlite3', 'build', 'Release');
-if (fs.existsSync(betterSqliteBuild)) {
-  const entries = fs.readdirSync(betterSqliteBuild, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.isDirectory() && entry.name === 'obj') {
-      fs.rmSync(path.join(betterSqliteBuild, entry.name), { recursive: true, force: true });
-    } else if (
-      entry.isFile() &&
-      (entry.name.endsWith('.pdb') ||
-        entry.name.endsWith('.iobj') ||
-        entry.name.endsWith('.ipdb') ||
-        entry.name.endsWith('.exp') ||
-        entry.name.endsWith('.lib'))
-    ) {
-      fs.unlinkSync(path.join(betterSqliteBuild, entry.name));
-    }
-  }
-  console.log('✓ Pruned non-runtime build symbols from better-sqlite3');
 }
 
 // Write minimal package.json with type: module
