@@ -37,14 +37,22 @@ function resolveHost(): string {
   ];
   for (const cmd of candidateCommands) {
     try {
-      const output = execFileSync(cmd, ['ip', '-4'], {
+      const statusOutput = execFileSync(cmd, ['status', '--json'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
         timeout: 2000,
-      }).trim();
-      for (const line of output.split(/[\r\n]+/)) {
-        if (isTailscaleIp(line.trim())) {
-          return line.trim();
+      });
+      const data = JSON.parse(statusOutput);
+      if (data.BackendState === 'Running') {
+        const output = execFileSync(cmd, ['ip', '-4'], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          timeout: 2000,
+        }).trim();
+        for (const line of output.split(/[\r\n]+/)) {
+          if (isTailscaleIp(line.trim())) {
+            return line.trim();
+          }
         }
       }
     } catch {}

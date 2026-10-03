@@ -61,22 +61,23 @@ pub fn resolve_host() -> String {
         }
     }
     if let Ok(host) = std::env::var("HOSTNAME") {
-        if !host.trim().is_empty() {
-            return host.trim().to_string();
+        let trimmed = host.trim();
+        if !trimmed.is_empty() && (is_tailscale_ip_str(trimmed) || trimmed == "127.0.0.1" || trimmed == "localhost") {
+            return trimmed.to_string();
         }
     }
 
     if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
         for (_name, ip) in interfaces {
             if let std::net::IpAddr::V4(ipv4) = ip {
-                if is_tailscale_ip(ipv4) {
+                if is_tailscale_ip(ipv4) && std::net::TcpListener::bind((ipv4, 0)).is_ok() {
                     return ipv4.to_string();
                 }
             }
         }
     }
 
-    // CLI fallback: try `tailscale ip -4`
+    // CLI fallback: only if Tailscale is running and the IP can be bound
     let candidate_commands = [
         "tailscale",
         "/opt/homebrew/bin/tailscale",
@@ -85,12 +86,30 @@ pub fn resolve_host() -> String {
         "C:\\Program Files\\Tailscale\\tailscale.exe",
     ];
     for cmd in candidate_commands {
+        let is_running = std::process::Command::new(cmd)
+            .args(["status", "--json"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                if output.status.success() {
+                    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+                    Some(json.get("BackendState").and_then(|s| s.as_str()) == Some("Running"))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(false);
+
+        if !is_running {
+            continue;
+        }
+
         if let Ok(output) = std::process::Command::new(cmd).args(["ip", "-4"]).output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
                     let trimmed = line.trim();
-                    if is_tailscale_ip_str(trimmed) {
+                    if is_tailscale_ip_str(trimmed) && std::net::TcpListener::bind((trimmed, 0)).is_ok() {
                         return trimmed.to_string();
                     }
                 }
@@ -566,11 +585,23 @@ pub async fn start_server(app: AppHandle) -> Result<(String, u16, String), Strin
             return Err(format!("Server process exited prematurely with status: {status}{details}"));
         }
 
-        if let Ok(resp) = client.get(&health_url).send().await {
-            if resp.status().is_success() {
-                is_ready = true;
-                break;
-            }
+        let is_ok = if let Ok(resp) = client.get(&health_url).send().await {
+            resp.status().is_success()
+        } else if host != "127.0.0.1" {
+            let loopback_url = format!("http://127.0.0.1:{port}/api/settings");
+            client
+                .get(&loopback_url)
+                .send()
+                .await
+                .map(|resp| resp.status().is_success())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if is_ok {
+            is_ready = true;
+            break;
         }
     }
 

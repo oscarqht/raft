@@ -81,5 +81,33 @@ describe('tailscale auto-discovery', () => {
       resetTailscaleServe();
     }
   });
+
+  it('falls back to 127.0.0.1 when Tailscale is stopped and no active interface exists', async () => {
+    const { getTailscaleIpFromInterfaces, resolveHost, getTailscaleIpFromCli } = await import('./tailscale.js');
+    const originalHost = process.env.HOST;
+    const originalTailscale = process.env.TAILSCALE_IP;
+    try {
+      delete process.env.HOST;
+      delete process.env.TAILSCALE_IP;
+
+      const ifaceIp = getTailscaleIpFromInterfaces();
+      const resolved = resolveHost();
+
+      if (!ifaceIp) {
+        // If there's no active Tailscale network interface with 100.64.0.0/10,
+        // and Tailscale is stopped, resolveHost must fall back to 127.0.0.1
+        // rather than using a stale/inactive IP from `tailscale ip -4`.
+        const cliIp = getTailscaleIpFromCli();
+        if (!cliIp) {
+          assert.equal(resolved.host, '127.0.0.1');
+          assert.equal(resolved.isTailscale, false);
+          assert.equal(resolved.source, 'fallback');
+        }
+      }
+    } finally {
+      if (originalHost !== undefined) process.env.HOST = originalHost;
+      if (originalTailscale !== undefined) process.env.TAILSCALE_IP = originalTailscale;
+    }
+  });
 });
 

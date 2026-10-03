@@ -74,6 +74,9 @@ export function getTailscaleMagicDnsName(): string | null {
       timeout: 3000,
     });
     const data = JSON.parse(output);
+    if (data.BackendState !== 'Running') {
+      return null;
+    }
     const dnsName = data.Self?.DNSName?.replace(/\.+$/, '') || data.CertDomains?.[0] || null;
     return dnsName;
   } catch {
@@ -109,6 +112,15 @@ export function setupTailscaleServe(targetPort: number): TailscaleServeResult {
   }
 
   const magicDns = getTailscaleMagicDnsName();
+  if (!magicDns) {
+    return {
+      enabled: false,
+      httpsUrl: null,
+      magicDns: null,
+      targetPort,
+      error: 'Tailscale is not active or MagicDNS not found',
+    };
+  }
 
   try {
     // Run: tailscale serve --bg --yes <targetPort>
@@ -157,12 +169,23 @@ export function resetTailscaleServe(): boolean {
 
 /**
  * Attempt to obtain Tailscale IPv4 address via the `tailscale` CLI command.
+ * Only returns an IP if Tailscale is running and connected.
  */
 export function getTailscaleIpFromCli(): string | null {
   const cli = findTailscaleCli();
   if (!cli) return null;
 
   try {
+    const statusOutput = execFileSync(cli, ['status', '--json'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2000,
+    });
+    const data = JSON.parse(statusOutput);
+    if (data.BackendState !== 'Running') {
+      return null;
+    }
+
     const output = execFileSync(cli, ['ip', '-4'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
