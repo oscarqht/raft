@@ -229,6 +229,10 @@ export function resolveCodexbarPath(): string | null {
     '/usr/local/bin/codexbar',
     path.join(os.homedir(), '.local', 'bin', 'codexbar'),
     path.join(os.homedir(), '.cargo', 'bin', 'codexbar'),
+    // Linuxbrew
+    '/home/linuxbrew/.linuxbrew/bin/codexbar',
+    path.join(os.homedir(), '.linuxbrew', 'bin', 'codexbar'),
+    '/usr/bin/codexbar',
   ];
 
   for (const c of candidates) {
@@ -241,10 +245,16 @@ export function resolveCodexbarPath(): string | null {
   }
 
   const resolved = resolveCliPath('codexbar');
-  if (resolved) return resolved;
+  // resolveCliPath falls back to the bare name when nothing is found
+  if (resolved && fs.existsSync(resolved)) return resolved;
 
   try {
-    const out = execSync('which codexbar', { encoding: 'utf8', timeout: 2000 }).trim();
+    const out = execSync('which codexbar', {
+      encoding: 'utf8',
+      timeout: 2000,
+      env: getCrossPlatformEnv(),
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
     if (out && fs.existsSync(out)) return out;
   } catch {}
 

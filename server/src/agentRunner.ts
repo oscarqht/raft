@@ -95,6 +95,7 @@ export function getCrossPlatformEnv(): NodeJS.ProcessEnv {
         path.join(home, '.codex', 'bin'),
         path.join(home, '.agy', 'bin'),
         '/opt/homebrew/bin',
+        '/home/linuxbrew/.linuxbrew/bin',
         '/usr/local/bin',
         '/usr/bin',
         '/bin',

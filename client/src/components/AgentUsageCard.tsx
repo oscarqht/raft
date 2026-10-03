@@ -175,6 +175,9 @@ export const AgentUsageCard: React.FC<AgentUsageCardProps> = ({
           <p className="text-xs text-cozy-muted">
             Install CodexBar to track real-time AI usage quotas, spend allowances, and monthly credit limits directly in Raft.
           </p>
+          <p className="text-[11px] text-cozy-muted">
+            On Linux, use Homebrew (Linuxbrew) or download the CodexBarCLI Linux tarball from the CodexBar GitHub releases and place `codexbar` in ~/.local/bin.
+          </p>
           <div className="flex items-center gap-2">
             <code className="text-xs font-mono bg-cozy-surface px-3 py-1.5 rounded-xl border border-cozy-border text-cozy-text flex-1">
               brew install steipete/tap/codexbar
